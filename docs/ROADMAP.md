@@ -79,7 +79,7 @@ Implement all core data models.
 
 Models include:
 
-- Node
+- NodeInfo
 - Heartbeat
 - InferenceRequest
 - InferenceResponse
@@ -89,7 +89,7 @@ These models should contain validation only.
 
 Status:
 
-- [ ] Not Started
+- [x] Completed
 
 ---
 
@@ -106,7 +106,7 @@ Features:
 
 Status:
 
-- [ ] Not Started
+- [x] Completed
 
 ---
 
@@ -123,7 +123,7 @@ Features:
 
 Status:
 
-- [ ] Not Started
+- [x] Completed
 
 ---
 
@@ -141,7 +141,7 @@ Business logic should remain minimal.
 
 Status:
 
-- [ ] Not Started
+- [x] Completed
 
 ---
 
@@ -158,7 +158,7 @@ Features:
 
 Status:
 
-- [ ] Not Started
+- [x] Completed
 
 ---
 
@@ -178,7 +178,7 @@ This concludes Version 1.0.
 
 Status:
 
-- [ ] Not Started
+- [x] Completed
 
 ---
 

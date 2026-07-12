@@ -5,20 +5,29 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from node.api import router
 from node.core.configuration import get_settings
 from node.core.logging import setup_logging
+from node.runtime import Runtime
 
 settings = get_settings()
 setup_logging(settings.log_level)
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Lifespan manager for the FastAPI application.
 
     Handles startup and shutdown events for the application.
     """
+    runtime = Runtime(settings)
+    app.state.runtime = runtime
+    app.state.ollama_client = runtime.ollama_client
+    app.state.scheduler_client = runtime.scheduler_client
+
+    await runtime.start()
     yield
+    await runtime.stop()
 
 
 app = FastAPI(
@@ -28,15 +37,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-
-@app.get("/health")
-async def health() -> dict[str, str]:
-    """Check health status of the Node.
-
-    Returns:
-        dict[str, str]: A dictionary indicating the health status.
-    """
-    return {"status": "healthy"}
+# Mount the routes
+app.include_router(router)
 
 
 if __name__ == "__main__":

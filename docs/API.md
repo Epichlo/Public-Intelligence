@@ -61,13 +61,23 @@ Inference execution failed.
 
 ## GET /health
 
-Returns the current health status of the Node.
+Returns the current health status of the Node and its connection to the local Ollama server.
 
-### Response
+### Response (Healthy)
 
 ```json
 {
-  "status": "healthy"
+  "status": "healthy",
+  "ollama": true
+}
+```
+
+### Response (Degraded - Ollama offline)
+
+```json
+{
+  "status": "degraded",
+  "ollama": false
 }
 ```
 

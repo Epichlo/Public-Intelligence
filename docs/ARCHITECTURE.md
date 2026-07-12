@@ -73,7 +73,7 @@ Defines the data exchanged between components.
 
 Examples include:
 
-- Node
+- NodeInfo
 - Heartbeat
 - ModelInfo
 - InferenceRequest

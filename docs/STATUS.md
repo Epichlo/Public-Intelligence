@@ -21,25 +21,26 @@ Repository State:
 - [x] Architectural specification
 - [x] Repository Foundation (Phase 1)
 - [x] Configuration (Phase 2)
+- [x] Domain Models (Phase 3)
+- [x] Scheduler Client (Phase 4)
+- [x] Ollama Client (Phase 5)
+- [x] Inference API (Phase 6)
+- [x] Runtime (Phase 7)
+- [x] End-to-End Demonstration (Phase 8)
 
 ---
 
 ## Current Task
 
-Domain Models (Phase 3).
+Node v1 Release.
 
-The next implementation task is implementing the core domain models (Node, Heartbeat, InferenceRequest, InferenceResponse, ModelInfo).
+All tasks for Version 1.0 of the Public Intelligence Node compute worker have been completed and verified end-to-end.
 
 ---
 
 ## Upcoming Features
 
-1. Domain Models (Phase 3) - In Progress
-2. Scheduler Client
-3. Ollama Client
-4. Inference API
-5. Runtime
-6. End-to-End Demonstration
+None (Version 1.0 Release complete).
 
 ---
 

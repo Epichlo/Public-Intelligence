@@ -39,6 +39,12 @@ class Settings(BaseSettings):
         description="The base URL of the Scheduler service.",
     )
 
+    # Ollama
+    ollama_host: str = Field(
+        default="http://localhost:11434",
+        description="The host URL of the local Ollama server.",
+    )
+
     # API
     host: str = Field(
         default="0.0.0.0",
@@ -88,13 +94,13 @@ class Settings(BaseSettings):
             raise ValueError("Value cannot be empty or whitespace.")
         return v.strip()
 
-    @field_validator("scheduler_url")
+    @field_validator("scheduler_url", "ollama_host")
     @classmethod
-    def validate_scheduler_url(cls, v: str) -> str:
-        """Validate that the Scheduler URL is valid."""
+    def validate_urls(cls, v: str) -> str:
+        """Validate that the URL starts with http:// or https://."""
         stripped = v.strip()
         if not stripped.startswith(("http://", "https://")):
-            raise ValueError("Scheduler URL must start with http:// or https://")
+            raise ValueError("URL must start with http:// or https://")
         return stripped
 
     @field_validator("port")
