@@ -20,26 +20,26 @@ Repository State:
 - [x] Project documentation
 - [x] Architectural specification
 - [x] Repository Foundation (Phase 1)
+- [x] Configuration (Phase 2)
 
 ---
 
 ## Current Task
 
-Configuration (Phase 2).
+Domain Models (Phase 3).
 
-The next implementation task is implementing configuration loading (Scheduler URL, Node ID, hostname, region, hosted models, heartbeat interval, API configuration).
+The next implementation task is implementing the core domain models (Node, Heartbeat, InferenceRequest, InferenceResponse, ModelInfo).
 
 ---
 
 ## Upcoming Features
 
-1. Configuration (Phase 2) - In Progress
-2. Domain Models
-3. Scheduler Client
-4. Ollama Client
-5. Inference API
-6. Runtime
-7. End-to-End Demonstration
+1. Domain Models (Phase 3) - In Progress
+2. Scheduler Client
+3. Ollama Client
+4. Inference API
+5. Runtime
+6. End-to-End Demonstration
 
 ---
 

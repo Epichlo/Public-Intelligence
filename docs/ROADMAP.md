@@ -69,7 +69,7 @@ Responsibilities:
 
 Status:
 
-- [ ] Not Started
+- [x] Completed
 
 ---
 

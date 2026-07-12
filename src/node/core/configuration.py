@@ -1,7 +1,15 @@
 """Configuration management for the Public Intelligence Node."""
 
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import json
+from functools import lru_cache
+from typing import Any
+
+from pydantic import Field, field_validator
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 
 
 class Settings(BaseSettings):
@@ -11,23 +19,7 @@ class Settings(BaseSettings):
     or from a local .env file.
     """
 
-    # API configuration
-    host: str = Field(
-        default="0.0.0.0",
-        description="The host interface to bind the FastAPI server to.",
-    )
-    port: int = Field(
-        default=8000,
-        description="The port to bind the FastAPI server to.",
-    )
-
-    # Scheduler configuration
-    scheduler_url: str = Field(
-        default="http://localhost:8080",
-        description="The base URL of the Scheduler service.",
-    )
-
-    # Node Identification
+    # Identity
     node_id: str = Field(
         default="node-local",
         description="Unique identifier for this Node in the network.",
@@ -40,19 +32,45 @@ class Settings(BaseSettings):
         default="local",
         description="Geographic region where the Node is running.",
     )
+
+    # Scheduler
+    scheduler_url: str = Field(
+        default="http://localhost:8080",
+        description="The base URL of the Scheduler service.",
+    )
+
+    # API
+    host: str = Field(
+        default="0.0.0.0",
+        description="The host interface to bind the FastAPI server to.",
+    )
+    port: int = Field(
+        default=8000,
+        description="The port to bind the FastAPI server to.",
+    )
+
+    # Heartbeat
+    heartbeat_interval_seconds: int = Field(
+        default=30,
+        description="Interval in seconds for sending heartbeats to the Scheduler.",
+    )
+
+    # Models
     hosted_models: list[str] = Field(
         default_factory=list,
         description="List of AI model names hosted and supported by this Node.",
-    )
-    heartbeat_interval: int = Field(
-        default=30,
-        description="Interval in seconds for sending heartbeats to the Scheduler.",
     )
 
     # Logging
     log_level: str = Field(
         default="INFO",
-        description="The logging level to use (DEBUG, INFO, WARNING, ERROR).",
+        description="The logging level to use (DEBUG, INFO, WARNING, ERROR, CRITICAL).",
+    )
+
+    # Environment
+    debug: bool = Field(
+        default=False,
+        description="Enable debug mode for the application.",
     )
 
     model_config = SettingsConfigDict(
@@ -62,9 +80,141 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    @field_validator("node_id", "hostname", "region")
+    @classmethod
+    def validate_non_empty(cls, v: str) -> str:
+        """Validate that the string is not empty or pure whitespace."""
+        if not v.strip():
+            raise ValueError("Value cannot be empty or whitespace.")
+        return v.strip()
 
+    @field_validator("scheduler_url")
+    @classmethod
+    def validate_scheduler_url(cls, v: str) -> str:
+        """Validate that the Scheduler URL is valid."""
+        stripped = v.strip()
+        if not stripped.startswith(("http://", "https://")):
+            raise ValueError("Scheduler URL must start with http:// or https://")
+        return stripped
+
+    @field_validator("port")
+    @classmethod
+    def validate_port(cls, v: int) -> int:
+        """Validate that the port is in the valid range."""
+        if not (1 <= v <= 65535):
+            raise ValueError("Port must be between 1 and 65535 inclusive.")
+        return v
+
+    @field_validator("heartbeat_interval_seconds")
+    @classmethod
+    def validate_heartbeat_interval(cls, v: int) -> int:
+        """Validate that the heartbeat interval is in range [1, 300]."""
+        if not (1 <= v <= 300):
+            raise ValueError(
+                "Heartbeat interval must be between 1 and 300 seconds inclusive."
+            )
+        return v
+
+    @field_validator("log_level")
+    @classmethod
+    def validate_log_level(cls, v: str) -> str:
+        """Validate that the log level is one of the allowed levels."""
+        allowed = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        upper_val = v.strip().upper()
+        if upper_val not in allowed:
+            raise ValueError(f"Log level must be one of {allowed}")
+        return upper_val
+
+    @field_validator("hosted_models", mode="before")
+    @classmethod
+    def parse_hosted_models(cls, v: Any) -> list[str]:
+        """Parse list of hosted models from comma-separated string, JSON, or list.
+
+        Raises ValueError if any model name is empty or whitespace-only.
+        """
+        raw_items: list[Any] = []
+        if isinstance(v, list):
+            raw_items = v
+        elif isinstance(v, str):
+            val = v.strip()
+            if not val:
+                return []
+            # Check if it's a JSON array representation
+            if val.startswith("[") and val.endswith("]"):
+                try:
+                    parsed = json.loads(val)
+                    raw_items = parsed if isinstance(parsed, list) else [val]
+                except json.JSONDecodeError:
+                    raw_items = [val]
+            else:
+                # Comma-separated parsing
+                raw_items = val.split(",")
+        else:
+            return []
+
+        parsed_items: list[str] = []
+        for item in raw_items:
+            item_str = str(item).strip()
+            if not item_str:
+                raise ValueError("Model name cannot be empty or whitespace-only.")
+            parsed_items.append(item_str)
+        return parsed_items
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        _settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Customise settings sources to allow lenient list parsing in env / dotenv.
+
+        By default, pydantic-settings tries to parse list annotations as JSON.
+        If JSON parsing fails, we fall back to raw string so that our before
+        validator can parse comma-separated lists.
+        """
+
+        # Patch EnvSettingsSource
+        if hasattr(env_settings, "decode_complex_value"):
+            orig_env_decode = env_settings.decode_complex_value
+
+            def custom_env_decode(field_name: str, field: Any, value: Any) -> Any:
+                if field_name == "hosted_models":
+                    try:
+                        return json.loads(value)
+                    except (ValueError, TypeError, json.JSONDecodeError):
+                        return value
+                return orig_env_decode(field_name, field, value)
+
+            env_settings.decode_complex_value = custom_env_decode  # type: ignore
+
+        # Patch DotEnvSettingsSource
+        if hasattr(dotenv_settings, "decode_complex_value"):
+            orig_dotenv_decode = dotenv_settings.decode_complex_value
+
+            def custom_dotenv_decode(field_name: str, field: Any, value: Any) -> Any:
+                if field_name == "hosted_models":
+                    try:
+                        return json.loads(value)
+                    except (ValueError, TypeError, json.JSONDecodeError):
+                        return value
+                return orig_dotenv_decode(field_name, field, value)
+
+            dotenv_settings.decode_complex_value = custom_dotenv_decode  # type: ignore
+
+        return (
+            init_settings,
+            env_settings,
+            dotenv_settings,
+            file_secret_settings,
+        )
+
+
+@lru_cache
 def get_settings() -> Settings:
-    """Retrieve the global settings instance.
+    """Retrieve the cached global settings instance.
 
     Returns:
         Settings: The loaded Settings instance.
