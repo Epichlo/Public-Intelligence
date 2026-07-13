@@ -67,11 +67,12 @@ python -m node.main
 
 ## Demo
 
-A complete end-to-end demonstration is available in
+A walkthrough of the first working prototype is available on YouTube:
+[Public Intelligence v1 Demo](https://www.youtube.com/watch?v=cGDWpOArB5I)
 
-```
-examples/demo.md
-```
+This video demonstrates the end-to-end integration of the Website, Scheduler, Node (showing the current v1 implementation), registration, heartbeats, and local inference.
+
+A local end-to-end text demonstration is also available in [examples/demo.md](examples/demo.md).
 
 ---
 
