@@ -29,6 +29,7 @@ class SchedulerClient:
         self.base_url = settings.scheduler_url.rstrip("/")
         self.client = client
         self.timeout = 5.0
+        self.network_auth_token = settings.network_auth_token
 
     async def _send_request(
         self,
@@ -48,11 +49,14 @@ class SchedulerClient:
                 timeouts, or non-2xx response status codes.
         """
         url = f"{self.base_url}{path}"
+        headers = {}
+        if self.network_auth_token:
+            headers["X-Network-Auth-Token"] = self.network_auth_token
 
         if self.client is not None:
             try:
                 response = await self.client.request(
-                    method, url, json=json_data, timeout=self.timeout
+                    method, url, json=json_data, headers=headers, timeout=self.timeout
                 )
                 response.raise_for_status()
             except httpx.HTTPStatusError as e:
@@ -67,7 +71,9 @@ class SchedulerClient:
         else:
             try:
                 async with httpx.AsyncClient(timeout=self.timeout) as client:
-                    response = await client.request(method, url, json=json_data)
+                    response = await client.request(
+                        method, url, json=json_data, headers=headers
+                    )
                     response.raise_for_status()
             except httpx.HTTPStatusError as e:
                 raise SchedulerError(

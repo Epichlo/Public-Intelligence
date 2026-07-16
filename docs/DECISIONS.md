@@ -151,7 +151,7 @@ It intentionally excludes:
 
 - Authentication
 - TLS
-- Streaming responses
+- Streaming responses (supported as of 2026-07-16)
 - Multiple inference backends
 - Persistence
 - Advanced monitoring

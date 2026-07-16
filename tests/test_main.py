@@ -151,3 +151,29 @@ def test_infer_generic_failure(mock_ollama_client: AsyncMock) -> None:
         response = client.post("/infer", json=payload)
         assert response.status_code == 500
         assert "Inference failed" in response.json()["detail"]
+
+
+def test_infer_stream_success(mock_ollama_client: AsyncMock) -> None:
+    """Verify POST /infer returns chunked streaming response when stream=True."""
+
+    async def mock_stream_generator(*_args, **_kwargs):
+        yield "data: chunk1\n\n"
+        yield "data: chunk2\n\n"
+
+    mock_ollama_client.generate_stream = MagicMock(side_effect=mock_stream_generator)
+
+    mock_runtime = AsyncMock()
+    mock_runtime.ollama_client = mock_ollama_client
+    mock_runtime.scheduler_client = AsyncMock()
+
+    with (
+        patch("node.main.Runtime", return_value=mock_runtime),
+        TestClient(app) as client,
+    ):
+        payload = {"model": "llama3-8b", "prompt": "Hi", "stream": True}
+        response = client.post("/infer", json=payload)
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+        content = list(response.iter_lines())
+        assert content == ["data: chunk1", "", "data: chunk2", ""]
+        mock_ollama_client.generate_stream.assert_called_once()

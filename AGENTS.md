@@ -209,3 +209,15 @@ Always prioritize:
 - Clear architecture
 
 Short-term convenience should never compromise the long-term design of the system.
+
+---
+
+# Event Log
+
+## 2026-07-16
+
+- Successful activation of environment-driven ports (PORT and HOST) with a default fallback to 8080.
+- Implemented live inference streaming support (`stream=True`) in the `/infer` endpoint utilizing FastAPI `StreamingResponse` and Ollama async generator.
+- Implemented inter-service token validation using a secure `X-Network-Auth-Token` header.
+- Added `NETWORK_AUTH_TOKEN` (alias `NODE_NETWORK_AUTH_TOKEN`) environment variable configuration.
+- Secured registration, heartbeat, and scheduling endpoints under dependency validation.

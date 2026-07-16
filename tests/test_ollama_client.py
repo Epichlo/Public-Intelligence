@@ -129,3 +129,32 @@ async def test_generate_generic_failure(settings: Settings) -> None:
         await client.generate(req)
 
     assert "Ollama generation failed" in str(exc_info.value)
+
+
+@pytest.mark.anyio
+async def test_generate_stream_success(settings: Settings) -> None:
+    """Verify that generate_stream yields formatted SSE chunks."""
+    mock_client = AsyncMock()
+
+    async def mock_generator():
+        yield {"model": "llama3-8b", "response": "chunk1", "done": False}
+        yield {"model": "llama3-8b", "response": "chunk2", "done": True}
+
+    mock_client.generate.return_value = mock_generator()
+    client = OllamaClient(settings, client=mock_client)
+    req = InferenceRequest(model="llama3-8b", prompt="Hello", stream=True)
+
+    chunks = []
+    async for chunk in client.generate_stream(req):
+        chunks.append(chunk)
+
+    assert len(chunks) == 2
+    assert chunks[0] == (
+        'data: {"model": "llama3-8b", "response": "chunk1", "done": false}\n\n'
+    )
+    assert chunks[1] == (
+        'data: {"model": "llama3-8b", "response": "chunk2", "done": true}\n\n'
+    )
+    mock_client.generate.assert_called_once_with(
+        model="llama3-8b", prompt="Hello", stream=True
+    )

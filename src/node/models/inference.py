@@ -14,6 +14,10 @@ class InferenceRequest(BaseModel):
         ...,
         description="The prompt input text to send to the model.",
     )
+    stream: bool = Field(
+        default=False,
+        description="Whether to stream the response chunks.",
+    )
 
     @field_validator("model", "prompt")
     @classmethod

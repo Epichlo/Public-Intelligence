@@ -3,6 +3,7 @@
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import StreamingResponse
 
 from node.clients import OllamaClient, OllamaError
 from node.models import InferenceRequest, InferenceResponse, ModelInfo
@@ -29,8 +30,23 @@ def get_ollama_client(request: Request) -> OllamaClient:
 async def infer(
     request: InferenceRequest,
     ollama_client: Annotated[OllamaClient, Depends(get_ollama_client)],
-) -> InferenceResponse:
+) -> InferenceResponse | StreamingResponse:
     """Delegate inference generation directly to the Ollama client."""
+    if request.stream:
+        try:
+            generator = ollama_client.generate_stream(request)
+            return StreamingResponse(generator, media_type="text/event-stream")
+        except OllamaError as e:
+            if "not found" in str(e).lower():
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=str(e),
+                ) from e
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e),
+            ) from e
+
     try:
         return await ollama_client.generate(request)
     except OllamaError as e:

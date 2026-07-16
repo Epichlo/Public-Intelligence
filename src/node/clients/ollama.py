@@ -1,5 +1,8 @@
 """Ollama client implementation."""
 
+import json
+from collections.abc import AsyncGenerator
+
 import ollama
 
 from node.core.configuration import Settings
@@ -108,6 +111,56 @@ class OllamaClient:
             ) from e
         except Exception as e:
             raise OllamaError(f"Ollama generation failed: {e}") from e
+
+    async def generate_stream(
+        self, request: InferenceRequest
+    ) -> AsyncGenerator[str, None]:
+        """Execute streaming inference against a local model.
+
+        Args:
+            request: The prompt and target model specs.
+
+        Yields:
+            str: SSE formatted chunks.
+
+        Raises:
+            OllamaError: If the model is not found or connection/generation fails.
+        """
+        try:
+            stream = await self.client.generate(
+                model=request.model, prompt=request.prompt, stream=True
+            )
+        except ollama.ResponseError as e:
+            if e.status_code == 404:
+                raise OllamaError(
+                    f"Model '{request.model}' was not found on the Ollama server."
+                ) from e
+            raise OllamaError(
+                f"Ollama generation failed with status code {e.status_code}: {e.error}"
+            ) from e
+        except Exception as e:
+            raise OllamaError(f"Ollama generation failed: {e}") from e
+
+        try:
+            async for chunk in stream:
+                if isinstance(chunk, dict):
+                    data = json.dumps(chunk)
+                else:
+                    try:
+                        data = chunk.model_dump_json()
+                    except AttributeError:
+                        try:
+                            data = json.dumps(dict(chunk))
+                        except (TypeError, ValueError):
+                            resp_dict = {
+                                "model": getattr(chunk, "model", request.model),
+                                "response": getattr(chunk, "response", ""),
+                                "done": getattr(chunk, "done", False),
+                            }
+                            data = json.dumps(resp_dict)
+                yield f"data: {data}\n\n"
+        except Exception as e:
+            raise OllamaError(f"Ollama streaming generation failed: {e}") from e
 
     async def health(self) -> bool:
         """Check if the local Ollama server is running and healthy.

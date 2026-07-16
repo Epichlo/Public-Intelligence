@@ -23,24 +23,41 @@ The following endpoints are exposed by every Node.
 
 ## POST /infer
 
-Execute inference using a locally hosted model.
+Execute inference using a locally hosted model. Supports both standard JSON responses and chunked Server-Sent Events (SSE) streaming responses.
 
 ### Request
 
 ```json
 {
   "model": "llama3-8b",
-  "prompt": "Explain black holes."
+  "prompt": "Explain black holes.",
+  "stream": false
 }
 ```
 
-### Response
+- `stream` (optional, default `false`): If set to `true`, the Node returns a chunked `text/event-stream` response.
+
+### Response (Standard)
 
 ```json
 {
   "model": "llama3-8b",
   "response": "Black holes are..."
 }
+```
+
+### Response (Streaming, when `stream` is `true`)
+
+Returns a stream of SSE event chunks with `Content-Type: text/event-stream`:
+
+```text
+data: {"model": "llama3-8b", "response": "Black", "done": false}
+
+data: {"model": "llama3-8b", "response": " holes", "done": false}
+
+...
+
+data: {"model": "llama3-8b", "response": " are...", "done": true}
 ```
 
 ### Errors

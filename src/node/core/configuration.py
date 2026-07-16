@@ -1,10 +1,12 @@
 """Configuration management for the Public Intelligence Node."""
 
 import json
+import os
+import sys
 from functools import lru_cache
 from typing import Any
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -48,10 +50,12 @@ class Settings(BaseSettings):
     # API
     host: str = Field(
         default="0.0.0.0",
+        validation_alias=AliasChoices("NODE_HOST", "HOST"),
         description="The host interface to bind the FastAPI server to.",
     )
     port: int = Field(
-        default=8000,
+        default=8080,
+        validation_alias=AliasChoices("NODE_PORT", "PORT"),
         description="The port to bind the FastAPI server to.",
     )
 
@@ -79,11 +83,22 @@ class Settings(BaseSettings):
         description="Enable debug mode for the application.",
     )
 
+    network_auth_token: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("NODE_NETWORK_AUTH_TOKEN", "NETWORK_AUTH_TOKEN"),
+        description="Secure network authentication token.",
+    )
+
     model_config = SettingsConfigDict(
         env_prefix="NODE_",
-        env_file=".env",
+        env_file=(
+            None
+            if ("pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ)
+            else ".env"
+        ),
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,
     )
 
     @field_validator("node_id", "hostname", "region")

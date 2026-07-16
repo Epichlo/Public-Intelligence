@@ -187,7 +187,7 @@ Status:
 Future versions may include:
 
 - Multiple inference backends.
-- Streaming responses.
+- Streaming responses (Completed).
 - Secure communication.
 - Authentication.
 - TLS.

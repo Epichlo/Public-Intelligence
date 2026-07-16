@@ -84,6 +84,7 @@ async def test_register_success_custom_client(
         "POST",
         "http://mock-scheduler:8080/nodes/register",
         json=expected_payload,
+        headers={},
         timeout=5.0,
     )
 
@@ -119,6 +120,7 @@ async def test_register_success_transient_client(
         "POST",
         "http://mock-scheduler:8080/nodes/register",
         json=expected_payload,
+        headers={},
     )
 
 
@@ -143,6 +145,7 @@ async def test_heartbeat_success_custom_client(
         "POST",
         "http://mock-scheduler:8080/heartbeat",
         json=expected_payload,
+        headers={},
         timeout=5.0,
     )
 
@@ -163,6 +166,7 @@ async def test_unregister_success_custom_client(
         "DELETE",
         "http://mock-scheduler:8080/nodes/node-1",
         json=None,
+        headers={},
         timeout=5.0,
     )
 
@@ -217,3 +221,26 @@ async def test_timeout_failure(
         await client.register(node_info)
 
     assert "Request timed out" in str(exc_info.value)
+
+
+@pytest.mark.anyio
+async def test_client_sends_auth_token(
+    settings: Settings, dummy_request: httpx.Request
+) -> None:
+    """Verify that the client passes the X-Network-Auth-Token header when configured."""
+    mock_client = AsyncMock()
+    mock_response = httpx.Response(200, request=dummy_request)
+    mock_client.request.return_value = mock_response
+
+    # Configure the auth token
+    settings.network_auth_token = "secure-test-token"
+    client = SchedulerClient(settings, client=mock_client)
+    await client.unregister("node-1")
+
+    mock_client.request.assert_called_once_with(
+        "DELETE",
+        "http://mock-scheduler:8080/nodes/node-1",
+        json=None,
+        headers={"X-Network-Auth-Token": "secure-test-token"},
+        timeout=5.0,
+    )

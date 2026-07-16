@@ -20,7 +20,7 @@ def test_default_values() -> None:
         assert settings.region == "local"
         assert settings.scheduler_url == "http://localhost:8080"
         assert settings.host == "0.0.0.0"
-        assert settings.port == 8000
+        assert settings.port == 8080
         assert settings.heartbeat_interval_seconds == 30
         assert settings.hosted_models == []
         assert settings.log_level == "INFO"
@@ -54,6 +54,19 @@ def test_environment_overrides() -> None:
         assert settings.hosted_models == ["model-a", "model-b"]
         assert settings.log_level == "DEBUG"
         assert settings.debug is True
+
+
+def test_standard_environment_overrides() -> None:
+    """Verify that settings can be overridden by standard HOST and PORT env vars."""
+    env = {
+        "HOST": "127.0.0.2",
+        "PORT": "8500",
+    }
+    with patch.dict(os.environ, env, clear=True):
+        get_settings.cache_clear()
+        settings = get_settings()
+        assert settings.host == "127.0.0.2"
+        assert settings.port == 8500
 
 
 def test_validation_failures() -> None:
@@ -123,3 +136,20 @@ def test_get_settings_cached() -> None:
     a = get_settings()
     b = get_settings()
     assert a is b
+
+
+def test_network_auth_token_loading() -> None:
+    """Verify that network_auth_token is loaded from environment variables."""
+    # Test NODE_NETWORK_AUTH_TOKEN
+    env1 = {"NODE_NETWORK_AUTH_TOKEN": "node-secret"}
+    with patch.dict(os.environ, env1, clear=True):
+        get_settings.cache_clear()
+        settings = get_settings()
+        assert settings.network_auth_token == "node-secret"
+
+    # Test standard NETWORK_AUTH_TOKEN
+    env2 = {"NETWORK_AUTH_TOKEN": "global-secret"}
+    with patch.dict(os.environ, env2, clear=True):
+        get_settings.cache_clear()
+        settings = get_settings()
+        assert settings.network_auth_token == "global-secret"
