@@ -1,5 +1,7 @@
 """Inference API routes."""
 
+import uuid
+from collections.abc import AsyncGenerator
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -39,6 +41,7 @@ def get_radix_cache(request: Request) -> RadixTrieCache:
 )
 async def infer(
     request: InferenceRequest,
+    fastapi_request: Request,
     ollama_client: Annotated[OllamaClient, Depends(get_ollama_client)],
     radix_cache: Annotated[RadixTrieCache, Depends(get_radix_cache)],
 ) -> InferenceResponse | StreamingResponse:
@@ -51,15 +54,49 @@ async def infer(
     # Route only the remaining suffix data to the underlying backend serving model
     request.prompt = suffix
 
+    # Determine client co-location based on request IP
+    client_host = fastapi_request.client.host if fastapi_request.client else ""
+    is_local = client_host in ("127.0.0.1", "localhost", "::1")
+
+    # Retrieve active Zenoh session from application state runtime
+    runtime = getattr(fastapi_request.app.state, "runtime", None)
+    zenoh_session = None
+    if runtime is not None and getattr(runtime, "zenoh_client", None) is not None:
+        sess = runtime.zenoh_client.session
+        if sess is not None and "mock" not in type(sess).__name__.lower():
+            zenoh_session = sess
+
     if request.stream:
         try:
             generator = ollama_client.generate_stream(request)
 
-            async def stream_wrapper() -> Any:
+            async def stream_wrapper() -> AsyncGenerator[str, None]:
+                router = None
+                session_id = uuid.uuid4().hex[:8]
+
+                # Setup WAN backpressured stream router if not local
+                if not is_local and zenoh_session is not None:
+                    from node.core.transport import BackpressuredStreamRouter
+
+                    router = BackpressuredStreamRouter(session_id, zenoh_session)
+                    yield f"session_id: {session_id}\n"
+
                 try:
+                    from node.core.transport import SharedMemoryIPC
+
                     async for chunk in generator:
-                        yield chunk
+                        if is_local:
+                            shm_name = SharedMemoryIPC.write_data(chunk.encode("utf-8"))
+                            yield f"shm://{shm_name}\n"
+                        else:
+                            if router is not None:
+                                await router.send_chunk(
+                                    chunk.encode("utf-8"), lambda _: None
+                                )
+                            yield chunk
                 finally:
+                    if router is not None:
+                        router.stop()
                     # Append the new total token path back to the trie upon completion
                     await radix_cache.insert_prefix(original_prompt)
 
