@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import shutil
+import subprocess
 import tempfile
 
 logger = logging.getLogger(__name__)
@@ -178,3 +179,92 @@ class WorktreeManager:
                 )
 
         self._worktrees.pop(branch_name, None)
+
+    async def execute_in_sandbox(
+        self,
+        branch_name: str,
+        command: list[str],
+        image: str = "python:3.11-slim",
+    ) -> subprocess.CompletedProcess[bytes]:
+        """Execute a command in a sandboxed Docker container.
+
+        Mounts the worktree of the specified branch as a read-write volume
+        mapped to /workspace inside the container. Runs with constraints:
+        non-root user (if host user is not root), 512MB memory limit,
+        no host network, and a strict 60 seconds timeout.
+
+        Args:
+            branch_name: Name of the git branch associated with the worktree.
+            command: Command list to execute in the sandbox.
+            image: Docker image name to run.
+
+        Returns:
+            subprocess.CompletedProcess containing the execution results.
+
+        Raises:
+            ValueError: If no worktree is found for the branch.
+            asyncio.TimeoutError: If execution exceeds 60 seconds.
+        """
+        worktree_path = self._worktrees.get(branch_name)
+        if not worktree_path:
+            raise ValueError(f"No active worktree found for branch: {branch_name}")
+
+        docker_cmd = [
+            "docker",
+            "run",
+            "--rm",
+            "-v",
+            f"{worktree_path}:/workspace",
+            "-w",
+            "/workspace",
+            "--memory",
+            "512m",
+            "--network",
+            "none",
+        ]
+
+        # Use non-root user matching host user's UID and GID where possible
+        if hasattr(os, "getuid") and hasattr(os, "getgid"):
+            uid = os.getuid()
+            gid = os.getgid()
+            if uid != 0:
+                docker_cmd.extend(["--user", f"{uid}:{gid}"])
+
+        docker_cmd.append(image)
+        docker_cmd.extend(command)
+
+        logger.info(
+            "Executing sandboxed command on branch %s with cmd: %s",
+            branch_name,
+            docker_cmd,
+        )
+
+        proc = await asyncio.create_subprocess_exec(
+            *docker_cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60.0)
+            returncode = proc.returncode if proc.returncode is not None else 0
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Sandboxed execution timed out on branch %s. Killing process...",
+                branch_name,
+            )
+            try:
+                proc.kill()
+            except Exception as e:
+                logger.error("Failed to kill sandboxed process: %s", str(e))
+            stdout, stderr = await proc.communicate()
+            raise asyncio.TimeoutError(
+                "Sandbox execution exceeded timeout limit."
+            ) from None
+
+        return subprocess.CompletedProcess(
+            args=docker_cmd,
+            returncode=returncode,
+            stdout=stdout,
+            stderr=stderr,
+        )

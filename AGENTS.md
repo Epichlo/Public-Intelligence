@@ -233,3 +233,5 @@ Short-term convenience should never compromise the long-term design of the syste
 - Integrated `ZenohHeartbeatClient` into the Node lifecycle and the periodic `_heartbeat_loop` in `src/node/runtime.py`.
 - Declared a Zenoh Liveliness token monitoring path `public-intelligence/net/liveliness/<node_id>` inside `ZenohHeartbeatClient` on startup, which automatically cleans up and triggers DELETE events (deathrattles) on session shutdown or abrupt drop.
 - Wrote unit tests in `tests/test_zenoh_client.py` to verify the declaration and cleanup of the liveliness token, and patched/mocked the client inside `tests/test_runtime.py`.
+- Extended `WorktreeManager` class in `src/node/core/runtime.py` with a Docker execution harness (`execute_in_sandbox`) supporting non-root context, 512MB memory limit, 60s timeout, and host network isolation.
+- Added integration tests in `tests/test_worktree_manager.py` to verify sandboxed runtimes, network isolation, and escape prevention.
