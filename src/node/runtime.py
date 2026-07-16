@@ -9,7 +9,7 @@ from contextlib import suppress
 from datetime import datetime, timezone
 from typing import Any
 
-from node.clients import OllamaClient, SchedulerClient
+from node.clients import OllamaClient, SchedulerClient, ZenohHeartbeatClient
 from node.core.configuration import Settings
 from node.models import Heartbeat, NodeInfo
 
@@ -24,6 +24,7 @@ class Runtime:
         settings: Settings,
         scheduler_client: SchedulerClient | None = None,
         ollama_client: OllamaClient | None = None,
+        zenoh_client: ZenohHeartbeatClient | None = None,
     ) -> None:
         """Initialize the Runtime.
 
@@ -31,10 +32,12 @@ class Runtime:
             settings: Loaded configuration settings.
             scheduler_client: Optional pre-configured Scheduler client.
             ollama_client: Optional pre-configured Ollama client.
+            zenoh_client: Optional pre-configured Zenoh heartbeat client.
         """
         self.settings = settings
         self.scheduler_client = scheduler_client or SchedulerClient(settings)
         self.ollama_client = ollama_client or OllamaClient(settings)
+        self.zenoh_client = zenoh_client or ZenohHeartbeatClient(settings)
         self.heartbeat_task: asyncio.Task[None] | None = None
         self.is_running = False
 
@@ -62,6 +65,9 @@ class Runtime:
             # 3. Register with Scheduler
             await self.scheduler_client.register(node_info)
 
+            # 3.5. Start Zenoh heartbeat client
+            self.zenoh_client.start()
+
             # 4. Start periodic heartbeats
             self.heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         except Exception:
@@ -80,6 +86,10 @@ class Runtime:
             with suppress(asyncio.CancelledError):
                 await self.heartbeat_task
             self.heartbeat_task = None
+
+        # Stop Zenoh heartbeat client
+        with suppress(Exception):
+            self.zenoh_client.stop()
 
         # Unregister from Scheduler (graceful, ignore errors)
         with suppress(Exception):
@@ -104,6 +114,15 @@ class Runtime:
                     "Heartbeat sent successfully for node: %s",
                     self.settings.node_id,
                 )
+
+                try:
+                    self.zenoh_client.publish(hb)
+                    logger.info(
+                        "Heartbeat published via Zenoh successfully for node: %s",
+                        self.settings.node_id,
+                    )
+                except Exception as ze:
+                    logger.error("Failed to publish heartbeat via Zenoh: %s", ze)
             except Exception as e:
                 logger.error("Failed to send heartbeat: %s", e)
 

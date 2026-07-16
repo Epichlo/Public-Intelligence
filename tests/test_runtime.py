@@ -1,7 +1,7 @@
 """Tests for the Runtime module."""
 
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -38,17 +38,25 @@ def mock_ollama_client() -> AsyncMock:
     return mock
 
 
+@pytest.fixture
+def mock_zenoh_client() -> MagicMock:
+    """Fixture to provide a mocked ZenohHeartbeatClient."""
+    return MagicMock()
+
+
 @pytest.mark.anyio
 async def test_runtime_successful_startup(
     settings: Settings,
     mock_scheduler_client: AsyncMock,
     mock_ollama_client: AsyncMock,
+    mock_zenoh_client: MagicMock,
 ) -> None:
     """Verify that start registers the node and launches the heartbeat task."""
     runtime = Runtime(
         settings=settings,
         scheduler_client=mock_scheduler_client,
         ollama_client=mock_ollama_client,
+        zenoh_client=mock_zenoh_client,
     )
 
     try:
@@ -69,6 +77,7 @@ async def test_runtime_registration_failure(
     settings: Settings,
     mock_scheduler_client: AsyncMock,
     mock_ollama_client: AsyncMock,
+    mock_zenoh_client: MagicMock,
 ) -> None:
     """Verify start propagates registration exceptions and resets running status."""
     mock_scheduler_client.register.side_effect = Exception("Registration rejected")
@@ -77,6 +86,7 @@ async def test_runtime_registration_failure(
         settings=settings,
         scheduler_client=mock_scheduler_client,
         ollama_client=mock_ollama_client,
+        zenoh_client=mock_zenoh_client,
     )
 
     with pytest.raises(Exception, match="Registration rejected"):
@@ -91,6 +101,7 @@ async def test_heartbeat_loop_execution(
     settings: Settings,
     mock_scheduler_client: AsyncMock,
     mock_ollama_client: AsyncMock,
+    mock_zenoh_client: MagicMock,
 ) -> None:
     """Verify that the heartbeat loop periodically sends heartbeats."""
 
@@ -104,6 +115,7 @@ async def test_heartbeat_loop_execution(
             settings=settings,
             scheduler_client=mock_scheduler_client,
             ollama_client=mock_ollama_client,
+            zenoh_client=mock_zenoh_client,
         )
 
         try:
@@ -120,12 +132,14 @@ async def test_graceful_shutdown(
     settings: Settings,
     mock_scheduler_client: AsyncMock,
     mock_ollama_client: AsyncMock,
+    mock_zenoh_client: MagicMock,
 ) -> None:
     """Verify that stop cancels task, unregisters, and marks running as False."""
     runtime = Runtime(
         settings=settings,
         scheduler_client=mock_scheduler_client,
         ollama_client=mock_ollama_client,
+        zenoh_client=mock_zenoh_client,
     )
 
     await runtime.start()
@@ -147,6 +161,7 @@ async def test_graceful_shutdown_unregister_failure(
     settings: Settings,
     mock_scheduler_client: AsyncMock,
     mock_ollama_client: AsyncMock,
+    mock_zenoh_client: MagicMock,
 ) -> None:
     """Verify shutdown is still graceful when Scheduler unregister raises an error."""
     mock_scheduler_client.unregister.side_effect = SchedulerError(
@@ -157,6 +172,7 @@ async def test_graceful_shutdown_unregister_failure(
         settings=settings,
         scheduler_client=mock_scheduler_client,
         ollama_client=mock_ollama_client,
+        zenoh_client=mock_zenoh_client,
     )
 
     await runtime.start()

@@ -228,3 +228,7 @@ Short-term convenience should never compromise the long-term design of the syste
 - Added support for `worktree_target_branch` in `InferenceRequest` payloads to map agent tasks to clean repository branches.
 - Created `docs/AUTOMATION_WORKFLOW.md` specifying n8n JSON nodes and GitHub webhook pipeline parameters (`issue.title`, `issue.body`, `repository.clone_url`).
 - Synchronized and marked Phase 1 foundational milestone and Version 1.0 specifications as fully completed and production-ready.
+- Added `eclipse-zenoh` core transport dependency to support peer-to-peer node heartbeats.
+- Created `ZenohHeartbeatClient` class inside `src/node/clients/zenoh_heartbeat.py` to open a Zenoh session and publish serialized metrics to the node's dedicated key expression path (`public-intelligence/net/<node_id>/heartbeat`).
+- Integrated `ZenohHeartbeatClient` into the Node lifecycle and the periodic `_heartbeat_loop` in `src/node/runtime.py`.
+- Wrote unit tests in `tests/test_zenoh_client.py` and patched/mocked the client inside `tests/test_runtime.py`.
