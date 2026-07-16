@@ -18,6 +18,10 @@ class InferenceRequest(BaseModel):
         default=False,
         description="Whether to stream the response chunks.",
     )
+    worktree_target_branch: str | None = Field(
+        default=None,
+        description="Optional branch name to map the query to a clean git worktree.",
+    )
 
     @field_validator("model", "prompt")
     @classmethod
@@ -26,6 +30,14 @@ class InferenceRequest(BaseModel):
         if not v.strip():
             raise ValueError("Value cannot be empty or whitespace-only.")
         return v.strip()
+
+    @field_validator("worktree_target_branch")
+    @classmethod
+    def validate_branch_name(cls, v: str | None) -> str | None:
+        """Validate that the branch name is not empty or whitespace-only if provided."""
+        if v is not None and not v.strip():
+            raise ValueError("Branch name cannot be empty or whitespace-only.")
+        return v.strip() if v is not None else None
 
 
 class InferenceResponse(BaseModel):
