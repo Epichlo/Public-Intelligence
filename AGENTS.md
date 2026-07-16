@@ -221,3 +221,10 @@ Short-term convenience should never compromise the long-term design of the syste
 - Implemented inter-service token validation using a secure `X-Network-Auth-Token` header.
 - Added `NETWORK_AUTH_TOKEN` (alias `NODE_NETWORK_AUTH_TOKEN`) environment variable configuration.
 - Secured registration, heartbeat, and scheduling endpoints under dependency validation.
+
+## 2026-07-17
+
+- Created programmatic `WorktreeManager` class for secure Git worktree sandboxed isolation on agent execution paths.
+- Added support for `worktree_target_branch` in `InferenceRequest` payloads to map agent tasks to clean repository branches.
+- Created `docs/AUTOMATION_WORKFLOW.md` specifying n8n JSON nodes and GitHub webhook pipeline parameters (`issue.title`, `issue.body`, `repository.clone_url`).
+- Synchronized and marked Phase 1 foundational milestone and Version 1.0 specifications as fully completed and production-ready.
