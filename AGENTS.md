@@ -231,4 +231,5 @@ Short-term convenience should never compromise the long-term design of the syste
 - Added `eclipse-zenoh` core transport dependency to support peer-to-peer node heartbeats.
 - Created `ZenohHeartbeatClient` class inside `src/node/clients/zenoh_heartbeat.py` to open a Zenoh session and publish serialized metrics to the node's dedicated key expression path (`public-intelligence/net/<node_id>/heartbeat`).
 - Integrated `ZenohHeartbeatClient` into the Node lifecycle and the periodic `_heartbeat_loop` in `src/node/runtime.py`.
-- Wrote unit tests in `tests/test_zenoh_client.py` and patched/mocked the client inside `tests/test_runtime.py`.
+- Declared a Zenoh Liveliness token monitoring path `public-intelligence/net/liveliness/<node_id>` inside `ZenohHeartbeatClient` on startup, which automatically cleans up and triggers DELETE events (deathrattles) on session shutdown or abrupt drop.
+- Wrote unit tests in `tests/test_zenoh_client.py` to verify the declaration and cleanup of the liveliness token, and patched/mocked the client inside `tests/test_runtime.py`.

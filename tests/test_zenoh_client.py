@@ -27,6 +27,10 @@ def test_zenoh_client_start_stop(settings: Settings) -> None:
     with patch("zenoh.open") as mock_open:
         mock_session = MagicMock()
         mock_open.return_value = mock_session
+        mock_liveliness = MagicMock()
+        mock_session.liveliness.return_value = mock_liveliness
+        mock_token = MagicMock()
+        mock_liveliness.declare_token.return_value = mock_token
 
         client.start()
 
@@ -35,10 +39,16 @@ def test_zenoh_client_start_stop(settings: Settings) -> None:
         mock_session.declare_publisher.assert_called_once_with(
             "public-intelligence/net/test-node-zenoh/heartbeat"
         )
+        mock_liveliness.declare_token.assert_called_once_with(
+            "public-intelligence/net/liveliness/test-node-zenoh"
+        )
+        assert client.liveliness_token is mock_token
 
         # Stop client
         client.stop()
         assert client.session is None
+        assert client.liveliness_token is None
+        mock_token.undeclare.assert_called_once()
         mock_session.close.assert_called_once()
 
 
