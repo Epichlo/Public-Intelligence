@@ -235,3 +235,6 @@ Short-term convenience should never compromise the long-term design of the syste
 - Wrote unit tests in `tests/test_zenoh_client.py` to verify the declaration and cleanup of the liveliness token, and patched/mocked the client inside `tests/test_runtime.py`.
 - Extended `WorktreeManager` class in `src/node/core/runtime.py` with a Docker execution harness (`execute_in_sandbox`) supporting non-root context, 512MB memory limit, 60s timeout, and host network isolation.
 - Added integration tests in `tests/test_worktree_manager.py` to verify sandboxed runtimes, network isolation, and escape prevention.
+- Implemented character-level `RadixTrieCache` in `src/node/core/radix_cache.py` supporting bounded LRU node eviction at 500 prompts.
+- Hooked `RadixTrieCache` into `/infer` endpoint inside `src/node/api/inference.py` to intercept prefixes and route only suffixes to Ollama.
+- Wrote unit/integration tests in `tests/test_radix_cache.py` verifying lookup matches, eviction, and suffix API routing.
