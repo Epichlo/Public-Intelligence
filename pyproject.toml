@@ -17,6 +17,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "ollama>=0.2.0",
     "eclipse-zenoh",
+    "cryptography",
 ]
 
 [project.optional-dependencies]

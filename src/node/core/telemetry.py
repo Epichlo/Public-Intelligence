@@ -1,6 +1,9 @@
-"""Telemetry metrics emitter module for Node."""
+"""Telemetry metrics emitter module for Node with AES-256-GCM encryption."""
 
 import asyncio
+import base64
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -10,7 +13,51 @@ from contextlib import suppress
 from datetime import datetime, timezone
 from typing import Any
 
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
 logger = logging.getLogger(__name__)
+
+
+def derive_keys(secret_str: str) -> tuple[bytes, bytes]:
+    """Derive 32-byte encryption and HMAC keys from a pre-shared secret string.
+
+    Args:
+        secret_str: Pre-shared key string.
+
+    Returns:
+        A tuple of (encryption_key, hmac_key) as bytes.
+    """
+    secret_bytes = secret_str.encode("utf-8")
+    enc_key = hashlib.sha256(secret_bytes + b"-encryption").digest()
+    hmac_key = hashlib.sha256(secret_bytes + b"-hmac").digest()
+    return enc_key, hmac_key
+
+
+def encrypt_payload(payload_str: str, secret_str: str) -> dict[str, str]:
+    """Encrypt a plaintext payload string using AES-256-GCM and sign with SHA-256 HMAC.
+
+    Args:
+        payload_str: Plaintext payload string.
+        secret_str: Pre-shared key string.
+
+    Returns:
+        A dictionary representation of the authenticated envelope.
+    """
+    enc_key, hmac_key = derive_keys(secret_str)
+
+    # 1. AESGCM Encryption
+    aesgcm = AESGCM(enc_key)
+    iv = os.urandom(12)  # Standard 12-byte IV for GCM
+    ciphertext = aesgcm.encrypt(iv, payload_str.encode("utf-8"), None)
+
+    iv_b64 = base64.b64encode(iv).decode("utf-8")
+    ciphertext_b64 = base64.b64encode(ciphertext).decode("utf-8")
+
+    # 2. SHA-256 HMAC Signature
+    message_to_sign = f"{iv_b64}:{ciphertext_b64}".encode()
+    sig = hmac.new(hmac_key, message_to_sign, hashlib.sha256).hexdigest()
+
+    return {"iv": iv_b64, "ciphertext": ciphertext_b64, "signature": sig}
 
 
 def get_cpu_utilization() -> float:
@@ -86,7 +133,10 @@ def get_ram_usage_bytes() -> int:
 
 
 class TelemetryEmitter:
-    """Background emitter publishing node utilization metrics to Zenoh every 5s."""
+    """Background emitter publishing encrypted node utilization metrics to Zenoh.
+
+    Runs every 5 seconds.
+    """
 
     def __init__(self, node_id: str, zenoh_session: Any, interval: float = 5.0) -> None:
         """Initialize the TelemetryEmitter.
@@ -123,6 +173,9 @@ class TelemetryEmitter:
 
     async def _loop(self) -> None:
         """Background loop executing every interval."""
+        secret_key = os.environ.get(
+            "TELEMETRY_SECRET_KEY", "pi_telemetry_secure_default_secret_key"
+        )
         while self.is_running:
             try:
                 metrics = {
@@ -133,12 +186,16 @@ class TelemetryEmitter:
                     "gpu_utilization": 0.0,
                     "vram_usage_bytes": 0,
                 }
-                payload = json.dumps(metrics)
+                plaintext = json.dumps(metrics)
+                # Encrypt and package inside envelope
+                envelope = encrypt_payload(plaintext, secret_key)
+                payload = json.dumps(envelope)
+
                 if self.zenoh_session is not None:
                     self.zenoh_session.put(self.topic, payload)
-                    logger.debug("Emitted telemetry to topic %s", self.topic)
+                    logger.debug("Emitted encrypted telemetry to topic %s", self.topic)
             except Exception as e:
-                logger.error("Failed to emit telemetry: %s", e)
+                logger.error("Failed to emit encrypted telemetry: %s", e)
 
             try:
                 await asyncio.sleep(self.interval)
