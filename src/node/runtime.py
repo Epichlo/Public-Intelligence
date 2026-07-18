@@ -172,3 +172,27 @@ class Runtime:
             "gpu_utilization": 0.0,
             "vram_available_gb": 0.0,
         }
+
+if __name__ == "__main__":
+    import sys
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    
+    async def main():
+        settings = Settings()
+        runtime = Runtime(settings)
+        print("🚀 Worker Node starting up...")
+        await runtime.start()
+        print("📢 Node registered and running background loops. Press Ctrl+C to stop.")
+        try:
+            while True:
+                await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            await runtime.stop()
+
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n👋 Node shutting down gracefully.")
+        sys.exit(0)
