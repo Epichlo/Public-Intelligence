@@ -11,6 +11,7 @@ from typing import Any
 
 from node.clients import OllamaClient, SchedulerClient, ZenohHeartbeatClient
 from node.core.configuration import Settings
+from node.core.telemetry import TelemetryEmitter
 from node.models import Heartbeat, NodeInfo
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,7 @@ class Runtime:
         self.ollama_client = ollama_client or OllamaClient(settings)
         self.zenoh_client = zenoh_client or ZenohHeartbeatClient(settings)
         self.heartbeat_task: asyncio.Task[None] | None = None
+        self.telemetry_emitter: TelemetryEmitter | None = None
         self.is_running = False
 
     async def start(self) -> None:
@@ -68,6 +70,13 @@ class Runtime:
             # 3.5. Start Zenoh heartbeat client
             self.zenoh_client.start()
 
+            # 3.6. Start telemetry emitter
+            if self.zenoh_client.session is not None:
+                self.telemetry_emitter = TelemetryEmitter(
+                    self.settings.node_id, self.zenoh_client.session
+                )
+                self.telemetry_emitter.start()
+
             # 4. Start periodic heartbeats
             self.heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         except Exception:
@@ -86,6 +95,12 @@ class Runtime:
             with suppress(asyncio.CancelledError):
                 await self.heartbeat_task
             self.heartbeat_task = None
+
+        # Stop telemetry emitter
+        if self.telemetry_emitter is not None:
+            with suppress(Exception):
+                await self.telemetry_emitter.stop()
+            self.telemetry_emitter = None
 
         # Stop Zenoh heartbeat client
         with suppress(Exception):

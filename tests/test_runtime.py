@@ -181,3 +181,64 @@ async def test_graceful_shutdown_unregister_failure(
 
     assert runtime.is_running is False
     mock_scheduler_client.unregister.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_telemetry_emitter_lifecycle() -> None:
+    """Verify that TelemetryEmitter collects and publishes data, and can be stopped."""
+    import json
+
+    import zenoh
+
+    from node.core.telemetry import (
+        TelemetryEmitter,
+        get_cpu_utilization,
+        get_ram_usage_bytes,
+    )
+
+    # Basic system metric collection check
+    cpu = get_cpu_utilization()
+    ram = get_ram_usage_bytes()
+    assert 0.0 <= cpu <= 100.0
+    assert ram >= 0
+
+    # Start mock Zenoh session for loopback testing
+    config = zenoh.Config()
+    config.insert_json5("scouting/multicast/enabled", "false")
+
+    with zenoh.open(config) as session:
+        emitter = TelemetryEmitter(
+            node_id="test-node-telemetry",
+            zenoh_session=session,
+            interval=0.1,
+        )
+
+        # We subscribe to the topic to see if the emitter publishes data
+        received_payloads = []
+
+        def on_sample(sample: zenoh.Sample) -> None:
+            try:
+                payload_str = sample.payload.to_string()
+            except AttributeError:
+                try:
+                    payload_str = sample.payload.decode("utf-8")  # type: ignore[attr-defined]
+                except (AttributeError, UnicodeDecodeError):
+                    payload_str = str(sample.payload)
+            received_payloads.append(payload_str)
+
+        sub = session.declare_subscriber(emitter.topic, on_sample)
+
+        emitter.start()
+        # Wait a moment for at least one emission
+        await asyncio.sleep(0.3)
+        await emitter.stop()
+
+        assert len(received_payloads) > 0
+        data = json.loads(received_payloads[0])
+        assert data["node_id"] == "test-node-telemetry"
+        assert "cpu_utilization" in data
+        assert "ram_usage_bytes" in data
+        assert data["gpu_utilization"] == 0.0
+        assert data["vram_usage_bytes"] == 0
+
+        sub.undeclare()
