@@ -43,6 +43,15 @@ class Runtime:
         self.telemetry_emitter: TelemetryEmitter | None = None
         self.is_running = False
 
+        from src.shared.storage.local import LocalDiskArtifactStore
+
+        from node.backends.base import InferenceBackend
+
+        self.inference_backend: InferenceBackend | None = None
+        self.artifact_store = LocalDiskArtifactStore()
+        self.task_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        self.worker_task: asyncio.Task[None] | None = None
+
     async def start(self) -> None:
         """Start the runtime by registering and starting background tasks."""
         if self.is_running:
@@ -79,6 +88,9 @@ class Runtime:
 
             # 4. Start periodic heartbeats
             self.heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+
+            # 5. Start task consumer worker loop
+            self.worker_task = asyncio.create_task(self._worker_loop())
         except Exception:
             self.is_running = False
             raise
@@ -96,6 +108,13 @@ class Runtime:
                 await self.heartbeat_task
             self.heartbeat_task = None
 
+        # Cancel task consumer worker task
+        if self.worker_task is not None:
+            self.worker_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self.worker_task
+            self.worker_task = None
+
         # Stop telemetry emitter
         if self.telemetry_emitter is not None:
             with suppress(Exception):
@@ -109,6 +128,57 @@ class Runtime:
         # Unregister from Scheduler (graceful, ignore errors)
         with suppress(Exception):
             await self.scheduler_client.unregister(self.settings.node_id)
+
+    async def _worker_loop(self) -> None:
+        """Background task consumer that processes tasks using the inference backend."""
+        import json
+
+        while self.is_running:
+            try:
+                task = await self.task_queue.get()
+                task_id = task["task_id"]
+                model_name = task.get("model_name") or task.get("model", "echo")
+                prompt = task["prompt"]
+                options = task.get("options")
+
+                # Setup default EchoBackend if none configured
+                if self.inference_backend is None:
+                    from node.backends.mock import EchoBackend
+
+                    self.inference_backend = EchoBackend()
+
+                # 1. Execute run pass using InferenceBackend client
+                output = await self.inference_backend.generate(
+                    model=model_name, prompt=prompt, options=options
+                )
+
+                # 2. Save generated response to ArtifactStore
+                metadata = await self.artifact_store.save_artifact(
+                    task_id=task_id,
+                    data=output.encode("utf-8"),
+                    metadata={
+                        "model": model_name,
+                        "prompt_length": len(prompt),
+                    },
+                )
+
+                # 3. Report only the resulting ArtifactMetadata block via Zenoh
+                if self.zenoh_client.session is not None:
+                    path = f"public-intelligence/net/tasks/{task_id}/result"
+                    self.zenoh_client.session.put(
+                        path, json.dumps(metadata.model_dump())
+                    )
+
+                self.task_queue.task_done()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(
+                    "Error executing task in worker processor loop: %s",
+                    e,
+                    exc_info=True,
+                )
+                await async_sleep(0.1)
 
     async def _heartbeat_loop(self) -> None:
         """Periodic background loop that sends heartbeats to the Scheduler."""
@@ -173,11 +243,16 @@ class Runtime:
             "vram_available_gb": 0.0,
         }
 
+
 if __name__ == "__main__":
     import sys
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-    
-    async def main():
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+
+    async def main() -> None:
         settings = Settings()
         runtime = Runtime(settings)
         print("🚀 Worker Node starting up...")
