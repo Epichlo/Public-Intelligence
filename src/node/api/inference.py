@@ -74,29 +74,45 @@ async def infer(
                 router = None
                 session_id = uuid.uuid4().hex[:8]
 
-                # Setup WAN backpressured stream router if not local
-                if not is_local and zenoh_session is not None:
+                # Setup backpressured stream router if zenoh_session is active
+                if zenoh_session is not None:
                     from node.core.transport import BackpressuredStreamRouter
 
                     router = BackpressuredStreamRouter(session_id, zenoh_session)
                     yield f"session_id: {session_id}\n"
 
+                created_shms = []
                 try:
                     from node.core.transport import SharedMemoryIPC
 
                     async for chunk in generator:
+                        chunk_bytes = chunk.encode("utf-8")
                         if is_local:
-                            shm_name = SharedMemoryIPC.write_data(chunk.encode("utf-8"))
-                            yield f"shm://{shm_name}\n"
+                            if router is not None:
+                                token_bytes = await router.send_chunk(
+                                    chunk_bytes,
+                                    is_local=True,
+                                )
+                                token = token_bytes.decode("utf-8")
+                            else:
+                                shm_name = SharedMemoryIPC.write_data(chunk_bytes)
+                                token = f"shm://{shm_name}"
+                            created_shms.append(token.split("shm://")[-1])
+                            yield f"{token}\n"
                         else:
                             if router is not None:
                                 await router.send_chunk(
-                                    chunk.encode("utf-8"), lambda _: None
+                                    chunk_bytes,
+                                    is_local=False,
                                 )
                             yield chunk
                 finally:
                     if router is not None:
                         router.stop()
+                    from node.core.transport import SharedMemoryIPC
+
+                    for shm in created_shms:
+                        SharedMemoryIPC.cleanup(shm)
                     # Append the new total token path back to the trie upon completion
                     await radix_cache.insert_prefix(original_prompt)
 

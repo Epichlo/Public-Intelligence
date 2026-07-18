@@ -2,12 +2,15 @@
 
 import asyncio
 import json
+import logging
 import uuid
 from collections.abc import Callable
 from multiprocessing import shared_memory
 from typing import Any
 
 import zenoh
+
+logger = logging.getLogger(__name__)
 
 
 class SharedMemoryIPC:
@@ -61,8 +64,8 @@ class SharedMemoryIPC:
             shm = shared_memory.SharedMemory(name=name)
             shm.close()
             shm.unlink()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("SharedMemory cleanup failed for %s: %s", name, e)
 
 
 class BackpressuredStreamRouter:
@@ -86,8 +89,15 @@ class BackpressuredStreamRouter:
         self._ack_event = asyncio.Event()
 
         self.ack_topic = f"public-intelligence/net/transport/ack/{self.session_id}"
-        self.subscriber: zenoh.Subscriber[Any] | None = self.zenoh_session.declare_subscriber(
-            self.ack_topic, self._on_ack
+        self.subscriber: zenoh.Subscriber[Any] | None = (
+            self.zenoh_session.declare_subscriber(self.ack_topic, self._on_ack)
+        )
+
+        self.stream_topic = (
+            f"public-intelligence/net/transport/stream/{self.session_id}"
+        )
+        self.publisher: zenoh.Publisher | None = self.zenoh_session.declare_publisher(
+            self.stream_topic
         )
 
     def _on_ack(self, sample: zenoh.Sample) -> None:
@@ -103,8 +113,10 @@ class BackpressuredStreamRouter:
             data = json.loads(payload_str)
             seq = data.get("seq", 0)
             self.receive_ack(seq)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(
+                "Failed to parse ACK json in session %s: %s", self.session_id, e
+            )
 
     def receive_ack(self, ack_seq: int) -> None:
         """Process incoming capacity acknowledgments from the consumer."""
@@ -112,29 +124,57 @@ class BackpressuredStreamRouter:
         self._ack_event.set()
 
     async def send_chunk(
-        self, chunk: bytes, publish_func: Callable[[bytes], Any]
-    ) -> None:
+        self,
+        chunk: bytes,
+        publish_func: Callable[[bytes], Any] | None = None,
+        is_local: bool = False,
+    ) -> bytes:
         """Send a chunk, blocking if the flow control window is full.
 
         Args:
             chunk: Binary payload chunk.
-            publish_func: Coroutine or function to transmit the chunk.
+            publish_func: Optional coroutine or function to transmit the chunk.
+            is_local: Whether the receiver is local (co-located).
+
+        Returns:
+            The payload that was transmitted (either the token or the raw chunk).
         """
         while self.sent_count - self.ack_count >= self.window_size:
             self._ack_event.clear()
             await self._ack_event.wait()
 
         self.sent_count += 1
-        res = publish_func(chunk)
-        if asyncio.iscoroutine(res):
-            await res
+
+        payload_to_send: bytes
+        if is_local:
+            shm_name = SharedMemoryIPC.write_data(chunk)
+            payload_to_send = f"shm://{shm_name}".encode()
+        else:
+            payload_to_send = chunk
+
+        if publish_func is not None:
+            res = publish_func(payload_to_send)
+            if asyncio.iscoroutine(res):
+                await res
+        elif self.publisher is not None:
+            self.publisher.put(payload_to_send)
+
+        return payload_to_send
 
     def stop(self) -> None:
-        """Undeclare Zenoh subscribers and stop the router."""
+        """Undeclare Zenoh subscribers and publishers, and stop the router."""
         if self.subscriber is not None:
             try:
                 if hasattr(self.subscriber, "undeclare"):
                     self.subscriber.undeclare()  # type: ignore[no-untyped-call]
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to undeclare subscriber: %s", e)
             self.subscriber = None
+
+        if self.publisher is not None:
+            try:
+                if hasattr(self.publisher, "undeclare"):
+                    self.publisher.undeclare()  # type: ignore[no-untyped-call]
+            except Exception as e:
+                logger.debug("Failed to undeclare publisher: %s", e)
+            self.publisher = None
