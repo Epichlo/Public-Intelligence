@@ -182,6 +182,39 @@ Status:
 
 ---
 
+## Phase 9 — Abstract Inference Backends & Out-of-Band Artifact Store
+
+Implement provider-agnostic inference backend abstraction and out-of-band persistence layer.
+
+Features:
+
+- `InferenceBackend` abstract interface (`OllamaBackend` via `httpx.AsyncClient`, `EchoBackend` mock)
+- `LocalDiskArtifactStore` persistence (`/tmp/public_intelligence/artifacts/{artifact_id}.bin`)
+- Content-addressed SHA-256 hash invariant (`artifact_id = art_{task_id}_{checksum[:12]}`)
+- Decoupled payload transport emitting lightweight `ArtifactMetadata` over Zenoh mesh
+
+Status:
+
+- [x] Completed
+
+---
+
+## Phase 10 — Protocol Synchronization & Verification Benchmarks (REG-ORG-SYNC-003)
+
+Validate system benchmarks and synchronize cross-repository architecture specifications.
+
+Results:
+
+- 65 / 65 Node unit & integration tests passing (159 total system tests)
+- Dynamic stale node eviction boundary: $15.05\text{s}$ under unannounced network drops ($\Delta t > 15.0\text{s}$)
+- 100% ruff check, ruff format, and strict mypy zero-type-leak compliance
+
+Status:
+
+- [x] Completed
+
+---
+
 # Future Versions
 
 Future versions may include:

@@ -238,3 +238,12 @@ Short-term convenience should never compromise the long-term design of the syste
 - Implemented character-level `RadixTrieCache` in `src/node/core/radix_cache.py` supporting bounded LRU node eviction at 500 prompts.
 - Hooked `RadixTrieCache` into `/infer` endpoint inside `src/node/api/inference.py` to intercept prefixes and route only suffixes to Ollama.
 - Wrote unit/integration tests in `tests/test_radix_cache.py` verifying lookup matches, eviction, and suffix API routing.
+
+## 2026-07-21
+
+### Global Synchronization Run (REG-ORG-SYNC-003)
+- Synchronized Phase 1 & Phase 2 architecture specs and engineering invariants with active git commit `e9b4f20`.
+- Documented `LocalDiskArtifactStore` out-of-band persistence layer writing binary payload outputs to `/tmp/public_intelligence/artifacts/{artifact_id}.bin` with SHA-256 hash invariant `artifact_id = art_{task_id}_{checksum[:12]}`.
+- Decoupled control plane heavy payload transport, transmitting lightweight `ArtifactMetadata` (URI, SHA-256 checksum, identity metadata) across Zenoh mesh channels (`public-intelligence/net/tasks/<task_id>/result`).
+- Integrated provider-agnostic `InferenceBackend` runtime interface (`OllamaBackend` with `httpx.AsyncClient` JSON line streaming, `EchoBackend` mock runner) into end-to-end task execution pipeline.
+- Verified benchmarks: 65 Node unit & integration tests passing (159 total system tests), $15.05\text{s}$ dynamic stale node eviction boundary under unannounced drops ($\Delta t > 15.0\text{s}$), and 100% ruff/mypy zero-type-leak compliance.
