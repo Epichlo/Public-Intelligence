@@ -7,7 +7,7 @@ import socket
 from asyncio import sleep as async_sleep
 from contextlib import suppress
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from node.clients import OllamaClient, SchedulerClient, ZenohHeartbeatClient
 from node.core.configuration import Settings
@@ -43,7 +43,13 @@ class Runtime:
         self.telemetry_emitter: TelemetryEmitter | None = None
         self.is_running = False
 
-        from src.shared.storage.local import LocalDiskArtifactStore
+        if TYPE_CHECKING:
+            from shared.storage.local import LocalDiskArtifactStore
+        else:
+            try:
+                from shared.storage.local import LocalDiskArtifactStore
+            except ModuleNotFoundError:
+                from src.shared.storage.local import LocalDiskArtifactStore
 
         from node.backends.base import InferenceBackend
 

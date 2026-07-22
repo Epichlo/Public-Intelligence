@@ -6,6 +6,7 @@ import os
 import shutil
 import tempfile
 from collections.abc import Generator
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -14,7 +15,14 @@ from scheduler.core.matchmaker import CapabilityMatchmaker
 from scheduler.models.node import GPUInfo
 from scheduler.models.node import Node as SchedulerNode
 from scheduler.registry.node_registry import NodeRegistry
-from src.shared.storage.local import LocalDiskArtifactStore
+
+if TYPE_CHECKING:
+    from shared.storage.local import LocalDiskArtifactStore
+else:
+    try:
+        from shared.storage.local import LocalDiskArtifactStore
+    except ModuleNotFoundError:
+        from src.shared.storage.local import LocalDiskArtifactStore
 
 from node.backends.mock import EchoBackend
 from node.core.configuration import Settings
