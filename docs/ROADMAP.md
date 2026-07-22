@@ -217,18 +217,15 @@ Status:
 
 # Future Versions
 
-Future versions may include:
+## Version 0.2 (Next Baseline — Phase 3)
+- Early CI/CD Agent Code Auditors (lint/type check agents validating MyPy strict typing, ruff layout compliance, and pytest regression suites on every PR).
 
-- Multiple inference backends.
-- Streaming responses (Completed).
-- Secure communication.
-- Authentication.
-- TLS.
-- GPU monitoring improvements.
-- Automatic model discovery.
-- Container deployment.
-- Kubernetes deployment.
-- Peer-to-peer networking.
+## Version 0.3 (Accelerated — Phase 3.5 / 4)
+- Web/Desktop Visual Dashboard (One-click host with VRAM/CPU gauges & interactive prompt playground).
+- P2P Model Parallelism across consumer GPUs (tensor layer sharding & sequential streaming).
+
+## Version 1.0 (Full Vision — Phase 5)
+- Fully autonomous self-improving fabric (agents analyze GitHub issues, run WAN tests, and merge verified PRs).
 
 These features are intentionally excluded from Version 1.0.
 
