@@ -24,7 +24,7 @@ This specification details the sequential architectural evolution of the Public 
 ### Phase 4: Global P2P WAN Networking & Pipeline Parallelism (v0.3 — Current Priority)
 - **Global P2P WAN Node Join & Discovery (Realized):** Exposed Zenoh WAN router endpoints and connection profiles enabling compute nodes behind home routers (NAT) and external WAN IPs to discover Schedulers and join the global network pool.
 - **NAT Traversal & Dynamic Routing (Realized):** Auto-bootstrap router fallbacks (`bootstrap_routers: tcp/bootstrap.public-intelligence.net:7447`), dynamic WAN gossip scouting (`scouting/gossip/enabled`), and AEAD-encrypted telemetry mesh operating seamlessly across residential NATs.
-- **Pipeline Parallelism (Layer Sharding - Next Step):** Large language model weight matrices are sharded across disparate physical nodes over P2P networks, passing activation tensors sequentially to execute models exceeding any single machine's VRAM.
+- **Pipeline Parallelism (Layer Sharding - Realized):** Large language model weight matrices sharded across disparate physical nodes over P2P networks, passing activation tensors sequentially to execute models exceeding any single machine's VRAM. Implemented `LayerRange`, `PipelineStage`, `TensorPayload` data models and `SchedulingEngine.schedule_pipeline()` multi-node chain allocator.
 
 ### Phase 4.5: Visual Control Plane & Web Dashboard (v0.35 — Next Step)
 - **Visual Control Plane (Web/Desktop Dashboard):**
