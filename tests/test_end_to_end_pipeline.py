@@ -67,6 +67,7 @@ async def test_end_to_end_pipeline(temp_base_dir: str) -> None:
         node_id="worker-node-1",
         hostname="localhost",
         region="us-west",
+        bootstrap_routers=[],
     )
 
     # Mock networking clients to isolate local test runtime

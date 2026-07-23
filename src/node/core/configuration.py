@@ -102,6 +102,26 @@ class Settings(BaseSettings):
         ),
         description="Additional Zenoh WAN peer endpoints for redundancy.",
     )
+    bootstrap_routers: list[str] = Field(
+        default_factory=lambda: ["tcp/bootstrap.public-intelligence.net:7447"],
+        validation_alias=AliasChoices("NODE_BOOTSTRAP_ROUTERS", "BOOTSTRAP_ROUTERS"),
+        description="Fallback Zenoh bootstrap routers for auto-joining WAN.",
+    )
+    zenoh_gossip_scouting: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "NODE_ZENOH_GOSSIP_SCOUTING", "ZENOH_GOSSIP_SCOUTING"
+        ),
+        description="Enable/disable Zenoh gossip scouting for dynamic WAN peer join.",
+    )
+    zenoh_connect_timeout_seconds: float = Field(
+        default=5.0,
+        description="Timeout in seconds for Zenoh peer connection attempts.",
+    )
+    zenoh_max_retry_interval_seconds: float = Field(
+        default=30.0,
+        description="Maximum retry interval in seconds for Zenoh reconnects.",
+    )
     zenoh_multicast_scouting: bool = Field(
         default=True,
         description="Enable/disable local LAN multicast scouting.",
@@ -199,10 +219,10 @@ class Settings(BaseSettings):
             parsed_items.append(item_str)
         return parsed_items
 
-    @field_validator("zenoh_peer_endpoints", mode="before")
+    @field_validator("zenoh_peer_endpoints", "bootstrap_routers", mode="before")
     @classmethod
     def parse_zenoh_peer_endpoints(cls, v: Any) -> list[str]:
-        """Parse list of zenoh peer endpoints from string, JSON, or list.
+        """Parse list of peer endpoints/bootstrap routers from string, JSON, or list.
 
         Raises ValueError if any endpoint is empty or whitespace-only.
         """
@@ -253,7 +273,11 @@ class Settings(BaseSettings):
             orig_env_decode = env_settings.decode_complex_value
 
             def custom_env_decode(field_name: str, field: Any, value: Any) -> Any:
-                if field_name in ("hosted_models", "zenoh_peer_endpoints"):
+                if field_name in (
+                    "hosted_models",
+                    "zenoh_peer_endpoints",
+                    "bootstrap_routers",
+                ):
                     try:
                         return json.loads(value)
                     except (ValueError, TypeError, json.JSONDecodeError):
@@ -267,7 +291,11 @@ class Settings(BaseSettings):
             orig_dotenv_decode = dotenv_settings.decode_complex_value
 
             def custom_dotenv_decode(field_name: str, field: Any, value: Any) -> Any:
-                if field_name in ("hosted_models", "zenoh_peer_endpoints"):
+                if field_name in (
+                    "hosted_models",
+                    "zenoh_peer_endpoints",
+                    "bootstrap_routers",
+                ):
                     try:
                         return json.loads(value)
                     except (ValueError, TypeError, json.JSONDecodeError):

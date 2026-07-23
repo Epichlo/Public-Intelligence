@@ -95,6 +95,7 @@ def test_zenoh_client_wan_configuration() -> None:
         node_id="test-node-wan",
         zenoh_router_url="tcp/router.public-intelligence.net:7447",
         zenoh_peer_endpoints=["tcp/peer1:7447"],
+        bootstrap_routers=["tcp/bootstrap.public-intelligence.net:7447"],
         zenoh_multicast_scouting=False,
     )
     client = ZenohHeartbeatClient(wan_settings)
@@ -109,8 +110,74 @@ def test_zenoh_client_wan_configuration() -> None:
 
         mock_config.insert_json5.assert_any_call(
             "connect/endpoints",
-            json.dumps(["tcp/router.public-intelligence.net:7447", "tcp/peer1:7447"]),
+            json.dumps(
+                [
+                    "tcp/router.public-intelligence.net:7447",
+                    "tcp/peer1:7447",
+                    "tcp/bootstrap.public-intelligence.net:7447",
+                ]
+            ),
         )
         mock_config.insert_json5.assert_any_call("mode", '"client"')
         mock_config.insert_json5.assert_any_call("scouting/multicast/enabled", "false")
+        mock_config.insert_json5.assert_any_call("scouting/gossip/enabled", "true")
+        client.stop()
+
+
+def test_zenoh_client_is_connected(settings: Settings) -> None:
+    client = ZenohHeartbeatClient(settings)
+    assert not client.is_connected()
+
+    with patch("zenoh.open") as mock_open:
+        mock_session = MagicMock()
+        mock_open.return_value = mock_session
+
+        client.start()
+        assert client.is_connected()
+
+        client.stop()
+        assert not client.is_connected()
+
+
+def test_zenoh_client_bootstrap_fallback_and_gossip_scouting() -> None:
+    bootstrap_settings = Settings(
+        node_id="test-node-bootstrap",
+        bootstrap_routers=["tcp/bootstrap.public-intelligence.net:7447"],
+        zenoh_gossip_scouting=True,
+    )
+    client = ZenohHeartbeatClient(bootstrap_settings)
+
+    with patch("zenoh.open") as mock_open, patch("zenoh.Config") as mock_config_cls:
+        mock_config = MagicMock()
+        mock_config_cls.return_value = mock_config
+        mock_session = MagicMock()
+        mock_open.return_value = mock_session
+
+        client.start()
+
+        mock_config.insert_json5.assert_any_call(
+            "connect/endpoints",
+            json.dumps(["tcp/bootstrap.public-intelligence.net:7447"]),
+        )
+        mock_config.insert_json5.assert_any_call("mode", '"client"')
+        mock_config.insert_json5.assert_any_call("scouting/gossip/enabled", "true")
+        client.stop()
+
+
+def test_zenoh_client_gossip_scouting_disabled() -> None:
+    disabled_settings = Settings(
+        node_id="test-node-gossip-disabled",
+        zenoh_gossip_scouting=False,
+    )
+    client = ZenohHeartbeatClient(disabled_settings)
+
+    with patch("zenoh.open") as mock_open, patch("zenoh.Config") as mock_config_cls:
+        mock_config = MagicMock()
+        mock_config_cls.return_value = mock_config
+        mock_session = MagicMock()
+        mock_open.return_value = mock_session
+
+        client.start()
+
+        mock_config.insert_json5.assert_any_call("scouting/gossip/enabled", "false")
         client.stop()

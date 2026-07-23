@@ -35,18 +35,26 @@ class ZenohHeartbeatClient:
         logger.info("Opening Zenoh session for heartbeat publication...")
         try:
             config = zenoh.Config()
-            connect_endpoints: list[str] = []
+            resolved_endpoints: list[str] = []
+            candidates: list[str] = []
             if self.settings.zenoh_router_url:
-                connect_endpoints.append(self.settings.zenoh_router_url)
-            if self.settings.zenoh_peer_endpoints:
-                connect_endpoints.extend(self.settings.zenoh_peer_endpoints)
+                candidates.append(self.settings.zenoh_router_url)
+            candidates.extend(self.settings.zenoh_peer_endpoints)
+            candidates.extend(self.settings.bootstrap_routers)
 
-            if connect_endpoints:
-                config.insert_json5("connect/endpoints", json.dumps(connect_endpoints))
+            for ep in candidates:
+                if ep and ep not in resolved_endpoints:
+                    resolved_endpoints.append(ep)
+
+            if resolved_endpoints:
+                config.insert_json5("connect/endpoints", json.dumps(resolved_endpoints))
                 config.insert_json5("mode", '"client"')
 
             if not self.settings.zenoh_multicast_scouting:
                 config.insert_json5("scouting/multicast/enabled", "false")
+
+            gossip_enabled = "true" if self.settings.zenoh_gossip_scouting else "false"
+            config.insert_json5("scouting/gossip/enabled", gossip_enabled)
 
             self.session = zenoh.open(config)
             self.publisher = self.session.declare_publisher(self._key_expr)
@@ -65,6 +73,14 @@ class ZenohHeartbeatClient:
             self.publisher = None
             self.liveliness_token = None
             raise
+
+    def is_connected(self) -> bool:
+        """Return whether the Zenoh session is active and connected.
+
+        Returns:
+            bool: True if session is active, False otherwise.
+        """
+        return self.session is not None
 
     def stop(self) -> None:
         """Close the Zenoh session and clean up."""
