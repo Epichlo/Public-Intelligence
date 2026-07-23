@@ -8,7 +8,8 @@ This specification details the sequential architectural evolution of the Public 
 | :--- | :--- | :--- | :--- |
 | **v0.1 (Realized)** | **Phases 0–2** | RS256 JWT auth, thread-safe token bucket rate-limiting, Two-Stage matchmaking, out-of-band SHA-256 persistence, 159 passing unit/integration assertions. | Asymmetric edge ingress proxy, Raft consensus core, decoupled control path with content-addressed `ArtifactStore`. |
 | **v0.2 (Realized)** | **Phase 3** | Zenoh P2P heartbeats, dynamic 15.05s stale worker eviction under WAN drops, **+ Antigravity Sub-Agent Development Governance**. | Asynchronous P2P telemetry mesh, AEAD encrypted telemetry envelopes, closed-loop sub-agent verification rules. |
-| **v0.3 (Next Horizon)** | **Phase 3.5 / 4** | **+ Web/Desktop Visual Dashboard (One-click host & prompt playground)**, Sandboxed Docker runtimes, P2P Model Parallelism across consumer GPUs. | Visual Control Plane (WebUI/Desktop App), container isolation, P2P tensor layer sharding & sequential streaming. |
+| **v0.3 (Next Priority)** | **Phase 4** | **Global P2P WAN Network Discovery & Node Join**, NAT Traversal, P2P Model Parallelism across consumer GPUs. | Public Zenoh router endpoints, P2P NAT traversal, tensor layer sharding & activation streaming over WAN. |
+| **v0.35 (Follow-up)** | **Phase 4.5** | **Web/Desktop Visual Control Plane (Interactive Playground & Host Dashboard)** reflecting live global network topology. | Visual Control Plane (WebUI/Desktop App), real-time global telemetry streaming, prompt playground. |
 | **v1.0 (Full Vision)** | **Phase 5** | Fully autonomous self-improving fabric (agents analyze GitHub issues, run WAN tests, and merge verified PRs). | LangGraph multi-agent orchestrator, n8n webhook event automation, self-correcting agent loops. |
 
 ---
@@ -20,12 +21,16 @@ This specification details the sequential architectural evolution of the Public 
 - **Stale Node Eviction Boundary:** Strict dynamic eviction enforced when heartbeat silence exceeds $15.05\text{s}$ ($\Delta t > 15.0\text{s}$).
 - **Antigravity Sub-Agent Governance:** Standardized sub-agent execution roles (`ORCHESTRATOR`, `ARCHITECT`, `CODER`, `AUDITOR`, `VERIFIER`) operating under shared project state, strict closed-loop verification (`pytest`, `ruff`, `mypy`), automated documentation logging, and git commit synchronization.
 
-### Phase 3.5 / Phase 4: Visual Control Plane & Pipeline Parallelism (v0.3)
-- **Visual Control Plane (Web/Desktop Dashboard):**
-  - *Contributor View:* One-click "Start Host Node" toggle with real-time VRAM/CPU gauges and sandbox health indicators.
-  - *Requester View:* Interactive prompt playground with live token streaming and API Key/JWT management.
-- **Sandboxed Ephemeral Execution:** Workloads executed inside memory-capped, network-restricted Docker containers or ephemeral Git worktrees to prevent host machine contamination.
+### Phase 4: Global P2P WAN Networking & Pipeline Parallelism (v0.3 — Current Priority)
+- **Global P2P WAN Node Join & Discovery:** Expose Zenoh WAN router endpoints and connection profiles enabling compute nodes behind home routers (NAT) and external WAN IPs to discover Schedulers and join the global network pool.
+- **NAT Traversal & Dynamic Routing:** Seamless peer-to-peer session establishment across WAN networks with AEAD-encrypted telemetry and sliding-window backpressured WAN streams.
 - **Pipeline Parallelism (Layer Sharding):** Large language model weight matrices are sharded across disparate physical nodes over P2P networks, passing activation tensors sequentially to execute models exceeding any single machine's VRAM.
+
+### Phase 4.5: Visual Control Plane & Web Dashboard (v0.35 — Next Step)
+- **Visual Control Plane (Web/Desktop Dashboard):**
+  - *Contributor View:* One-click "Start Host Node" toggle with real-time VRAM/CPU gauges, global WAN connection status, and sandbox health indicators.
+  - *Requester View:* Interactive prompt playground with live token streaming, model selection, and API Key/JWT management.
+- **Sandboxed Ephemeral Execution:** Workloads executed inside memory-capped, network-restricted Docker containers or ephemeral Git worktrees to prevent host machine contamination.
 
 ### Phase 5: Autonomous Self-Improving Fabric (v1.0)
 - **LangGraph Multi-Agent Orchestrator:** Closed-loop reasoning (Planner $\rightarrow$ Architect $\rightarrow$ Task Planner $\rightarrow$ Engineers $\rightarrow$ Reviewer $\rightarrow$ Verifier).
