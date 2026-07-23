@@ -22,9 +22,9 @@ This specification details the sequential architectural evolution of the Public 
 - **Antigravity Sub-Agent Governance:** Standardized sub-agent execution roles (`ORCHESTRATOR`, `ARCHITECT`, `CODER`, `AUDITOR`, `VERIFIER`) operating under shared project state, strict closed-loop verification (`pytest`, `ruff`, `mypy`), automated documentation logging, and git commit synchronization.
 
 ### Phase 4: Global P2P WAN Networking & Pipeline Parallelism (v0.3 — Current Priority)
-- **Global P2P WAN Node Join & Discovery:** Expose Zenoh WAN router endpoints and connection profiles enabling compute nodes behind home routers (NAT) and external WAN IPs to discover Schedulers and join the global network pool.
-- **NAT Traversal & Dynamic Routing:** Seamless peer-to-peer session establishment across WAN networks with AEAD-encrypted telemetry and sliding-window backpressured WAN streams.
-- **Pipeline Parallelism (Layer Sharding):** Large language model weight matrices are sharded across disparate physical nodes over P2P networks, passing activation tensors sequentially to execute models exceeding any single machine's VRAM.
+- **Global P2P WAN Node Join & Discovery (Realized):** Exposed Zenoh WAN router endpoints and connection profiles enabling compute nodes behind home routers (NAT) and external WAN IPs to discover Schedulers and join the global network pool.
+- **NAT Traversal & Dynamic Routing (Realized):** Auto-bootstrap router fallbacks (`bootstrap_routers: tcp/bootstrap.public-intelligence.net:7447`), dynamic WAN gossip scouting (`scouting/gossip/enabled`), and AEAD-encrypted telemetry mesh operating seamlessly across residential NATs.
+- **Pipeline Parallelism (Layer Sharding - Next Step):** Large language model weight matrices are sharded across disparate physical nodes over P2P networks, passing activation tensors sequentially to execute models exceeding any single machine's VRAM.
 
 ### Phase 4.5: Visual Control Plane & Web Dashboard (v0.35 — Next Step)
 - **Visual Control Plane (Web/Desktop Dashboard):**
