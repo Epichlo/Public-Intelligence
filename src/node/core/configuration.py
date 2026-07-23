@@ -89,6 +89,24 @@ class Settings(BaseSettings):
         description="Secure network authentication token.",
     )
 
+    # Zenoh WAN Networking
+    zenoh_router_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("NODE_ZENOH_ROUTER_URL", "ZENOH_ROUTER_URL"),
+        description="Primary Zenoh WAN router URL (e.g. tcp/router:7447).",
+    )
+    zenoh_peer_endpoints: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices(
+            "NODE_ZENOH_PEER_ENDPOINTS", "ZENOH_PEER_ENDPOINTS"
+        ),
+        description="Additional Zenoh WAN peer endpoints for redundancy.",
+    )
+    zenoh_multicast_scouting: bool = Field(
+        default=True,
+        description="Enable/disable local LAN multicast scouting.",
+    )
+
     model_config = SettingsConfigDict(
         env_prefix="NODE_",
         env_file=(
@@ -181,6 +199,39 @@ class Settings(BaseSettings):
             parsed_items.append(item_str)
         return parsed_items
 
+    @field_validator("zenoh_peer_endpoints", mode="before")
+    @classmethod
+    def parse_zenoh_peer_endpoints(cls, v: Any) -> list[str]:
+        """Parse list of zenoh peer endpoints from string, JSON, or list.
+
+        Raises ValueError if any endpoint is empty or whitespace-only.
+        """
+        raw_items: list[Any] = []
+        if isinstance(v, list):
+            raw_items = v
+        elif isinstance(v, str):
+            val = v.strip()
+            if not val:
+                return []
+            if val.startswith("[") and val.endswith("]"):
+                try:
+                    parsed = json.loads(val)
+                    raw_items = parsed if isinstance(parsed, list) else [val]
+                except json.JSONDecodeError:
+                    raw_items = [val]
+            else:
+                raw_items = val.split(",")
+        else:
+            return []
+
+        parsed_items: list[str] = []
+        for item in raw_items:
+            item_str = str(item).strip()
+            if not item_str:
+                raise ValueError("Peer endpoint cannot be empty or whitespace-only.")
+            parsed_items.append(item_str)
+        return parsed_items
+
     @classmethod
     def settings_customise_sources(
         cls,
@@ -202,7 +253,7 @@ class Settings(BaseSettings):
             orig_env_decode = env_settings.decode_complex_value
 
             def custom_env_decode(field_name: str, field: Any, value: Any) -> Any:
-                if field_name == "hosted_models":
+                if field_name in ("hosted_models", "zenoh_peer_endpoints"):
                     try:
                         return json.loads(value)
                     except (ValueError, TypeError, json.JSONDecodeError):
@@ -216,7 +267,7 @@ class Settings(BaseSettings):
             orig_dotenv_decode = dotenv_settings.decode_complex_value
 
             def custom_dotenv_decode(field_name: str, field: Any, value: Any) -> Any:
-                if field_name == "hosted_models":
+                if field_name in ("hosted_models", "zenoh_peer_endpoints"):
                     try:
                         return json.loads(value)
                     except (ValueError, TypeError, json.JSONDecodeError):

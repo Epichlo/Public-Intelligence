@@ -28,18 +28,19 @@ Repository State:
 - [x] Runtime (Phase 7)
 - [x] End-to-End Demonstration (Phase 8)
 - [x] Antigravity Sub-Agent Execution Governance (`AGENTS.md`)
+- [x] Global P2P WAN Node Join & WAN Endpoints Configuration (Phase 4)
 
 ---
 
 ## Current Task
 
-Phase 3 Realized. Core request scheduler, load balancing, Zenoh P2P heartbeats, and Antigravity sub-agent governance are fully operational. Transitioning to Phase 4 (Global P2P WAN Networking & Node Join).
+Phase 4 Global P2P WAN Networking underway. Zenoh client connect endpoints, router URL, and peer mesh parameters configured.
 
 ---
 
 ## Upcoming Features
 
-- Global P2P WAN Node Join & NAT Traversal (Phase 4)
+- NAT Traversal & Dynamic P2P WAN Sessions (Phase 4)
 - Pipeline Parallelism / Model Layer Sharding (Phase 4)
 - Visual Control Plane & Interactive Web Dashboard (Phase 4.5)
 

@@ -153,3 +153,18 @@ def test_network_auth_token_loading() -> None:
         get_settings.cache_clear()
         settings = get_settings()
         assert settings.network_auth_token == "global-secret"
+
+
+def test_zenoh_wan_configuration() -> None:
+    """Verify loading and parsing of Zenoh WAN configuration settings."""
+    env = {
+        "NODE_ZENOH_ROUTER_URL": "tcp/router.public-intelligence.net:7447",
+        "NODE_ZENOH_PEER_ENDPOINTS": "tcp/peer1:7447,tcp/peer2:7447",
+        "NODE_ZENOH_MULTICAST_SCOUTING": "False",
+    }
+    with patch.dict(os.environ, env, clear=True):
+        get_settings.cache_clear()
+        settings = get_settings()
+        assert settings.zenoh_router_url == "tcp/router.public-intelligence.net:7447"
+        assert settings.zenoh_peer_endpoints == ["tcp/peer1:7447", "tcp/peer2:7447"]
+        assert settings.zenoh_multicast_scouting is False

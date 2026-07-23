@@ -34,9 +34,21 @@ class ZenohHeartbeatClient:
 
         logger.info("Opening Zenoh session for heartbeat publication...")
         try:
-            # Open default Zenoh session
-            # (configured for WAN mesh discovery by default)
-            self.session = zenoh.open(zenoh.Config())
+            config = zenoh.Config()
+            connect_endpoints: list[str] = []
+            if self.settings.zenoh_router_url:
+                connect_endpoints.append(self.settings.zenoh_router_url)
+            if self.settings.zenoh_peer_endpoints:
+                connect_endpoints.extend(self.settings.zenoh_peer_endpoints)
+
+            if connect_endpoints:
+                config.insert_json5("connect/endpoints", json.dumps(connect_endpoints))
+                config.insert_json5("mode", '"client"')
+
+            if not self.settings.zenoh_multicast_scouting:
+                config.insert_json5("scouting/multicast/enabled", "false")
+
+            self.session = zenoh.open(config)
             self.publisher = self.session.declare_publisher(self._key_expr)
 
             # Declare liveliness token
