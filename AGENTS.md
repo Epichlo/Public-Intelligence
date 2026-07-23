@@ -46,6 +46,17 @@ Never begin implementation without understanding the current architecture.
 
 ---
 
+# Multi-Agent Sub-Agent Execution Governance
+
+Sub-agents (ORCHESTRATOR, ARCHITECT, CODER, AUDITOR, VERIFIER) operate under these strict invariants:
+
+1. **Shared Project State**: Read-only snapshot of current architecture; atomic reduction of changes.
+2. **Closed-Loop Verification**: Mandatory execution of `pytest`, `ruff check .`, `ruff format --check .`, and `mypy src` before considering work done.
+3. **Automated Documentation Loop**: Updating `docs/STATUS.md`, `docs/ROADMAP.md`, and appending to `AGENTS.md` event logs.
+4. **Git Commit**: Automatic staging (`git add .`) and conventional commits for passing implementations.
+
+---
+
 # Architecture Rules
 
 The architecture defined in the documentation is authoritative.

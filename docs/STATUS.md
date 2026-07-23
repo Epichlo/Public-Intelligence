@@ -27,7 +27,7 @@ Repository State:
 - [x] Inference API (Phase 6)
 - [x] Runtime (Phase 7)
 - [x] End-to-End Demonstration (Phase 8)
-- [x] In-Code Multi-Agent Orchestration Engine (`node.agent`) with atomic state transitions
+- [x] Antigravity Sub-Agent Execution Governance (`AGENTS.md`)
 
 ---
 
