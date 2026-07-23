@@ -18,6 +18,7 @@ This specification details the sequential architectural evolution of the Public 
 ### Phase 3: Telemetry Mesh & Automated Agent Code Auditors (v0.2)
 - **Zenoh Telemetry Pulse:** Compute nodes broadcast dynamic VRAM, RAM, and CPU state vectors out-of-band over `public-intelligence/net/nodes/<node_id>/telemetry` at 5.0s intervals.
 - **Stale Node Eviction Boundary:** Strict dynamic eviction enforced when heartbeat silence exceeds $15.05\text{s}$ ($\Delta t > 15.0\text{s}$).
+- **In-Code Multi-Agent Orchestrator:** Integrated `MultiAgentOrchestrator` engine into `Node` and `Scheduler` featuring `WorkerContext` task isolation, Pydantic delta models (`SharedStateDelta`), and `asyncio.Lock`-protected atomic state transitions ($S_{t+1} = S_t \oplus \Delta S_i$).
 - **Early Agent Loop:** Integration of automated CI/CD AI code review agents validating MyPy strict typing, `ruff` layout compliance, and pytest regression suites on every incoming pull request.
 
 ### Phase 3.5 / Phase 4: Visual Control Plane & Pipeline Parallelism (v0.3)
