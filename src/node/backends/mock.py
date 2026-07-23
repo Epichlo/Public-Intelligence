@@ -7,6 +7,7 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 from node.backends.base import InferenceBackend
+from node.models.sharding import PipelineStage
 
 
 class EchoBackend(InferenceBackend):
@@ -50,3 +51,27 @@ class EchoBackend(InferenceBackend):
             chunk = token if i == len(tokens) - 1 else token + " "
             yield chunk
             await asyncio.sleep(0.001)
+
+    async def execute_pipeline_stage(
+        self,
+        stage: PipelineStage,
+        input_tensors: Any | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> Any:
+        """Execute a single pipeline stage deterministically for testing.
+
+        Args:
+            stage: Target pipeline stage configuration.
+            input_tensors: Input payload from previous stage.
+            options: Execution control parameters.
+
+        Returns:
+            Mock output payload containing stage metadata and processed input.
+        """
+        return {
+            "stage_index": stage.stage_index,
+            "layer_range": (stage.layer_range.start_layer, stage.layer_range.end_layer),
+            "output_tensors": (
+                f"Mock output for stage {stage.stage_index} with input {input_tensors}"
+            ),
+        }

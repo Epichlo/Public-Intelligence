@@ -178,3 +178,55 @@ class BackpressuredStreamRouter:
             except Exception as e:
                 logger.debug("Failed to undeclare publisher: %s", e)
             self.publisher = None
+
+    @staticmethod
+    def get_tensor_topic(task_id: str, stage_index: int) -> str:
+        """Generate Zenoh topic string for transmitting tensor payloads.
+
+        Args:
+            task_id: Unique pipeline task identifier.
+            stage_index: Index of target pipeline stage.
+
+        Returns:
+            Zenoh topic string.
+        """
+        return get_tensor_topic(task_id, stage_index)
+
+    @staticmethod
+    def get_tensor_ack_topic(task_id: str, stage_index: int) -> str:
+        """Generate Zenoh topic string for receiving tensor payload ACKs.
+
+        Args:
+            task_id: Unique pipeline task identifier.
+            stage_index: Index of sending pipeline stage.
+
+        Returns:
+            Zenoh topic string.
+        """
+        return get_tensor_ack_topic(task_id, stage_index)
+
+
+def get_tensor_topic(task_id: str, stage_index: int) -> str:
+    """Generate Zenoh topic string for transmitting tensor payloads.
+
+    Args:
+        task_id: Unique pipeline task identifier.
+        stage_index: Index of target pipeline stage.
+
+    Returns:
+        Zenoh topic string.
+    """
+    return f"public-intelligence/net/tasks/{task_id}/tensors/{stage_index}"
+
+
+def get_tensor_ack_topic(task_id: str, stage_index: int) -> str:
+    """Generate Zenoh topic string for receiving tensor payload ACKs.
+
+    Args:
+        task_id: Unique pipeline task identifier.
+        stage_index: Index of sending pipeline stage.
+
+    Returns:
+        Zenoh topic string.
+    """
+    return f"public-intelligence/net/tasks/{task_id}/tensors/{stage_index}/ack"

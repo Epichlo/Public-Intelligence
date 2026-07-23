@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 from node.backends.base import InferenceBackend
+from node.models.sharding import PipelineStage
 
 logger = logging.getLogger(__name__)
 
@@ -122,3 +123,28 @@ class OllamaBackend(InferenceBackend):
                             )
             except (httpx.HTTPStatusError, httpx.RequestError) as e:
                 raise RuntimeError(f"Ollama stream generation failed: {e}") from e
+
+    async def execute_pipeline_stage(
+        self,
+        stage: PipelineStage,
+        input_tensors: Any | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> Any:
+        """Execute a single pipeline stage targeting Ollama.
+
+        Args:
+            stage: Target pipeline stage configuration.
+            input_tensors: Input payload or prompt text from previous stage.
+            options: Execution control parameters.
+
+        Returns:
+            Generated text output for the stage.
+        """
+        model_opt = options.get("model") if options else None
+        model: str = stage.model_id or (str(model_opt) if model_opt else "default")
+        prompt = (
+            f"Stage {stage.stage_index} "
+            f"[Layers {stage.layer_range.start_layer}-{stage.layer_range.end_layer}]: "
+            f"{input_tensors}"
+        )
+        return await self.generate(model=model, prompt=prompt, options=options)
