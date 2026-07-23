@@ -28,8 +28,10 @@ This specification details the sequential architectural evolution of the Public 
 
 ### Phase 4.5: Visual Control Plane & Web Dashboard (v0.35 — Next Step)
 - **Visual Control Plane (Web/Desktop Dashboard):**
-  - *Contributor View:* One-click "Start Host Node" toggle with real-time VRAM/CPU gauges, global WAN connection status, and sandbox health indicators.
-  - *Requester View:* Interactive prompt playground with live token streaming, model selection, and API Key/JWT management.
+  - *Contributor Onboarding & Download*: One-click "Download Host Node" Desktop App installer (`.dmg`, `.exe`, `.AppImage`) and automated single-line bash command (`curl -fsSL https://public-intelligence.net/install.sh | bash`) with automatic GPU/VRAM hardware discovery.
+  - *Contributor Dashboard:* Interactive "Start Host Node" toggle with real-time VRAM/CPU telemetry gauges, global WAN connection status, and Docker sandbox health indicators.
+  - *Requester Playground:* Interactive chat playground (`/playground`) with SSE token streaming, model selection, and API Key/JWT management.
+  - *OpenAI-Compatible REST API Gateway:* Public `/v1/chat/completions` endpoint for seamless integration with external OpenAI-compatible SDKs, LangChain, and LlamaIndex.
 - **Sandboxed Ephemeral Execution:** Workloads executed inside memory-capped, network-restricted Docker containers or ephemeral Git worktrees to prevent host machine contamination.
 
 ### Phase 5: Autonomous Self-Improving Fabric (v1.0)

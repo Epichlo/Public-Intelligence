@@ -54,10 +54,11 @@ Purpose:
 - Publish research.
 - Present the architecture.
 - Grow the community.
+- Provide the Host Node One-Click Installer (`curl -fsSL https://public-intelligence.net/install.sh | bash` & Desktop binaries for macOS, Windows, Linux).
+- Host the Interactive Chat Playground (`/playground`) with SSE token streaming and live telemetry drawers.
+- Serve the OpenAI-compatible REST API Gateway (`/v1/chat/completions` & `/api/v1/tasks/submit`).
 
-The Website does not perform distributed inference.
-
-It exists to communicate and document the project.
+The Website provides the visual control plane while routing distributed workload coordination directly to the Scheduler and Node P2P layer.
 
 ---
 
