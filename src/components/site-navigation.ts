@@ -1,4 +1,6 @@
 export const siteNavigation = [
+  { href: "/playground", label: "Playground", external: false },
+  { href: "/dashboard", label: "Dashboard", external: false },
   { href: "/vision", label: "Vision", external: false },
   { href: "/architecture", label: "Architecture", external: false },
   { href: "/research", label: "Research", external: false },

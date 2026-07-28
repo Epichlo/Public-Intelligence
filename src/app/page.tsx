@@ -33,6 +33,12 @@ export default function Home() {
               Explore the Architecture
             </Link>
             <Link
+              href="/status"
+              className="inline-flex h-9 items-center justify-center border border-[#86EFAC]/50 px-4 text-xs font-medium text-[#86EFAC] transition-colors hover:border-[#86EFAC]"
+            >
+              Check System Status
+            </Link>
+            <Link
               href="https://x.com/PublicIntelTech"
               target="_blank"
               rel="noreferrer"
@@ -168,13 +174,14 @@ export default function Home() {
             <div className="md:col-span-1">
               <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground/60 mb-1">Current Milestone</p>
               <h2 id="milestone-heading" className="text-lg font-semibold text-foreground">
-                Phase 1 — Research & Architecture
+                Phase 4 — WAN Networking & Pipeline Parallelism
               </h2>
             </div>
             <div className="md:col-span-2">
               <p className="text-sm leading-relaxed text-muted-foreground">
-                Researching distributed AI infrastructure and designing the first
-                production architecture for Public Intelligence.
+                The core distributed infrastructure is realized. The next focus
+                is a visual control plane that makes node onboarding, network
+                health, and inference execution observable.
               </p>
             </div>
           </div>

@@ -96,7 +96,7 @@ export default function ResearchPage() {
         <PageHeader
           kicker="Research Hub"
           title="Research"
-          description="Public Intelligence is in the foundation stage. Research focuses on the distributed systems and AI infrastructure needed before production implementation."
+          description="Public Intelligence is extending its realized distributed infrastructure. Research focuses on the systems, operations, and interfaces needed for the next stage of the network."
         />
 
         {/* RESEARCH CATEGORIES */}

@@ -11,26 +11,24 @@ const completed = [
 ];
 
 const inProgress = [
-  "Expanding the Website",
-  "Refining system architecture",
-  "Improving documentation",
-  "Preparing the Scheduler implementation",
+  "Defining the first visual control-plane slice",
+  "Documenting node onboarding and network health",
+  "Making inference execution observable",
+  "Keeping organization and repository documentation synchronized",
 ];
 
 const next = [
-  "Complete the Vision page",
-  "Complete the Architecture page",
-  "Complete the Research section",
-  "Publish technical documentation",
-  "Deploy the website",
-  "Begin Scheduler core, node registration, heartbeat handling, health monitoring, geographic scheduling, and resource tracking",
-  "Define the Node communication protocol and runtime responsibilities",
+  "Provide a documented Node installation path",
+  "Expose Node registration and heartbeat health",
+  "Show WAN connection state and scheduler reachability",
+  "Submit one inference request through a documented interface",
+  "Display the result and relevant execution state",
 ];
 
 const future = [
-  "Distributed inference",
-  "Multi-node execution",
-  "Networking protocols",
+  "Interactive requester playground",
+  "Contributor dashboard and live telemetry",
+  "Desktop and one-line Node installers",
   "Authentication",
   "Monitoring",
   "SDKs",
@@ -62,10 +60,11 @@ export default function RoadmapPage() {
             <div className="space-y-4">
               <div className="space-y-1">
                 <span className="text-xs font-mono uppercase tracking-wider text-[#D9F99D]">Active Milestone</span>
-                <h2 className="text-xl font-semibold text-foreground">Phase 1 — Foundations & Core Design</h2>
+                <h2 className="text-xl font-semibold text-foreground">Phase 4.5 — Visual Control Plane</h2>
               </div>
               <p className="text-sm leading-relaxed text-muted-foreground max-w-2xl">
-                Establishing the long-term vision, researching distributed systems and AI infrastructure, designing the first system architecture, and preparing the Scheduler core implementation.
+                Turning the realized distributed infrastructure into an observable,
+                understandable experience for contributors and requesters.
               </p>
               
               <div className="pt-2">
@@ -90,10 +89,12 @@ export default function RoadmapPage() {
             <div className="space-y-4">
               <div className="space-y-1">
                 <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground/50">Completed Milestones</span>
-                <h2 className="text-lg font-semibold text-foreground">Phase 0 — Project Initiation</h2>
+                <h2 className="text-lg font-semibold text-foreground">Phases 0–4 — Core Infrastructure</h2>
               </div>
               <p className="text-sm leading-relaxed text-muted-foreground max-w-2xl">
-                Configured the core repositories, structured the organization, completed foundational literature research, and deployed basic codebase structures.
+                Established the organization, documentation, Website, Scheduler,
+                Node runtime, WAN networking, telemetry, consensus, and pipeline
+                model-layer sharding.
               </p>
               
               <div className="pt-2">
@@ -117,7 +118,7 @@ export default function RoadmapPage() {
             <div className="space-y-4">
               <div className="space-y-1">
                 <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground/50">Next Up</span>
-                <h2 className="text-lg font-semibold text-foreground">Phase 2 — Core Scheduling & Protocols</h2>
+                <h2 className="text-lg font-semibold text-foreground">Phase 5 — Autonomous Fabric</h2>
               </div>
               
               <div className="pt-2">
@@ -141,7 +142,7 @@ export default function RoadmapPage() {
             <div className="space-y-4">
               <div className="space-y-1">
                 <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground/50">Future Milestones</span>
-                <h2 className="text-lg font-semibold text-foreground">Phase 3 — Scale & Decentralization</h2>
+                <h2 className="text-lg font-semibold text-foreground">Long-Term Platform Expansion</h2>
               </div>
               
               <div className="pt-2">
