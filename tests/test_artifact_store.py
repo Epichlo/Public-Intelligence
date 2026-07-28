@@ -8,7 +8,10 @@ from typing import Generator
 
 import pytest
 
-from src.shared.storage.local import LocalDiskArtifactStore
+try:
+    from shared.storage.local import LocalDiskArtifactStore
+except ModuleNotFoundError:
+    from src.shared.storage.local import LocalDiskArtifactStore
 
 
 @pytest.fixture

@@ -188,8 +188,11 @@ Individual components should be replaceable without redesigning the entire platf
 
 # Current Status
 
-The architecture is currently in its first design iteration.
+The initial Website, Scheduler, and Node architecture is implemented through
+Phase 4. This includes WAN endpoint configuration and peer discovery, encrypted
+telemetry, scheduler state consensus, and multi-node pipeline layer sharding.
 
-Many implementation details remain intentionally undecided.
-
-Research and experimentation are expected to refine the design over time while preserving the overall architectural vision.
+The architecture remains evolvable: the public control plane, installation
+workflow, and requester-facing interfaces are the next layer of work. Details
+that are not implemented should remain explicitly marked as planned rather than
+being described as available system behavior.

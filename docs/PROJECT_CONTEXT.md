@@ -91,18 +91,23 @@ Architectural decisions should be explicit, documented, and easy to understand.
 
 # Current Stage
 
-Public Intelligence is currently in the foundation stage.
+Public Intelligence has completed its initial foundation and core distributed
+systems implementation. The current baseline includes the Website, Scheduler,
+and Node repositories, P2P WAN connectivity, encrypted telemetry, scheduler
+state consensus, and pipeline model-layer sharding.
 
 The immediate priorities are:
 
-- Understanding distributed systems.
-- Researching AI infrastructure.
-- Designing the overall architecture.
-- Building core repositories.
-- Establishing engineering standards.
-- Creating high-quality documentation.
+- Synchronizing organization and repository documentation with the implemented
+  architecture.
+- Defining the first usable Phase 4.5 visual control-plane slice.
+- Making node onboarding and network operation understandable to contributors.
+- Preserving verification, observability, and maintainability as the system
+  expands.
 
-The focus is on building strong foundations rather than rapidly shipping features.
+The project is moving from core infrastructure realization toward a carefully
+scoped contributor and requester experience. The Website should describe the
+system accurately without presenting planned interfaces as already available.
 
 ---
 

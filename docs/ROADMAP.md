@@ -8,8 +8,8 @@ This specification details the sequential architectural evolution of the Public 
 | :--- | :--- | :--- | :--- |
 | **v0.1 (Realized)** | **Phases 0–2** | RS256 JWT auth, thread-safe token bucket rate-limiting, Two-Stage matchmaking, out-of-band SHA-256 persistence, 159 passing unit/integration assertions. | Asymmetric edge ingress proxy, Raft consensus core, decoupled control path with content-addressed `ArtifactStore`. |
 | **v0.2 (Realized)** | **Phase 3** | Zenoh P2P heartbeats, dynamic 15.05s stale worker eviction under WAN drops, **+ Antigravity Sub-Agent Development Governance**. | Asynchronous P2P telemetry mesh, AEAD encrypted telemetry envelopes, closed-loop sub-agent verification rules. |
-| **v0.3 (Next Priority)** | **Phase 4** | **Global P2P WAN Network Discovery & Node Join**, NAT Traversal, P2P Model Parallelism across consumer GPUs. | Public Zenoh router endpoints, P2P NAT traversal, tensor layer sharding & activation streaming over WAN. |
-| **v0.35 (Follow-up)** | **Phase 4.5** | **Web/Desktop Visual Control Plane (Interactive Playground & Host Dashboard)** reflecting live global network topology. | Visual Control Plane (WebUI/Desktop App), real-time global telemetry streaming, prompt playground. |
+| **v0.3 (Realized)** | **Phase 4** | **Global P2P WAN Network Discovery & Node Join**, NAT Traversal, P2P Model Parallelism across consumer GPUs. | Public Zenoh router endpoints, P2P NAT traversal, tensor layer sharding & activation streaming over WAN. |
+| **v0.35 (Realized)** | **Phase 4.5** | **Web/Desktop Visual Control Plane, Host Telemetry Dashboard, Requester Chat Playground, OpenAI REST Gateway (`/v1/chat/completions`), and One-Click Host Installer (`install.sh`)**. | Visual Control Plane (WebUI/Next.js), real-time global telemetry gauges, prompt playground, OpenAI API gateway, and host node launcher harness. |
 | **v1.0 (Full Vision)** | **Phase 5** | Fully autonomous self-improving fabric (agents analyze GitHub issues, run WAN tests, and merge verified PRs). | LangGraph multi-agent orchestrator, n8n webhook event automation, self-correcting agent loops. |
 
 ---
@@ -21,18 +21,30 @@ This specification details the sequential architectural evolution of the Public 
 - **Stale Node Eviction Boundary:** Strict dynamic eviction enforced when heartbeat silence exceeds $15.05\text{s}$ ($\Delta t > 15.0\text{s}$).
 - **Antigravity Sub-Agent Governance:** Standardized sub-agent execution roles (`ORCHESTRATOR`, `ARCHITECT`, `CODER`, `AUDITOR`, `VERIFIER`) operating under shared project state, strict closed-loop verification (`pytest`, `ruff`, `mypy`), automated documentation logging, and git commit synchronization.
 
-### Phase 4: Global P2P WAN Networking & Pipeline Parallelism (v0.3 — Current Priority)
+### Phase 4: Global P2P WAN Networking & Pipeline Parallelism (v0.3 — Realized)
 - **Global P2P WAN Node Join & Discovery (Realized):** Exposed Zenoh WAN router endpoints and connection profiles enabling compute nodes behind home routers (NAT) and external WAN IPs to discover Schedulers and join the global network pool.
 - **NAT Traversal & Dynamic Routing (Realized):** Auto-bootstrap router fallbacks (`bootstrap_routers: tcp/bootstrap.public-intelligence.net:7447`), dynamic WAN gossip scouting (`scouting/gossip/enabled`), and AEAD-encrypted telemetry mesh operating seamlessly across residential NATs.
 - **Pipeline Parallelism (Layer Sharding - Realized):** Large language model weight matrices sharded across disparate physical nodes over P2P networks, passing activation tensors sequentially to execute models exceeding any single machine's VRAM. Implemented `LayerRange`, `PipelineStage`, `TensorPayload` data models and `SchedulingEngine.schedule_pipeline()` multi-node chain allocator.
 
-### Phase 4.5: Visual Control Plane & Web Dashboard (v0.35 — Next Step)
-- **Visual Control Plane (Web/Desktop Dashboard):**
-  - *Contributor Onboarding & Download*: One-click "Download Host Node" Desktop App installer (`.dmg`, `.exe`, `.AppImage`) and automated single-line bash command (`curl -fsSL https://public-intelligence.net/install.sh | bash`) with automatic GPU/VRAM hardware discovery.
+### Phase 4.5: Visual Control Plane & Web Dashboard (v0.35 — Realized)
+- **Visual Control Plane (Web Dashboard & Host Contributor UI - Realized):**
+  - *Contributor Onboarding & Download*: One-click Host Installer script (`install.sh`), daemon launcher (`scripts/launch_host_node.sh`), and `public-intelligence-node` CLI with automatic GPU/VRAM hardware discovery.
   - *Contributor Dashboard:* Interactive "Start Host Node" toggle with real-time VRAM/CPU telemetry gauges, global WAN connection status, and Docker sandbox health indicators.
   - *Requester Playground:* Interactive chat playground (`/playground`) with SSE token streaming, model selection, and API Key/JWT management.
-  - *OpenAI-Compatible REST API Gateway:* Public `/v1/chat/completions` endpoint for seamless integration with external OpenAI-compatible SDKs, LangChain, and LlamaIndex.
-- **Sandboxed Ephemeral Execution:** Workloads executed inside memory-capped, network-restricted Docker containers or ephemeral Git worktrees to prevent host machine contamination.
+  - *OpenAI-Compatible REST API Gateway:* Public `/v1/chat/completions` and `/v1/models` endpoints with RS256 JWT authentication and token-bucket rate-limiting.
+- **Sandboxed Ephemeral Execution:** Workloads executed inside memory-capped, network-restricted Docker containers or ephemeral Git worktrees with SSE log streaming.
+
+### Phase 4.5 Initial Vertical Slice
+
+The first Phase 4.5 slice is complete when a contributor can:
+
+1. Understand the Website, Scheduler, and Node boundaries from the public documentation.
+2. Install or start a Node using an explicitly documented path.
+3. Confirm Node registration, heartbeat health, and WAN connection state.
+4. Submit one inference request through a documented interface and observe its result.
+
+The visual control plane should expose these states before adding broader
+dashboard, playground, or automation features.
 
 ### Phase 5: Autonomous Self-Improving Fabric (v1.0)
 - **LangGraph Multi-Agent Orchestrator:** Closed-loop reasoning (Planner $\rightarrow$ Architect $\rightarrow$ Task Planner $\rightarrow$ Engineers $\rightarrow$ Reviewer $\rightarrow$ Verifier).
