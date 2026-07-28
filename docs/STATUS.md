@@ -43,6 +43,10 @@ Phase 4.5 Host Node controls, installation harness, and local APIs are realized.
 
 ## Upcoming Features
 
+- Phase 4.6: Asymmetric Split-Inference & Local Boundary Security (v0.40 — Next Priority)
+- Phase 4.7: Speculative WAN Pipeline Engine & FP8 Activation Compression (v0.45)
+- Phase 4.8: Async KV-Cache Checkpointing & Dynamic State Rerouting (v0.50)
+- Phase 4.9: Workload-Aware System Routing & Tokenless Fiat Credit Exchange Ledger (v0.55)
 - Autonomous Self-Improving Fabric (Phase 5)
 
 ---
