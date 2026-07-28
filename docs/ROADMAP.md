@@ -1,4 +1,4 @@
-# Public Intelligence Protocol Specification: Master Master Roadmap (`ROADMAP.md`)
+# Public Intelligence Protocol Specification: Master Roadmap (`ROADMAP.md`)
 
 This specification details the sequential architectural evolution of the Public Intelligence protocol—from foundational control plane mechanics (v0.1) to a fully autonomous, self-healing, distributed compute fabric (v1.0+).
 
@@ -9,7 +9,11 @@ This specification details the sequential architectural evolution of the Public 
 | **v0.1 (Realized)** | **Phases 0–2** | RS256 JWT auth, thread-safe token bucket rate-limiting, Two-Stage matchmaking, out-of-band SHA-256 persistence, 159 passing unit/integration assertions. | Asymmetric edge ingress proxy, Raft consensus core, decoupled control path with content-addressed `ArtifactStore`. |
 | **v0.2 (Realized)** | **Phase 3** | Zenoh P2P heartbeats, dynamic 15.05s stale worker eviction under WAN drops, **+ Antigravity Sub-Agent Development Governance**. | Asynchronous P2P telemetry mesh, AEAD encrypted telemetry envelopes, closed-loop sub-agent verification rules. |
 | **v0.3 (Realized)** | **Phase 4** | **Global P2P WAN Network Discovery & Node Join**, NAT Traversal, P2P Model Parallelism across consumer GPUs. | Public Zenoh router endpoints, P2P NAT traversal, tensor layer sharding & activation streaming over WAN. |
-| **v0.35 (Realized)** | **Phase 4.5** | **Web/Desktop Visual Control Plane, Host Telemetry Dashboard, Requester Chat Playground, OpenAI REST Gateway (`/v1/chat/completions`), and One-Click Host Installer (`install.sh`)**. | Visual Control Plane (WebUI/Next.js), real-time global telemetry gauges, prompt playground, OpenAI API gateway, and host node launcher harness. |
+| **v0.35 (Realized)** | **Phase 4.5** | **Web Visual Control Plane, Host Telemetry Dashboard, Requester Chat Playground, OpenAI REST Gateway (`/v1/chat/completions`), and One-Click Host Installer (`install.sh`)**. | Visual Control Plane (WebUI/Next.js), real-time global telemetry gauges, prompt playground, OpenAI API gateway, and host node launcher harness. |
+| **v0.40 (Next Priority)** | **Phase 4.6** | **Asymmetric Split-Inference & Local Boundary Isolation** (Layer 0 Embedding & LM Head retained locally; intermediate Layers 1..N-1 offloaded). | Client edge boundary isolation, zero prompt leakage over untrusted WAN nodes, high-dimensional intermediate activation streaming. |
+| **v0.45 (Planned)** | **Phase 4.7** | **Speculative WAN Pipeline Engine & FP8 Activation Compression** (Local 8B draft speculation $K=5$, 75% RTT reduction, FP8 E4M3 quantization). | Multi-token candidate block verification over WAN, FP8 `BackpressuredStreamRouter` serialization (50% bandwidth reduction). |
+| **v0.50 (Planned)** | **Phase 4.8** | **Async KV-Cache Checkpointing & Dynamic State Rerouting** (Background KV replication over Zenoh gossip, seamless restitching on node drop). | Non-blocking `KVCacheSnapshot` gossip streaming, zero-recomputation pipeline rerouting upon stale worker eviction ($\Delta t > 15.05\text{s}$). |
+| **v0.55 (Planned)** | **Phase 4.9** | **Workload-Aware System Routing (`/v1/chat/completions` vs `/v1/batch`), Apple Silicon Onboarding & Fiat Credit Exchange Ledger**. | Interactive single-node / LAN routing vs multi-node WAN batch processing (`POST /v1/batch`), Apple Silicon Metal Unified Memory profiling, tokenless fiat credit exchange ledger. |
 | **v1.0 (Full Vision)** | **Phase 5** | Fully autonomous self-improving fabric (agents analyze GitHub issues, run WAN tests, and merge verified PRs). | LangGraph multi-agent orchestrator, n8n webhook event automation, self-correcting agent loops. |
 
 ---
@@ -34,17 +38,35 @@ This specification details the sequential architectural evolution of the Public 
   - *OpenAI-Compatible REST API Gateway:* Public `/v1/chat/completions` and `/v1/models` endpoints with RS256 JWT authentication and token-bucket rate-limiting.
 - **Sandboxed Ephemeral Execution:** Workloads executed inside memory-capped, network-restricted Docker containers or ephemeral Git worktrees with SSE log streaming.
 
-### Phase 4.5 Initial Vertical Slice
+---
 
-The first Phase 4.5 slice is complete when a contributor can:
+### Phase 4.6: Asymmetric Split-Inference & Local Boundary Security (v0.40 — Next Priority)
+- **Local Boundary Isolation:** Client/Edge node retains Layer 0 (Embedding) and final LM Head (Unembedding projection) locally.
+- **Intermediate Activation Offloading:** Intermediate hidden activation tensors (Layers 1 to N-1) flow across external Zenoh P2P channels.
+- **Data Privacy Assurance:** Untrusted host nodes process only high-dimensional intermediate vector activations, making prompt reconstruction mathematically impossible without local embedding weights.
 
-1. Understand the Website, Scheduler, and Node boundaries from the public documentation.
-2. Install or start a Node using an explicitly documented path.
-3. Confirm Node registration, heartbeat health, and WAN connection state.
-4. Submit one inference request through a documented interface and observe its result.
+---
 
-The visual control plane should expose these states before adding broader
-dashboard, playground, or automation features.
+### Phase 4.7: Speculative WAN Pipeline Engine & FP8 Activation Compression (v0.45 — Planned)
+- **Local Draft Speculation:** Local draft model (e.g. lightweight 8B variant) running on the client edge gateway generates candidate token blocks ($K=5$).
+- **Batch Payload Packaging & Parallel WAN Verification:** Multi-token candidate blocks packaged into `TensorPayload` for single-pass verification over WAN links, reducing cross-node network round-trips by up to 75%.
+- **FP8 (E4M3) Activation Compression:** FP8 quantization integrated into `BackpressuredStreamRouter` for inter-node hidden state activations, halving payload size (50% bandwidth savings) while keeping perplexity degradation $<0.1\%$.
+
+---
+
+### Phase 4.8: Async KV-Cache Checkpointing & Dynamic State Rerouting (v0.50 — Planned)
+- **Background KV-Cache Replication:** Non-blocking KV-cache state snapshots (`KVCacheSnapshot`) streamed over Zenoh gossip channels (`public-intelligence/net/tasks/<task_id>/kv_snapshots`) to neighbor pipeline nodes.
+- **Dynamic Pipeline Re-stitching:** When worker eviction occurs ($\Delta t > 15.05\text{s}$), the scheduler automatically re-routes execution payloads to a replacement node holding identical weights, resuming computation from the restored KV checkpoint without restarting prompt evaluation.
+
+---
+
+### Phase 4.9: Workload-Aware System Routing & Fiat Credit Exchange Ledger (v0.55 — Planned)
+- **Interactive Routing (`/v1/chat/completions`):** Target real-time streaming requests to single-node high-VRAM devices or co-located local LAN clusters.
+- **Asynchronous Batch Routing (`POST /v1/batch`):** Dedicated endpoint for bulk asynchronous processing (synthetic data generation, document processing, offline agent loops) over multi-node WAN pipeline mesh where aggregate throughput supersedes TTFT constraints.
+- **Apple Silicon Hardware Onboarding:** Targeted supply-side onboarding for Apple Silicon M1/M2/M3/M4 Max & Ultra (64GB–192GB Unified Memory) workstations operating as silent, low-power background layer hosts.
+- **Tokenless Fiat Credit Ledger:** Credit-exchange model ($1\text{ GB VRAM-Hour Hosted} = \text{Fixed Credit Allocation}$) paired with standard fiat gateways for commercial API usage, eliminating Web3 wallet/gas fee friction.
+
+---
 
 ### Phase 5: Autonomous Self-Improving Fabric (v1.0)
 - **LangGraph Multi-Agent Orchestrator:** Closed-loop reasoning (Planner $\rightarrow$ Architect $\rightarrow$ Task Planner $\rightarrow$ Engineers $\rightarrow$ Reviewer $\rightarrow$ Verifier).
