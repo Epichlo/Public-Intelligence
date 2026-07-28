@@ -167,9 +167,13 @@ Prioritizes high historical reliability, minimal queue depth, and low CPU load. 
 
 Thin endpoint exposing the scheduling capabilities to clients.
 
-Endpoint: POST /schedule.
+Endpoints: POST /schedule and POST /infer.
 
 Accepts a model request (`ScheduleRequest`) and invokes the `Scheduler` algorithm via dependency injection. Returns a `ScheduleResponse` containing node credentials on success, or raises HTTP 404 (Not Found) if no eligible nodes are found.
+
+`POST /infer` selects a node using the same scheduling algorithm and forwards
+the request to that node's HTTP inference API. The Scheduler remains a routing
+and coordination layer; it does not execute model inference locally.
 
 Defined in src/scheduler/api/schedule.py. Mounted in src/scheduler/main.py.
 

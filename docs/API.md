@@ -14,6 +14,13 @@ Returns scheduler readiness.
 
 ---
 
+GET /status
+
+Returns the Scheduler operational state, Zenoh transport state, registered
+nodes, and each node's latest heartbeat summary.
+
+---
+
 ## Nodes
 
 POST /nodes/register
@@ -49,6 +56,12 @@ Missing node returns HTTP 404.
 
 ---
 
+DELETE /nodes/{node_id}
+
+Unregister a node during graceful shutdown.
+
+---
+
 ## Heartbeat
 
 POST /heartbeat
@@ -80,6 +93,15 @@ Request body: ScheduleRequest (with field model_name: str)
 Returns: ScheduleResponse (with fields node_id, hostname, ip_address, region) (HTTP 200 OK)
 
 If no eligible node is found or registered, returns HTTP 404 Not Found.
+
+---
+
+POST /infer
+
+Select an eligible node and forward one non-streaming inference request to its
+Node API. Returns the selected `node_id` and the Node's inference result.
+
+If the Node is unavailable, returns HTTP 502 Bad Gateway.
 
 ---
 

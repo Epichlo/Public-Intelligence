@@ -7,13 +7,16 @@ from contextlib import asynccontextmanager
 import structlog
 import zenoh
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from scheduler import __version__
 from scheduler.api.health import router as health_router
 from scheduler.api.heartbeat import router as heartbeat_router
 from scheduler.api.ingress import router as ingress_router
 from scheduler.api.nodes import router as nodes_router
+from scheduler.api.openai import router as openai_router
 from scheduler.api.schedule import router as schedule_router
+from scheduler.api.telemetry import router as telemetry_router
 from scheduler.core.config import get_settings
 from scheduler.core.logging import setup_logging
 from scheduler.core.rate_limiter import TokenBucketLimiter
@@ -67,6 +70,14 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     app.state.registry = NodeRegistry()
     app.state.rate_limiter = TokenBucketLimiter()
 
@@ -77,10 +88,12 @@ def create_app() -> FastAPI:
     app.state.scheduling_engine = SchedulingEngine(app.state.registry, strategy)
 
     app.include_router(health_router)
+    app.include_router(telemetry_router)
     app.include_router(nodes_router)
     app.include_router(heartbeat_router)
     app.include_router(schedule_router)
     app.include_router(ingress_router)
+    app.include_router(openai_router)
 
     return app
 

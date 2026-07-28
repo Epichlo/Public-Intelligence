@@ -1,10 +1,14 @@
 """In-memory node registry for storing and managing compute nodes."""
 
-import asyncio
-from typing import Any
+from __future__ import annotations
 
-from scheduler.models.heartbeat import Heartbeat
-from scheduler.models.node import Node
+import asyncio
+import builtins
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from scheduler.models.heartbeat import Heartbeat
+    from scheduler.models.node import Node
 
 
 class NodeRegistry:
@@ -80,14 +84,19 @@ class NodeRegistry:
         async with self._lock:
             return self._nodes.get(node_id)
 
-    async def list(self) -> list[Node]:
+    async def list(self) -> builtins.list[Node]:
         """Return all registered nodes in insertion order.
 
         Returns:
             A list of all registered Node objects.
         """
         async with self._lock:
-            return list(self._nodes.values())
+            return builtins.list(self._nodes.values())
+
+    async def snapshot(self) -> builtins.list[tuple[Node, Heartbeat | None]]:
+        """Return registered nodes paired with their latest heartbeat."""
+        async with self._lock:
+            return [(node, self._heartbeats.get(node_id)) for node_id, node in self._nodes.items()]
 
     async def update(self, node: Node) -> None:
         """Update an existing node's data.

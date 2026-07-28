@@ -46,11 +46,12 @@ Completed
 - Antigravity Sub-Agent Execution Governance (`AGENTS.md`)
 - Global P2P WAN Router Configuration (`ZENOH_LISTEN_ENDPOINTS`, `ZENOH_PEER_ENDPOINTS`, `ZENOH_MULTICAST_SCOUTING`)
 - `ZenohRouter` auto-configuration for WAN router and peer mode
+- Phase 4.5 OpenAI REST Gateway router (`POST /v1/chat/completions`, `GET /v1/models`) with RS256 JWT authorization, TokenBucket rate limiting, SSE streaming, and telemetry endpoints (`GET /nodes/{node_id}/telemetry`)
 
-Current Task
+Current State
 
-Phase 4 Global P2P WAN Networking underway. Core router configuration, peer endpoint connection profiles, and client/router mode toggling operational across WAN networks.
+Phase 4.5 Visual Control Plane & OpenAI REST Gateway are realized. The Scheduler currently supports standard OpenAI Chat Completions (JSON and SSE token streaming), multi-tenant JWT auth, token-bucket rate limiting (429), and decrypted telemetry REST endpoints with 111/111 passing unit and integration test assertions.
 
 Next Feature
 
-Phase 4 features: NAT Traversal, Pipeline Parallelism (Layer Sharding), followed by Phase 4.5 Visual Control Plane (Web Dashboard & Host Installer).
+Phase 5: Autonomous Self-Improving Fabric (v1.0).

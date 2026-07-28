@@ -17,6 +17,7 @@ dependencies = [
     "eclipse-zenoh",
     "cryptography",
     "pyjwt",
+    "httpx>=0.27.0",
 ]
 
 [project.optional-dependencies]

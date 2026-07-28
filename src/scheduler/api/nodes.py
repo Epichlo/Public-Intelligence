@@ -62,3 +62,22 @@ async def get_node(
             detail=f"Node not found: {node_id}",
         )
     return node
+
+
+@router.delete(
+    "/nodes/{node_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(verify_auth_token)],
+)
+async def unregister_node(
+    node_id: str,
+    registry: RegistryDep,
+) -> None:
+    """Unregister a compute node during graceful shutdown."""
+    try:
+        await registry.unregister(node_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Node not found: {node_id}",
+        ) from None

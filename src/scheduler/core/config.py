@@ -46,6 +46,11 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("SCHEDULER_NETWORK_AUTH_TOKEN", "NETWORK_AUTH_TOKEN"),
         description="Secure network authentication token.",
     )
+    node_api_port: int = Field(
+        default=8080,
+        validation_alias=AliasChoices("SCHEDULER_NODE_API_PORT", "NODE_API_PORT"),
+        description="HTTP port used to reach registered Node inference APIs.",
+    )
 
     # Zenoh WAN Networking
     zenoh_listen_endpoints: list[str] = Field(
