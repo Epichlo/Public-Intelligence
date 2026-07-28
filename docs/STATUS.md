@@ -54,4 +54,7 @@ Phase 4.5 Visual Control Plane & OpenAI REST Gateway are realized. The Scheduler
 
 Next Feature
 
-Phase 5: Autonomous Self-Improving Fabric (v1.0).
+Phase 4.6: Asymmetric Split-Inference & Local Boundary Isolation (v0.40 — Next Priority).
+- Local boundary isolation retaining Layer 0 (Embedding) and LM Head locally on client gateway.
+- Offloading intermediate hidden activation vectors (Layers 1..N-1) across Zenoh P2P channels.
+- Zero prompt reconstruction risk on untrusted host nodes.
