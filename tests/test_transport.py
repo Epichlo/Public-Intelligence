@@ -6,7 +6,12 @@ import logging
 import pytest
 import zenoh
 
-from node.core.transport import BackpressuredStreamRouter, SharedMemoryIPC
+from node.core.transport import (
+    BackpressuredReceiver,
+    BackpressuredStreamRouter,
+    SharedMemoryIPC,
+)
+from node.models.sharding import TensorPayload
 
 logger = logging.getLogger(__name__)
 
@@ -136,3 +141,56 @@ async def test_local_shared_memory_over_zenoh_and_backpressure() -> None:
         # Clean up subscriber
         stream_sub.undeclare()
         router.stop()
+
+
+@pytest.mark.anyio
+async def test_send_tensor_payload_and_listener() -> None:
+    """Verify send_tensor_payload and start_tensor_listener over Zenoh tensor topics."""
+    config = zenoh.Config()
+    config.insert_json5("scouting/multicast/enabled", "false")
+
+    with zenoh.open(config) as session:
+        router = BackpressuredStreamRouter("tensor-router-session", session)
+        receiver = BackpressuredReceiver("tensor-receiver-session", session)
+
+        received_payloads: list[TensorPayload] = []
+
+        async def on_payload(payload: TensorPayload) -> None:
+            received_payloads.append(payload)
+
+        sub = await receiver.start_tensor_listener("task-tp-1", 1, on_payload)
+        await asyncio.sleep(0.1)
+
+        send_payload = TensorPayload(
+            task_id="task-tp-1",
+            stage_index=0,
+            target_stage_index=1,
+            is_split_inference=True,
+            tensor_type="intermediate_activation",
+            data=b"activation-vector-bytes-1234",
+            shape=[1, 4, 128],
+            dtype="float32",
+            sequence_id=1,
+        )
+
+        await router.send_tensor_payload(send_payload)
+        await asyncio.sleep(0.3)
+
+        assert len(received_payloads) == 1
+        restored = received_payloads[0]
+        assert restored.task_id == "task-tp-1"
+        assert restored.stage_index == 0
+        assert restored.target_stage_index == 1
+        assert restored.is_split_inference is True
+        assert restored.tensor_type == "intermediate_activation"
+        assert restored.data == b"activation-vector-bytes-1234"
+        assert restored.shape == [1, 4, 128]
+        assert restored.sequence_id == 1
+
+        try:
+            if hasattr(sub, "undeclare"):
+                sub.undeclare()
+        except Exception:
+            pass
+        router.stop()
+        receiver.stop()

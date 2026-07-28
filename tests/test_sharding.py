@@ -74,14 +74,107 @@ def test_tensor_payload_success() -> None:
     payload = TensorPayload(
         task_id="task-123",
         stage_index=0,
+        target_stage_index=1,
+        is_split_inference=True,
+        tensor_type="intermediate_activation",
         data=[1.0, 2.0, 3.0],
         shape=[1, 3],
         dtype="float32",
+        sequence_id=5,
         shm_name="shm_test_123",
     )
     assert payload.task_id == "task-123"
     assert payload.stage_index == 0
+    assert payload.target_stage_index == 1
+    assert payload.is_split_inference is True
+    assert payload.tensor_type == "intermediate_activation"
     assert payload.data == [1.0, 2.0, 3.0]
     assert payload.shape == [1, 3]
     assert payload.dtype == "float32"
+    assert payload.sequence_id == 5
     assert payload.shm_name == "shm_test_123"
+
+
+def test_pipeline_stage_split_inference_extensions() -> None:
+    """Verify PipelineStage split-inference boundary extensions."""
+    lr = LayerRange(start_layer=0, end_layer=0)
+    stage = PipelineStage(
+        stage_index=0,
+        total_stages=3,
+        layer_range=lr,
+        node_id="local-client",
+        model_id="llama3-8b",
+        is_local_boundary=True,
+        stage_type="local_embedding",
+        is_split_inference=True,
+    )
+    assert stage.is_local_boundary is True
+    assert stage.stage_type == "local_embedding"
+    assert stage.is_split_inference is True
+
+
+def test_tensor_payload_binary_framing_raw_bytes() -> None:
+    """Verify binary framing serialization and deserialization for raw bytes payload."""
+    raw_data = b"\x00\x01\x02\x03\x04\x05\x06\x07"
+    payload = TensorPayload(
+        task_id="task-framing-1",
+        stage_index=0,
+        target_stage_index=1,
+        is_split_inference=True,
+        tensor_type="intermediate_activation",
+        data=raw_data,
+        shape=[1, 2, 4],
+        dtype="float32",
+        sequence_id=42,
+    )
+
+    framed = payload.to_framed_bytes()
+    assert framed.startswith(b"PITP")
+
+    restored = TensorPayload.from_framed_bytes(framed)
+    assert restored.task_id == "task-framing-1"
+    assert restored.stage_index == 0
+    assert restored.target_stage_index == 1
+    assert restored.is_split_inference is True
+    assert restored.tensor_type == "intermediate_activation"
+    assert restored.data == raw_data
+    assert restored.shape == [1, 2, 4]
+    assert restored.dtype == "float32"
+    assert restored.sequence_id == 42
+
+
+def test_tensor_payload_binary_framing_json_data() -> None:
+    """Verify binary framing serialization and deserialization for JSON list payload."""
+    data_list = [0.1, 0.2, 0.3, 0.4]
+    payload = TensorPayload(
+        task_id="task-framing-2",
+        stage_index=1,
+        target_stage_index=2,
+        is_split_inference=False,
+        data=data_list,
+        shape=[1, 4],
+        dtype="float32",
+    )
+
+    framed = payload.to_framed_bytes()
+    assert framed.startswith(b"PITP")
+
+    restored = TensorPayload.from_framed_bytes(framed)
+    assert restored.task_id == "task-framing-2"
+    assert restored.stage_index == 1
+    assert restored.target_stage_index == 2
+    assert restored.is_split_inference is False
+    assert restored.data == data_list
+
+
+def test_tensor_payload_fallback_json_deserialization() -> None:
+    """Verify fallback JSON parsing when magic header is absent."""
+    json_bytes = (
+        b'{"task_id": "json-task", "stage_index": 0, '
+        b'"target_stage_index": 1, "data": [1.0, 2.0]}'
+    )
+    restored = TensorPayload.from_framed_bytes(json_bytes)
+    assert restored.task_id == "json-task"
+    assert restored.stage_index == 0
+    assert restored.target_stage_index == 1
+    assert restored.data == [1.0, 2.0]

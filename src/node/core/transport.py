@@ -4,11 +4,13 @@ import asyncio
 import json
 import logging
 import uuid
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from multiprocessing import shared_memory
 from typing import Any
 
 import zenoh
+
+from node.models.sharding import TensorPayload
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +89,7 @@ class BackpressuredStreamRouter:
         self.sent_count = 0
         self.ack_count = 0
         self._ack_event = asyncio.Event()
+        self._tensor_ack_subs: dict[str, Any] = {}
 
         self.ack_topic = f"public-intelligence/net/transport/ack/{self.session_id}"
         self.subscriber: zenoh.Subscriber[Any] | None = (
@@ -161,6 +164,125 @@ class BackpressuredStreamRouter:
 
         return payload_to_send
 
+    async def send_tensor_payload(
+        self,
+        payload: TensorPayload,
+        publish_func: Callable[[str, bytes], Awaitable[None]] | None = None,
+        is_local: bool = False,
+    ) -> None:
+        """Send framed TensorPayload using backpressured flow control.
+
+        Args:
+            payload: TensorPayload containing activations and metadata.
+            publish_func: Optional publisher taking (topic, payload_bytes).
+            is_local: Whether target is co-located on same machine.
+        """
+        raw_frame = payload.to_framed_bytes()
+        target_topic = get_tensor_topic(payload.task_id, payload.target_stage_index)
+
+        ack_topic = get_tensor_ack_topic(payload.task_id, payload.stage_index)
+        if ack_topic not in self._tensor_ack_subs:
+            sub = self.zenoh_session.declare_subscriber(ack_topic, self._on_ack)
+            self._tensor_ack_subs[ack_topic] = sub
+
+        if publish_func is not None:
+
+            async def _pub_wrapper(data: bytes) -> None:
+                res = publish_func(target_topic, data)
+                if asyncio.iscoroutine(res):
+                    await res
+
+            await self.send_chunk(
+                raw_frame, publish_func=_pub_wrapper, is_local=is_local
+            )
+        else:
+            pub = self.zenoh_session.declare_publisher(target_topic)
+            try:
+
+                def _pub(data: bytes) -> None:
+                    pub.put(data)
+
+                await self.send_chunk(raw_frame, publish_func=_pub, is_local=is_local)
+            finally:
+                if hasattr(pub, "undeclare"):
+                    try:
+                        pub.undeclare()  # type: ignore[no-untyped-call]
+                    except Exception as e:
+                        logger.debug(
+                            "Failed to undeclare temporary tensor publisher: %s", e
+                        )
+
+    async def start_tensor_listener(
+        self,
+        task_id: str,
+        stage_index: int,
+        on_payload: Callable[[TensorPayload], Awaitable[None]],
+    ) -> Any:
+        """Subscribe to stage tensor channel and process incoming activation payloads.
+
+        Args:
+            task_id: Unique pipeline task identifier.
+            stage_index: Target stage index to listen on.
+            on_payload: Async callback function invoked with deserialized TensorPayload.
+
+        Returns:
+            The Zenoh subscriber object.
+        """
+        stream_topic = get_tensor_topic(task_id, stage_index)
+        loop = asyncio.get_running_loop()
+
+        def _on_sample(sample: zenoh.Sample) -> None:
+            try:
+                payload_str = sample.payload.to_string()
+            except AttributeError:
+                try:
+                    payload_str = sample.payload.decode("utf-8")  # type: ignore[attr-defined]
+                except (AttributeError, UnicodeDecodeError):
+                    payload_str = str(sample.payload)
+
+            raw_bytes: bytes
+            if payload_str.startswith("shm://"):
+                shm_name = payload_str[6:]
+                try:
+                    raw_bytes = SharedMemoryIPC.read_data(shm_name)
+                except Exception as e:
+                    logger.error(
+                        "Failed to read from shared memory %s: %s", shm_name, e
+                    )
+                    return
+                finally:
+                    SharedMemoryIPC.cleanup(shm_name)
+            else:
+                try:
+                    if isinstance(sample.payload, bytes):
+                        raw_bytes = sample.payload
+                    elif isinstance(sample.payload, str):
+                        raw_bytes = sample.payload.encode("utf-8")
+                    else:
+                        raw_bytes = sample.payload.to_bytes()
+                except Exception:
+                    raw_bytes = payload_str.encode("utf-8")
+
+            try:
+                tensor_payload = TensorPayload.from_framed_bytes(raw_bytes)
+            except Exception as e:
+                logger.error("Failed to deserialize TensorPayload: %s", e)
+                return
+
+            res = on_payload(tensor_payload)
+            if asyncio.iscoroutine(res) and loop.is_running():
+                loop.call_soon_threadsafe(lambda: asyncio.create_task(res))
+
+            ack_topic = get_tensor_ack_topic(task_id, tensor_payload.stage_index)
+            self.ack_count += 1
+            ack_payload = json.dumps({"seq": self.ack_count})
+            try:
+                self.zenoh_session.put(ack_topic, ack_payload)
+            except Exception as e:
+                logger.debug("Failed to send tensor ACK on %s: %s", ack_topic, e)
+
+        return self.zenoh_session.declare_subscriber(stream_topic, _on_sample)
+
     def stop(self) -> None:
         """Undeclare Zenoh subscribers and publishers, and stop the router."""
         if self.subscriber is not None:
@@ -178,6 +300,16 @@ class BackpressuredStreamRouter:
             except Exception as e:
                 logger.debug("Failed to undeclare publisher: %s", e)
             self.publisher = None
+
+        for topic, sub in list(self._tensor_ack_subs.items()):
+            try:
+                if hasattr(sub, "undeclare"):
+                    sub.undeclare()  # type: ignore[no-untyped-call]
+            except Exception as e:
+                logger.debug(
+                    "Failed to undeclare tensor ACK subscriber for %s: %s", topic, e
+                )
+        self._tensor_ack_subs.clear()
 
     @staticmethod
     def get_tensor_topic(task_id: str, stage_index: int) -> str:
@@ -204,6 +336,180 @@ class BackpressuredStreamRouter:
             Zenoh topic string.
         """
         return get_tensor_ack_topic(task_id, stage_index)
+
+
+class BackpressuredReceiver:
+    """Receiver-side flow control helper to send acknowledgments back to the sender."""
+
+    def __init__(self, session_id: str, zenoh_session: zenoh.Session) -> None:
+        """Initialize the BackpressuredReceiver.
+
+        Args:
+            session_id: Unique streaming session ID.
+            zenoh_session: Active Zenoh session.
+        """
+        self.session_id = session_id
+        self.zenoh_session = zenoh_session
+        self.ack_topic = f"public-intelligence/net/transport/ack/{self.session_id}"
+        self.processed_count = 0
+        self.subscriber: zenoh.Subscriber[Any] | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+    def send_ack(self) -> None:
+        """Publish a processing capacity signal (ACK) back to the stream router."""
+        self.processed_count += 1
+        payload = json.dumps({"seq": self.processed_count})
+        self.zenoh_session.put(self.ack_topic, payload)
+
+    def start(self, on_chunk: Callable[[bytes], Any]) -> None:
+        """Subscribe to the stream topic and process incoming chunks."""
+        self.stream_topic = (
+            f"public-intelligence/net/transport/stream/{self.session_id}"
+        )
+        self._loop = asyncio.get_running_loop()
+
+        def _on_sample(sample: zenoh.Sample) -> None:
+            try:
+                payload_str = sample.payload.to_string()
+            except AttributeError:
+                try:
+                    payload_str = sample.payload.decode("utf-8")  # type: ignore[attr-defined]
+                except (AttributeError, UnicodeDecodeError):
+                    payload_str = str(sample.payload)
+
+            data: bytes
+            if payload_str.startswith("shm://"):
+                shm_name = payload_str[6:]
+                try:
+                    data = SharedMemoryIPC.read_data(shm_name)
+                except Exception as e:
+                    logger.error(
+                        "Failed to read from shared memory %s: %s", shm_name, e
+                    )
+                    return
+                finally:
+                    SharedMemoryIPC.cleanup(shm_name)
+            else:
+                try:
+                    if isinstance(sample.payload, bytes):
+                        data = sample.payload
+                    elif isinstance(sample.payload, str):
+                        data = sample.payload.encode("utf-8")
+                    else:
+                        data = sample.payload.to_bytes()
+                except Exception:
+                    data = payload_str.encode("utf-8")
+
+            res = on_chunk(data)
+            if (
+                asyncio.iscoroutine(res)
+                and self._loop is not None
+                and self._loop.is_running()
+            ):
+                self._loop.call_soon_threadsafe(lambda: asyncio.create_task(res))
+
+            self.send_ack()
+
+        self.subscriber = self.zenoh_session.declare_subscriber(
+            self.stream_topic, _on_sample
+        )
+
+    async def send_tensor_payload(
+        self,
+        payload: TensorPayload,
+        publish_func: Callable[[str, bytes], Awaitable[None]] | None = None,
+        is_local: bool = False,
+    ) -> None:
+        """Send framed TensorPayload using backpressured flow control.
+
+        Args:
+            payload: TensorPayload containing activations and metadata.
+            publish_func: Optional publisher taking (topic, payload_bytes).
+            is_local: Whether target is co-located on same machine.
+        """
+        router = BackpressuredStreamRouter(
+            f"rec-send-{uuid.uuid4().hex[:8]}", self.zenoh_session
+        )
+        try:
+            await router.send_tensor_payload(
+                payload, publish_func=publish_func, is_local=is_local
+            )
+        finally:
+            router.stop()
+
+    async def start_tensor_listener(
+        self,
+        task_id: str,
+        stage_index: int,
+        on_payload: Callable[[TensorPayload], Awaitable[None]],
+    ) -> Any:
+        """Subscribe to stage tensor channel and process incoming activation payloads.
+
+        Args:
+            task_id: Unique pipeline task identifier.
+            stage_index: Target stage index to listen on.
+            on_payload: Async callback function invoked with deserialized TensorPayload.
+
+        Returns:
+            The Zenoh subscriber object.
+        """
+        stream_topic = get_tensor_topic(task_id, stage_index)
+        loop = asyncio.get_running_loop()
+        self._loop = loop
+
+        def _on_sample(sample: zenoh.Sample) -> None:
+            if hasattr(sample.payload, "to_bytes"):
+                raw_bytes = sample.payload.to_bytes()
+            elif isinstance(sample.payload, bytes):
+                raw_bytes = sample.payload
+            elif isinstance(sample.payload, str):
+                raw_bytes = sample.payload.encode("utf-8")
+            else:
+                raw_bytes = bytes(sample.payload)
+
+            if raw_bytes.startswith(b"shm://"):
+                shm_name = raw_bytes[6:].decode("utf-8", errors="ignore")
+                try:
+                    raw_bytes = SharedMemoryIPC.read_data(shm_name)
+                except Exception as e:
+                    logger.error(
+                        "Failed to read from shared memory %s: %s", shm_name, e
+                    )
+                    return
+                finally:
+                    SharedMemoryIPC.cleanup(shm_name)
+
+            try:
+                tensor_payload = TensorPayload.from_framed_bytes(raw_bytes)
+            except Exception as e:
+                logger.error("Failed to deserialize TensorPayload: %s", e)
+                return
+
+            res = on_payload(tensor_payload)
+            if asyncio.iscoroutine(res) and loop.is_running():
+                loop.call_soon_threadsafe(lambda: asyncio.create_task(res))
+
+            ack_topic = get_tensor_ack_topic(task_id, tensor_payload.stage_index)
+            self.processed_count += 1
+            ack_payload = json.dumps({"seq": self.processed_count})
+            try:
+                self.zenoh_session.put(ack_topic, ack_payload)
+            except Exception as e:
+                logger.debug("Failed to send tensor ACK on %s: %s", ack_topic, e)
+
+        subscriber = self.zenoh_session.declare_subscriber(stream_topic, _on_sample)
+        self.subscriber = subscriber
+        return subscriber
+
+    def stop(self) -> None:
+        """Stop subscription and clean up."""
+        if self.subscriber is not None:
+            try:
+                if hasattr(self.subscriber, "undeclare"):
+                    self.subscriber.undeclare()  # type: ignore[no-untyped-call]
+            except Exception as e:
+                logger.debug("Failed to undeclare subscriber: %s", e)
+            self.subscriber = None
 
 
 def get_tensor_topic(task_id: str, stage_index: int) -> str:
