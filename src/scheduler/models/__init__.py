@@ -2,7 +2,7 @@
 
 from scheduler.models.heartbeat import Heartbeat
 from scheduler.models.node import GPUInfo, Node, NodeStatus
-from scheduler.models.pipeline import LayerRange, PipelineConfig, PipelineStage
+from scheduler.models.pipeline import LayerRange, PipelineConfig, PipelineStage, TensorPayload
 
 __all__ = [
     "GPUInfo",
@@ -12,4 +12,5 @@ __all__ = [
     "NodeStatus",
     "PipelineConfig",
     "PipelineStage",
+    "TensorPayload",
 ]
