@@ -6,8 +6,62 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
+from collections import deque
+from contextlib import suppress
+from datetime import datetime, timezone
+from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+class SandboxLogBuffer:
+    """In-memory ring buffer for Docker sandbox execution logs (max 1000 entries)."""
+
+    def __init__(self, maxlen: int = 1000) -> None:
+        self._buffer: deque[dict[str, Any]] = deque(maxlen=maxlen)
+        self._subscribers: list[asyncio.Queue[dict[str, Any]]] = []
+        self._lock = threading.Lock()
+
+    def add_log(self, message: str, stream: str = "stdout", branch: str = "") -> None:
+        timestamp = datetime.now(timezone.utc).isoformat()
+        entry = {
+            "timestamp": timestamp,
+            "stream": stream,
+            "branch": branch,
+            "message": message,
+        }
+        with self._lock:
+            self._buffer.append(entry)
+
+        for queue in list(self._subscribers):
+            with suppress(Exception):
+                queue.put_nowait(entry)
+
+    def get_logs(self, limit: int | None = None) -> list[dict[str, Any]]:
+        with self._lock:
+            logs = list(self._buffer)
+        if limit is not None and limit > 0:
+            return logs[-limit:]
+        return logs
+
+    def clear(self) -> None:
+        with self._lock:
+            self._buffer.clear()
+
+    def subscribe(self) -> asyncio.Queue[dict[str, Any]]:
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        with self._lock:
+            self._subscribers.append(queue)
+        return queue
+
+    def unsubscribe(self, queue: asyncio.Queue[dict[str, Any]]) -> None:
+        with self._lock:
+            if queue in self._subscribers:
+                self._subscribers.remove(queue)
+
+
+sandbox_log_buffer = SandboxLogBuffer()
 
 
 class WorktreeManager:
@@ -33,6 +87,7 @@ class WorktreeManager:
 
         self.repo_path = os.path.abspath(repo_path)
         self._worktrees: dict[str, str] = {}
+        self.log_buffer = sandbox_log_buffer
 
     async def create_worktree(self, branch_name: str) -> str:
         """Create a new git worktree checked out to the specified branch.
@@ -258,9 +313,36 @@ class WorktreeManager:
             except Exception as e:
                 logger.error("Failed to kill sandboxed process: %s", str(e))
             stdout, stderr = await proc.communicate()
+            if stdout:
+                for line in stdout.decode("utf-8", errors="replace").splitlines():
+                    if line.strip():
+                        self.log_buffer.add_log(
+                            line, stream="stdout", branch=branch_name
+                        )
+            if stderr:
+                for line in stderr.decode("utf-8", errors="replace").splitlines():
+                    if line.strip():
+                        self.log_buffer.add_log(
+                            line, stream="stderr", branch=branch_name
+                        )
+            self.log_buffer.add_log(
+                f"Sandbox execution timed out on branch {branch_name}.",
+                stream="stderr",
+                branch=branch_name,
+            )
             raise asyncio.TimeoutError(
                 "Sandbox execution exceeded timeout limit."
             ) from None
+
+        if stdout:
+            for line in stdout.decode("utf-8", errors="replace").splitlines():
+                if line.strip():
+                    self.log_buffer.add_log(line, stream="stdout", branch=branch_name)
+
+        if stderr:
+            for line in stderr.decode("utf-8", errors="replace").splitlines():
+                if line.strip():
+                    self.log_buffer.add_log(line, stream="stderr", branch=branch_name)
 
         return subprocess.CompletedProcess(
             args=docker_cmd,

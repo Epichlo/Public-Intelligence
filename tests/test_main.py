@@ -177,3 +177,23 @@ def test_infer_stream_success(mock_ollama_client: AsyncMock) -> None:
         content = list(response.iter_lines())
         assert content == ["data: chunk1", "", "data: chunk2", ""]
         mock_ollama_client.generate_stream.assert_called_once()
+
+
+def test_cli_main_invokes_uvicorn() -> None:
+    """Verify cli_main parses CLI arguments and runs uvicorn."""
+    from node.main import cli_main
+
+    with (
+        patch(
+            "sys.argv",
+            ["public-intelligence-node", "--host", "127.0.0.1", "--port", "9090"],
+        ),
+        patch("uvicorn.run") as mock_run,
+    ):
+        cli_main()
+        mock_run.assert_called_once_with(
+            "node.main:app",
+            host="127.0.0.1",
+            port=9090,
+            reload=False,
+        )

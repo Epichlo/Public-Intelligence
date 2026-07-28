@@ -29,20 +29,21 @@ Repository State:
 - [x] End-to-End Demonstration (Phase 8)
 - [x] Antigravity Sub-Agent Execution Governance (`AGENTS.md`)
 - [x] Global P2P WAN Node Join & WAN Endpoints Configuration (Phase 4)
+- [x] NAT Traversal, Bootstrap Relays & Dynamic Gossip Scouting (Phase 4)
+- [x] Pipeline Parallelism & Model Layer Sharding (Phase 4)
+- [x] Host Installer `install.sh`, `scripts/launch_host_node.sh` daemon launcher, `public-intelligence-node` CLI entry point, sandbox SSE log streamer, and local control APIs (Phase 4.5)
 
 ---
 
-## Current Task
+## Current State
 
-Phase 4 Global P2P WAN Networking underway. Zenoh client connect endpoints, router URL, and peer mesh parameters configured.
+Phase 4.5 Host Node controls, installation harness, and local APIs are realized. The Node currently supports automated GPU/VRAM hardware discovery, daemon process management, `GET /api/v1/node/telemetry`, `POST /api/v1/node/control`, Docker sandbox SSE log streaming (`GET /api/v1/sandbox/logs/stream`), and CLI execution with 117/117 passing unit and integration tests (117 passed, 1 skipped).
 
 ---
 
 ## Upcoming Features
 
-- NAT Traversal & Dynamic P2P WAN Sessions (Phase 4)
-- Pipeline Parallelism / Model Layer Sharding (Phase 4)
-- Visual Control Plane & Interactive Web Dashboard (Phase 4.5)
+- Autonomous Self-Improving Fabric (Phase 5)
 
 ---
 

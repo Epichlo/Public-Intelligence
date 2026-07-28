@@ -217,12 +217,15 @@ Status:
 
 # Future Versions
 
-## Version 0.2 (Next Baseline — Phase 3)
+## Version 0.2 (Realized Baseline — Phase 3)
 - Early CI/CD Agent Code Auditors (lint/type check agents validating MyPy strict typing, ruff layout compliance, and pytest regression suites on every PR).
 
-## Version 0.3 (Accelerated — Phase 3.5 / 4)
-- Web/Desktop Visual Dashboard (One-click host with VRAM/CPU gauges & interactive prompt playground).
+## Version 0.3 (Realized — Phase 4)
 - P2P Model Parallelism across consumer GPUs (tensor layer sharding & sequential streaming).
+- Global WAN node join, bootstrap relay fallback, and dynamic gossip scouting.
+
+## Version 0.35 (Next Priority — Phase 4.5)
+- Web/Desktop Visual Dashboard with node health, WAN connection state, and inference observability.
 
 ## Version 1.0 (Full Vision — Phase 5)
 - Fully autonomous self-improving fabric (agents analyze GitHub issues, run WAN tests, and merge verified PRs).

@@ -4,7 +4,7 @@ import uuid
 from collections.abc import AsyncGenerator
 from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
 
 from node.clients import OllamaClient, OllamaError
@@ -175,3 +175,52 @@ async def health(
     if is_ollama_healthy:
         return {"status": "healthy", "ollama": True}
     return {"status": "degraded", "ollama": False}
+
+
+@router.get(
+    "/health/ready",
+    summary="Get Node readiness and network state",
+)
+async def readiness(
+    fastapi_request: Request,
+    response: Response,
+    ollama_client: Annotated[OllamaClient, Depends(get_ollama_client)],
+) -> dict[str, Any]:
+    """Expose the runtime dependencies required to execute inference."""
+    runtime = getattr(fastapi_request.app.state, "runtime", None)
+    ollama_ready = await ollama_client.health()
+    runtime_ready = runtime is not None and runtime.is_running
+    scheduler_registered = (
+        runtime is not None
+        and runtime.is_running
+        and getattr(runtime, "registration_status", None) == "registered"
+    )
+    wan_connected = (
+        runtime is not None
+        and runtime.is_running
+        and getattr(runtime, "zenoh_client", None) is not None
+        and runtime.zenoh_client.is_connected()
+    )
+    inference_ready = runtime_ready and ollama_ready and scheduler_registered
+    is_ready = inference_ready
+    response.status_code = (
+        status.HTTP_200_OK if is_ready else status.HTTP_503_SERVICE_UNAVAILABLE
+    )
+
+    return {
+        "status": "ready" if is_ready else "degraded",
+        "runtime": runtime_ready,
+        "ollama": ollama_ready,
+        "scheduler_registered": scheduler_registered,
+        "wan_connected": wan_connected,
+        "inference_ready": inference_ready,
+        "last_heartbeat_at": (
+            runtime.last_heartbeat_at if runtime is not None else None
+        ),
+        "last_heartbeat_ok": (
+            runtime.last_heartbeat_ok if runtime is not None else False
+        ),
+        "last_heartbeat_error": (
+            runtime.last_heartbeat_error if runtime is not None else None
+        ),
+    }

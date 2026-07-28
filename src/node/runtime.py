@@ -57,12 +57,17 @@ class Runtime:
         self.artifact_store = LocalDiskArtifactStore()
         self.task_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self.worker_task: asyncio.Task[None] | None = None
+        self.registration_status = "not_started"
+        self.last_heartbeat_at: datetime | None = None
+        self.last_heartbeat_ok = False
+        self.last_heartbeat_error: str | None = None
 
     async def start(self) -> None:
         """Start the runtime by registering and starting background tasks."""
         if self.is_running:
             return
         self.is_running = True
+        self.registration_status = "starting"
 
         try:
             # 1. Discover hosted models
@@ -81,6 +86,7 @@ class Runtime:
 
             # 3. Register with Scheduler
             await self.scheduler_client.register(node_info)
+            self.registration_status = "registered"
 
             # 3.5. Start Zenoh heartbeat client
             self.zenoh_client.start()
@@ -99,6 +105,7 @@ class Runtime:
             self.worker_task = asyncio.create_task(self._worker_loop())
         except Exception:
             self.is_running = False
+            self.registration_status = "failed"
             raise
 
     async def stop(self) -> None:
@@ -106,6 +113,7 @@ class Runtime:
         if not self.is_running:
             return
         self.is_running = False
+        self.registration_status = "stopping"
 
         # Cancel background heartbeat task
         if self.heartbeat_task is not None:
@@ -134,6 +142,7 @@ class Runtime:
         # Unregister from Scheduler (graceful, ignore errors)
         with suppress(Exception):
             await self.scheduler_client.unregister(self.settings.node_id)
+        self.registration_status = "unregistered"
 
     async def _worker_loop(self) -> None:
         """Background task consumer that processes tasks using the inference backend."""
@@ -201,6 +210,9 @@ class Runtime:
                     vram_available_gb=metrics["vram_available_gb"],
                 )
                 await self.scheduler_client.heartbeat(hb)
+                self.last_heartbeat_at = hb.timestamp
+                self.last_heartbeat_ok = True
+                self.last_heartbeat_error = None
                 logger.info(
                     "Heartbeat sent successfully for node: %s",
                     self.settings.node_id,
@@ -215,6 +227,8 @@ class Runtime:
                 except Exception as ze:
                     logger.error("Failed to publish heartbeat via Zenoh: %s", ze)
             except Exception as e:
+                self.last_heartbeat_ok = False
+                self.last_heartbeat_error = str(e)
                 logger.error("Failed to send heartbeat: %s", e)
 
             try:
