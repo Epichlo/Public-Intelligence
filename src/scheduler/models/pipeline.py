@@ -110,10 +110,24 @@ class TensorPayload(BaseModel):
     )
     shape: list[int] = Field(default_factory=list, description="Dimensions of the tensor shape")
     dtype: str = Field(default="float32", description="Data type of tensor values")
-    sequence_id: int = Field(default=0, ge=0, description="Sequence ID for token generation steps")
+    sequence_id: int = Field(default=0, description="Sequential payload frame counter.")
     shm_name: str | None = Field(
-        default=None,
-        description="Optional shared memory block name for co-located IPC",
+        default=None, description="Shared memory block URI for zero-copy IPC."
+    )
+    is_quantized: bool = Field(
+        default=False, description="Whether activation payload uses FP8/FP4 quantization."
+    )
+    quantization_type: str | None = Field(
+        default=None, description="Quantization scheme used (e.g. 'fp8_e4m3')."
+    )
+    scale_factor: float = Field(
+        default=1.0, description="Dynamic scaling factor for dequantization."
+    )
+    is_speculative: bool = Field(
+        default=False, description="Whether payload contains multi-token candidate blocks."
+    )
+    speculative_block_size: int = Field(
+        default=1, description="Number of speculative candidate tokens (K)."
     )
 
     def validate_split_activation_boundary(self) -> None:
@@ -125,8 +139,15 @@ class TensorPayload(BaseModel):
         if self.tensor_type not in allowed_tensor_types:
             raise ValueError("Split stage payload tensor_type must be an activation")
 
-        allowed_dtypes = {"float16", "float32", "float64", "bfloat16"}
-        if self.dtype not in allowed_dtypes:
+        allowed_dtypes = {
+            "float16",
+            "float32",
+            "float64",
+            "bfloat16",
+            "float8_e4m3",
+            "float8_e4m3fn",
+        }
+        if self.dtype not in allowed_dtypes and not self.is_quantized:
             raise ValueError("Split stage payload dtype must be a floating-point tensor type")
 
         if not self.shape or any(dim <= 0 for dim in self.shape):
@@ -257,3 +278,29 @@ class PipelineConfig(BaseModel):
     def num_stages(self) -> int:
         """Return number of stages in pipeline."""
         return len(self.stages)
+
+
+class DraftBlockPayload(BaseModel):
+    """Speculative candidate block payload sent from local edge gateway over WAN."""
+
+    task_id: str = Field(description="Unique task identifier")
+    sequence_start_id: int = Field(default=0, ge=0, description="Starting sequence position index")
+    speculative_k: int = Field(
+        default=5, ge=1, le=16, description="Number of candidate tokens (K)"
+    )
+    candidate_tokens: list[int] = Field(default_factory=list, description="Candidate token IDs")
+    draft_logprobs: list[float] = Field(default_factory=list, description="Draft logprobs")
+    activation_payload: TensorPayload = Field(description="Batched activation tensor payload")
+
+
+class VerificationResult(BaseModel):
+    """Result of single-pass speculative verification over WAN link."""
+
+    task_id: str = Field(description="Unique task identifier")
+    sequence_start_id: int = Field(default=0, ge=0, description="Starting sequence position")
+    n_accepted: int = Field(default=1, ge=0, le=16, description="Number of accepted tokens")
+    accepted_tokens: list[int] = Field(default_factory=list, description="Accepted token IDs")
+    correction_token: int | None = Field(default=None, description="Correction token ID")
+    verified_activations: TensorPayload | None = Field(
+        default=None, description="Verified output activation payload"
+    )

@@ -47,14 +47,14 @@ Completed
 - Global P2P WAN Router Configuration (`ZENOH_LISTEN_ENDPOINTS`, `ZENOH_PEER_ENDPOINTS`, `ZENOH_MULTICAST_SCOUTING`)
 - `ZenohRouter` auto-configuration for WAN router and peer mode
 - Phase 4.5 OpenAI REST Gateway router (`POST /v1/chat/completions`, `GET /v1/models`) with RS256 JWT authorization, TokenBucket rate limiting, SSE streaming, and telemetry endpoints (`GET /nodes/{node_id}/telemetry`)
-- Phase 4.6 asymmetric split-inference scheduler topology, OpenAI gateway split path, local boundary engine, activation-only `TensorPayload` validation, production remote activation response collection over Zenoh tensor topics, HTTP 504 Gateway Timeout, and HTTP 502 Bad Gateway validation error semantics.
+- Phase 4.7 Speculative WAN Pipeline Engine ($K=5$ candidate block generation via `DraftBlockPayload`), single-pass WAN verification schema (`VerificationResult`), and dynamic FP8 (E4M3) activation compression via `FP8Quantizer` ($S = \frac{448.0}{\max(|x|) + 1e-8}$).
 
 Current State
 
-Phase 4.6 is 100% realized on Scheduler. The Scheduler currently supports standard OpenAI Chat Completions (JSON and SSE token streaming), multi-tenant JWT auth, token-bucket rate limiting (429), decrypted telemetry REST endpoints, asymmetric split-inference planning, and production remote activation-response execution over Zenoh tensor topics with 129/129 passing unit and integration test assertions.
+Phase 4.7 is 100% realized on Scheduler. The Scheduler currently supports OpenAI Chat Completions, multi-tenant JWT auth, token-bucket rate limiting (429), decrypted telemetry REST endpoints, asymmetric split-inference planning, production remote activation-response execution over Zenoh tensor topics, and speculative FP8 WAN execution with 132/132 passing unit and integration test assertions.
 
 Next Feature
 
-Phase 4.7: Speculative WAN Pipeline Engine & FP8 Activation Compression (v0.45).
-- Local 8B draft speculation block candidate generation ($K=5$).
-- FP8 (E4M3) activation tensor compression over `BackpressuredStreamRouter`.
+Phase 4.8: Async KV-Cache Checkpointing & Dynamic State Rerouting (v0.50).
+- Non-blocking `KVCacheSnapshot` gossip streaming over Zenoh.
+- Dynamic pipeline re-stitching upon worker eviction ($\Delta t > 15.05\text{s}$).
