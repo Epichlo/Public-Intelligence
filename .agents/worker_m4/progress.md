@@ -1,14 +1,17 @@
-# Progress Log — worker_m4
+# Progress
 
-Last visited: 2026-07-29T00:55:53Z
+Last visited: 2026-07-29T11:23:00Z
 
-- [x] Initialized workspace and briefing document.
-- [x] Inspect existing `Node/pyproject.toml`, `Node/src/node/main.py`, and existing scripts or installer files.
-- [x] Implement Node CLI entry point in `Node/pyproject.toml` and `cli_main` in `Node/src/node/main.py`.
-- [x] Implement Host Daemon Launcher `scripts/launch_host_node.sh`.
-- [x] Implement One-Click Host Installer `install.sh`.
-- [x] Grant `chmod +x install.sh scripts/launch_host_node.sh`.
-- [x] Test `./install.sh --dry-run` and launcher actions (`start`, `status`, `stop`).
-- [x] Run full project tests and linter (`pytest`, `ruff check .`, `ruff format --check .`, `mypy`).
-- [x] Write `changes.md` and `handoff.md`.
-- [x] Notify parent agent.
+- [x] Initialized workspace and briefing
+- [ ] Inspect existing codebase, M1/M2/M3 work, and relevant test files
+- [ ] Implement `Node/tests/test_split_inference_security.py`
+- [ ] Implement `Node/tests/test_split_inference_pipeline.py`
+- [ ] Run test suite (`pytest`) across Scheduler and Node
+- [ ] Run linter (`ruff check .` & `ruff format --check .`) across Scheduler and Node
+- [ ] Run type checker (`mypy Scheduler/src Node/src`)
+- [ ] Update `docs/ROADMAP.md`
+- [ ] Update `Scheduler/docs/STATUS.md`
+- [ ] Update `Node/docs/STATUS.md`
+- [ ] Update `AGENTS.md` log
+- [ ] Commit changes via `git add .` and `git commit`
+- [ ] Write `handoff.md` and send message to parent

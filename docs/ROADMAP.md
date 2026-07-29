@@ -10,7 +10,7 @@ This specification details the sequential architectural evolution of the Public 
 | **v0.2 (Realized)** | **Phase 3** | Zenoh P2P heartbeats, dynamic 15.05s stale worker eviction under WAN drops, **+ Antigravity Sub-Agent Development Governance**. | Asynchronous P2P telemetry mesh, AEAD encrypted telemetry envelopes, closed-loop sub-agent verification rules. |
 | **v0.3 (Realized)** | **Phase 4** | **Global P2P WAN Network Discovery & Node Join**, NAT Traversal, P2P Model Parallelism across consumer GPUs. | Public Zenoh router endpoints, P2P NAT traversal, tensor layer sharding & activation streaming over WAN. |
 | **v0.35 (Realized)** | **Phase 4.5** | **Web Visual Control Plane, Host Telemetry Dashboard, Requester Chat Playground, OpenAI REST Gateway (`/v1/chat/completions`), and One-Click Host Installer (`install.sh`)**. | Visual Control Plane (WebUI/Next.js), real-time global telemetry gauges, prompt playground, OpenAI API gateway, and host node launcher harness. |
-| **v0.40 (Next Priority)** | **Phase 4.6** | **Asymmetric Split-Inference & Local Boundary Isolation** (Layer 0 Embedding & LM Head retained locally; intermediate Layers 1..N-1 offloaded). | Client edge boundary isolation, zero prompt leakage over untrusted WAN nodes, high-dimensional intermediate activation streaming. |
+| **v0.40 (Realized)** | **Phase 4.6** | **Asymmetric Split-Inference & Local Boundary Isolation** M1/M2 boundary contracts: Layer 0 Embedding & LM Head retained locally; remote hidden stages executed over Zenoh activation channels with 504 timeout & 502 validation error guards. | Client edge boundary isolation, activation-only split-stage validation, zero prompt/token leakage tests, production remote activation-response collection over Zenoh tensor topics. |
 | **v0.45 (Planned)** | **Phase 4.7** | **Speculative WAN Pipeline Engine & FP8 Activation Compression** (Local 8B draft speculation $K=5$, 75% RTT reduction, FP8 E4M3 quantization). | Multi-token candidate block verification over WAN, FP8 `BackpressuredStreamRouter` serialization (50% bandwidth reduction). |
 | **v0.50 (Planned)** | **Phase 4.8** | **Async KV-Cache Checkpointing & Dynamic State Rerouting** (Background KV replication over Zenoh gossip, seamless restitching on node drop). | Non-blocking `KVCacheSnapshot` gossip streaming, zero-recomputation pipeline rerouting upon stale worker eviction ($\Delta t > 15.05\text{s}$). |
 | **v0.55 (Planned)** | **Phase 4.9** | **Workload-Aware System Routing (`/v1/chat/completions` vs `/v1/batch`), Apple Silicon Onboarding & Fiat Credit Exchange Ledger**. | Interactive single-node / LAN routing vs multi-node WAN batch processing (`POST /v1/batch`), Apple Silicon Metal Unified Memory profiling, tokenless fiat credit exchange ledger. |
@@ -40,10 +40,11 @@ This specification details the sequential architectural evolution of the Public 
 
 ---
 
-### Phase 4.6: Asymmetric Split-Inference & Local Boundary Security (v0.40 — Next Priority)
-- **Local Boundary Isolation:** Client/Edge node retains Layer 0 (Embedding) and final LM Head (Unembedding projection) locally.
-- **Intermediate Activation Offloading:** Intermediate hidden activation tensors (Layers 1 to N-1) flow across external Zenoh P2P channels.
-- **Data Privacy Assurance:** Untrusted host nodes process only high-dimensional intermediate vector activations, making prompt reconstruction mathematically impossible without local embedding weights.
+### Phase 4.6: Asymmetric Split-Inference & Local Boundary Security (v0.40 — Realized)
+- **M1 Boundary Contract (Realized):** Client/Edge node retains Layer 0 (Embedding) and final LM Head (Unembedding projection) locally. Scheduler constructs the asymmetric topology `client_local embedding -> remote hidden layers -> client_local lm_head`.
+- **Activation-Only Remote Stage Contract (Realized):** Node and Scheduler `TensorPayload` models expose `validate_split_activation_boundary()` so remote split-stage execution rejects prompt-like tensor types, string dtypes, structured prompt dictionaries, empty payloads, and malformed activation shapes.
+- **Gateway Boundary Alignment (Realized):** The OpenAI split-inference gateway resolves to the canonical local boundary engine and preserves the activation-only handoff contract while retaining raw prompts and token history inside local memory.
+- **M2 Remote Activation Collection & Error Semantics (Realized):** Production remote activation-response collection over Zenoh tensor topics (`public-intelligence/net/tasks/{task_id}/tensors/{stage_index}`), Node runtime dynamic split stage topic subscriber, configurable response timeout with HTTP 504 Gateway Timeout, and strict activation boundary validation error handling with HTTP 502 Bad Gateway.
 
 ---
 

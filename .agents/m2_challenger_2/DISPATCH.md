@@ -1,18 +1,16 @@
-## 2026-07-26T13:01:05Z
-You are Challenger 2 for Milestone M2 (Node Local Telemetry & Control APIs).
-Your working directory is: /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/m2_challenger_2
+## 2026-07-29T11:21:21Z
+<USER_REQUEST>
+You are CHALLENGER 2 for Milestone M2 (Local Boundary Engine & Backends) of Public Intelligence Phase 4.6.
 
-Context & Instructions:
-- Read /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/ORIGINAL_REQUEST.md.
-- Read /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/PROJECT.md.
-- Read /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/m2_worker/handoff.md.
+Working directory: /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/m2_challenger_2
+Original request: /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/ORIGINAL_REQUEST.md
+Project plan: /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/orchestrator_phase4_6/PROJECT.md
 
-Empirical Verification Scope (Node Sub-repository: /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/Node):
-1. Verify `GET /api/v1/node/telemetry` response format and range validations (CPU utilization 0-100%, valid RAM numbers, boolean `wan_connected`).
-2. Verify SSE stream format for `GET /api/v1/sandbox/logs/stream` (each chunk starts with `data: ` and ends with `\n\n`).
-3. Run:
-   - `.venv/bin/pytest`
-   - `.venv/bin/ruff check .`
-   - `.venv/bin/mypy src`
-4. Formulate your verdict: `APPROVE` or `REQUEST_CHANGES`.
-5. Write your report to /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/m2_challenger_2/handoff.md and report back via send_message to parent.
+Task:
+1. Empirically verify backend split stage execution (`execute_split_stage`) across `EchoBackend` (`Node/src/node/backends/mock.py`) and `OllamaBackend` (`Node/src/node/backends/ollama.py`).
+2. Write test scenarios verifying:
+   - Passing float activation payloads returns transformed float activation payloads with matching dimensions and dtype.
+   - `execute_split_stage` rejects invalid input payloads or non-split requests cleanly.
+3. Run tests and full verification suite (`pytest`, `ruff check`, `mypy`).
+4. Write `handoff.md` in your working directory with explicit verdict: `APPROVE` or `REJECT`. Notify parent via `send_message`.
+</USER_REQUEST>

@@ -1,21 +1,16 @@
-## 2026-07-26T13:01:05Z
-<USER_REQUEST>
-You are Challenger 1 for Milestone M2 (Node Local Telemetry & Control APIs).
-Your working directory is: /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/m2_challenger_1
+## 2026-07-29T11:21:21Z
 
-Context & Instructions:
-- Read /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/ORIGINAL_REQUEST.md.
-- Read /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/PROJECT.md.
-- Read /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/m2_worker/handoff.md.
+You are CHALLENGER 1 for Milestone M2 (Local Boundary Engine & Backends) of Public Intelligence Phase 4.6.
 
-Empirical Verification Scope (Node Sub-repository: /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/Node):
-1. Execute pytest and create adversarial tests or stress tests targeting `Node/src/node/api/control.py` and `SandboxLogBuffer` under concurrent log writes and streaming readers.
-2. Verify that high concurrency log emission does not cause race conditions or memory leaks in `SandboxLogBuffer`.
-3. Verify that `POST /api/v1/node/control` handles unexpected payload values and transitions runtime state correctly.
-4. Run:
-   - `.venv/bin/pytest`
-   - `.venv/bin/ruff check .`
-   - `.venv/bin/mypy src`
-5. Formulate your verdict: `APPROVE` or `REQUEST_CHANGES`.
-6. Write your report to /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/m2_challenger_1/handoff.md and report back via send_message to parent.
-</USER_REQUEST>
+Working directory: /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/m2_challenger_1
+Original request: /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/ORIGINAL_REQUEST.md
+Project plan: /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/orchestrator_phase4_6/PROJECT.md
+
+Task:
+1. Empirically verify `LocalBoundaryEngine` in `Node/src/node/core/local_boundary.py` and `Scheduler/src/scheduler/core/local_boundary.py`.
+2. Write and execute stress/validation test cases verifying:
+   - Token embedding generation produces valid float32 activations with shape `[1, seq_len, hidden_dim]` and `is_split_inference=True`.
+   - Local LM Head unembedding computes logits and samples tokens correctly across various temperatures.
+   - Zero raw text or token IDs are exposed in the output `TensorPayload`.
+3. Run tests and full verification suite (`pytest`, `ruff check`, `mypy`).
+4. Write `handoff.md` in your working directory with explicit verdict: `APPROVE` or `REJECT`. Notify parent via `send_message`.

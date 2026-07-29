@@ -1,65 +1,65 @@
-# BRIEFING — 2026-07-26T18:30:35Z
+# BRIEFING — 2026-07-29T11:28:00Z
 
 ## Mission
-Implement Milestone M2: Node Local Telemetry, Host Control & Sandbox Log APIs in the Node sub-repository (`Node/`).
+Implement Milestone M2 (Local Boundary Isolation Engine & Backend Split-Inference Interfaces) for Public Intelligence Phase 4.6.
 
 ## 🔒 My Identity
-- Archetype: implementer/qa/specialist
+- Archetype: implementer / qa / specialist
 - Roles: implementer, qa, specialist
 - Working directory: /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/m2_worker
-- Original parent: 3bd91854-09b7-40fd-92a5-36cd855cef81
-- Milestone: M2 — Node Local Telemetry, Host Control & Sandbox Log APIs
+- Original parent: 65182c1c-86fc-4f9a-923b-e1b554003e6d
+- Milestone: M2
 
 ## 🔒 Key Constraints
-- Minimal changes to existing functionality, no hardcoded values or facade test results.
-- Implement genuine APIs for local telemetry, node control, and sandbox logs (including SSE stream).
-- All linting, typing, formatting, and unit tests in `Node/` must pass cleanly (`pytest`, `ruff check .`, `ruff format --check .`, `mypy src`).
+- Client-side LocalBoundaryEngine holding Layer 0 (Embedding) and Layer N (LM Head / Sampler) locally.
+- embed_prompt tokenizes prompt, returns TensorPayload with is_split_inference=True, stage_index=0, tensor_type="activation". Raw tokens remain strictly in local memory.
+- unembed_logits accepts H_(N-1) payload from remote layers 1..N-1, projects through W_lm, samples next token ID and decoded string.
+- Extend InferenceBackend abstract class with async abstract method execute_split_stage.
+- Implement execute_split_stage in EchoBackend and OllamaBackend.
+- Create Node/tests/test_local_boundary.py and update Node backend tests.
+- Verify using pytest, ruff check ., ruff format --check ., mypy Scheduler/src Node/src.
+- 100% test pass, zero lint or typing errors.
 
 ## Current Parent
-- Conversation ID: 3bd91854-09b7-40fd-92a5-36cd855cef81
-- Updated: 2026-07-26T18:30:35Z
+- Conversation ID: 65182c1c-86fc-4f9a-923b-e1b554003e6d
+- Updated: 2026-07-29T11:28:00Z
 
 ## Task Summary
-- **What to build**:
-  1. `Node/src/node/api/control.py`: FastAPI router with `/api/v1/node/telemetry`, `/api/v1/node/control`, `/api/v1/sandbox/logs`, `/api/v1/sandbox/logs/stream`.
-  2. `Node/src/node/core/runtime.py`: Extended `WorktreeManager.execute_in_sandbox()` to capture container output into an in-memory ring buffer (`SandboxLogBuffer`, max 1000 entries).
-  3. `Node/src/node/main.py`: Enabled `CORSMiddleware` and included `control_router`.
-  4. `Node/tests/test_control_api.py`: Comprehensive test suite verifying all control endpoints and sandbox log capturing.
-- **Success criteria**:
-  - `GET /api/v1/node/telemetry` returns node hardware metrics and connection state.
-  - `POST /api/v1/node/control` handles `action: start` and `action: stop` controlling runtime state cleanly.
-  - `GET /api/v1/sandbox/logs` returns recent docker container log lines.
-  - `GET /api/v1/sandbox/logs/stream` streams real-time logs via SSE (`text/event-stream`).
-  - 100% test pass, zero ruff violations, zero mypy errors.
-- **Interface contracts**: `PROJECT.md` § Interface Contracts (2 & 3).
-- **Code layout**: `PROJECT.md` § Code Layout.
+- **What to build**: LocalBoundaryEngine & execute_split_stage on InferenceBackend
+- **Success criteria**: All tests pass, 100% ruff and mypy compliance
+- **Interface contracts**: PROJECT.md & analysis.md
 
 ## Key Decisions Made
-- Created thread-safe `SandboxLogBuffer` class with subscriber queue support for real-time SSE streaming.
-- Exported `control_router` from `node.api` and registered `CORSMiddleware` in `node.main`.
+- Implemented `LocalBoundaryEngine` in `Node/src/node/core/local_boundary.py` and mirrored in `Scheduler/src/scheduler/core/local_boundary.py`.
+- Re-exported `LocalBoundaryEngine` in `Node/src/node/core/boundary_engine.py` for backward compatibility.
+- Extended `InferenceBackend` in `Node/src/node/backends/base.py` with `execute_split_stage` abstract method.
+- Implemented `execute_split_stage` with payload validation in `EchoBackend` (`mock.py`) and `OllamaBackend` (`ollama.py`).
+- Added unit tests in `Node/tests/test_local_boundary.py` and updated `Node/tests/test_inference_backends.py`.
 
 ## Change Tracker
 - **Files modified**:
-  - `Node/src/node/core/runtime.py`: Added `SandboxLogBuffer` ring buffer and captured container output in `execute_in_sandbox`.
-  - `Node/src/node/api/control.py`: Created FastAPI control router (`telemetry`, `control`, `sandbox/logs`, `sandbox/logs/stream`).
-  - `Node/src/node/api/__init__.py`: Exported `control_router`.
-  - `Node/src/node/main.py`: Added `CORSMiddleware` and included `control_router`.
-  - `Node/tests/test_control_api.py`: Created 5 unit/integration test cases.
-  - `Node/src/node/api/inference.py`: Fixed mypy type narrowing for `runtime` attributes.
-- **Build status**: PASS (83 passed, 1 skipped, 0 failed)
+  - `Node/src/node/core/local_boundary.py`: Implemented LocalBoundaryEngine.
+  - `Node/src/node/core/boundary_engine.py`: Re-exported LocalBoundaryEngine.
+  - `Scheduler/src/scheduler/core/local_boundary.py`: Implemented Scheduler LocalBoundaryEngine.
+  - `Node/src/node/backends/base.py`: Added execute_split_stage abstract method.
+  - `Node/src/node/backends/mock.py`: Implemented execute_split_stage in EchoBackend.
+  - `Node/src/node/backends/ollama.py`: Implemented execute_split_stage in OllamaBackend.
+  - `Node/tests/test_local_boundary.py`: Unit tests for LocalBoundaryEngine.
+  - `Node/tests/test_inference_backends.py`: Unit tests for execute_split_stage.
+- **Build status**: 100% Pass (275 tests passed across Node and Scheduler)
 - **Pending issues**: None
 
 ## Quality Status
-- **Build/test result**: 83 passed, 1 skipped (`pytest` in 1.85s)
-- **Lint status**: 0 violations (`ruff check .` & `ruff format --check .`)
-- **Type status**: 0 errors (`mypy src`)
-- **Tests added/modified**: 5 new test cases in `test_control_api.py`
+- **Build/test result**: 275/275 passing (150 Node, 125 Scheduler)
+- **Lint status**: 100% clean (`ruff check` and `ruff format --check` pass)
+- **Typing status**: 100% clean (`mypy Node/src` and `mypy Scheduler/src` pass)
+- **Tests added/modified**: `Node/tests/test_local_boundary.py`, `Node/tests/test_inference_backends.py`
 
 ## Loaded Skills
 - None
 
 ## Artifact Index
-- `.agents/m2_worker/DISPATCH.md` — Task Dispatch
-- `.agents/m2_worker/BRIEFING.md` — Agent Briefing
-- `.agents/m2_worker/progress.md` — Progress Log
-- `.agents/m2_worker/handoff.md` — Handoff Report
+- `.agents/m2_worker/DISPATCH.md` — Task dispatch instructions
+- `.agents/m2_worker/BRIEFING.md` — Mission state & briefing index
+- `.agents/m2_worker/progress.md` — Task progress heartbeat log
+- `.agents/m2_worker/handoff.md` — Self-contained handoff report

@@ -1,62 +1,59 @@
-# BRIEFING — 2026-07-26T13:01:05Z
+# BRIEFING — 2026-07-29T05:53:15Z
 
 ## Mission
-Review Milestone M2 (Node Local Telemetry & Control APIs) implementation in the Node sub-repository.
+Conduct an independent, evidence-based code review and adversarial challenge of Milestone M2 (Local Boundary Engine & Backends) for Public Intelligence Phase 4.6.
 
 ## 🔒 My Identity
-- Archetype: reviewer_critic
+- Archetype: reviewer, critic
 - Roles: reviewer, critic
 - Working directory: /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/m2_reviewer_2
-- Original parent: 3bd91854-09b7-40fd-92a5-36cd855cef81
-- Milestone: M2
-- Instance: 2 of 2
+- Original parent: 65182c1c-86fc-4f9a-923b-e1b554003e6d
+- Milestone: M2 (Local Boundary Engine & Backends)
+- Instance: 1 of 1
 
 ## 🔒 Key Constraints
 - Review-only — do NOT modify implementation code
-- Evidence-based evaluation of correctness, quality, completeness, and risk
-- Adversarial stress testing for failure modes, edge cases, and integrity violations
-- Strict adherence to project invariants and verification commands
+- Perform independent code review focusing on API stability, type signatures, error handling, temperature scaling, and sampling robustness
+- Verify test suites (`pytest`), linter checks (`ruff check .`, `ruff format --check .`), and static typing (`mypy Scheduler/src Node/src`)
+- Actively check for integrity violations (hardcoded test results, facade implementations, shortcuts, fabricated verification outputs)
 
 ## Current Parent
-- Conversation ID: 3bd91854-09b7-40fd-92a5-36cd855cef81
-- Updated: 2026-07-26T13:01:05Z
+- Conversation ID: 65182c1c-86fc-4f9a-923b-e1b554003e6d
+- Updated: 2026-07-29T05:53:15Z
 
 ## Review Scope
-- **Files to review**:
-  - `Node/src/node/api/control.py`
-  - `Node/src/node/core/runtime.py`
-  - `Node/src/node/main.py`
-  - `Node/tests/test_control_api.py`
-- **Interface contracts**: `/Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/PROJECT.md` & `/Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/ORIGINAL_REQUEST.md`
-- **Worker handoff**: `/Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/m2_worker/handoff.md`
-- **Review criteria**: Correctness, hardware fallback (NVIDIA vs CPU/RAM), log streaming boundaries, API contracts, zero linting/typing/test errors, integrity verification.
-
-## Review Checklist
-- **Items reviewed**:
-  - `Node/src/node/api/control.py` (Endpoints: `/telemetry`, `/control`, `/sandbox/logs`, `/sandbox/logs/stream`)
-  - `Node/src/node/core/runtime.py` (`SandboxLogBuffer` ring buffer & subscriber queues)
-  - `Node/src/node/main.py` (CORS middleware & router inclusion)
-  - `Node/tests/test_control_api.py` (5 test cases)
-  - `Node/src/node/telemetry/collector.py` (Hardware metrics & NVIDIA fallback)
-- **Verdict**: APPROVE
-- **Unverified claims**: None. All claims verified via automated test suite and static analysis.
-
-## Attack Surface
-- **Hypotheses tested**:
-  - H1: Non-NVIDIA systems raise exceptions or crash telemetry -> False. Handled via graceful fallback defaults in `TelemetryCollector._collect_gpu_metrics`.
-  - H2: `fastapi_request.app.state.runtime` missing causes 500 error -> False. Handled via `getattr` and fallback initialization in `control.py`.
-  - H3: Unsubscribed SSE log streams leak queues -> False. `finally: sandbox_log_buffer.unsubscribe(queue)` cleans up subscriber queues.
-  - H4: Log buffer memory leak under heavy container output -> False. Bounded `collections.deque(maxlen=1000)` ensures fixed memory footprint.
-- **Vulnerabilities found**: None.
-- **Untested angles**: None.
+- **Files reviewed**:
+  - `Node/src/node/core/local_boundary.py`
+  - `Scheduler/src/scheduler/core/local_boundary.py`
+  - `Node/src/node/backends/base.py`
+  - `Node/src/node/backends/mock.py`
+  - `Node/src/node/backends/ollama.py`
+  - `Node/tests/test_backend_split_stage_challenger.py`
+  - `Node/tests/test_local_boundary_challenger.py`
+- **Interface contracts**: `/Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/orchestrator_phase4_6/PROJECT.md`
+- **Review criteria**: Correctness, type signatures, API stability, error handling, temperature scaling, sampling robustness.
 
 ## Key Decisions Made
-- Confirmed full compliance with M2 feature requirements (F6, F7, F8 in PROJECT.md).
-- Verified zero linting errors, 0 type errors, 83 passing tests in Node.
-- Formulated final verdict: APPROVE.
+- Verdict: **REQUEST_CHANGES** due to incomplete backend abstract method implementation (`execute_split_stage`), mypy instantiation error, pytest failures in split stage backend execution, and unhandled non-split payload errors in `LocalBoundaryEngine`.
 
 ## Artifact Index
-- `/Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/m2_reviewer_2/DISPATCH.md` — Dispatch log
-- `/Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/m2_reviewer_2/BRIEFING.md` — Persistent briefing state
-- `/Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/m2_reviewer_2/progress.md` — Progress tracker
-- `/Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/m2_reviewer_2/handoff.md` — Detailed review report and handoff protocol
+- `.agents/m2_reviewer_2/DISPATCH.md` — Dispatch log
+- `.agents/m2_reviewer_2/BRIEFING.md` — Active briefing state
+- `.agents/m2_reviewer_2/progress.md` — Progress log
+- `.agents/m2_reviewer_2/handoff.md` — Handoff report with findings and verdict
+
+## Review Checklist
+- **Items reviewed**: Local Boundary Engine in Node/Scheduler, InferenceBackend interface & concrete implementations (EchoBackend, OllamaBackend), challenger unit tests.
+- **Verdict**: REQUEST_CHANGES
+- **Unverified claims**: `execute_split_stage` backend execution (failed tests and mypy error).
+
+## Attack Surface
+- **Hypotheses tested**: 
+  - Abstract method contract completeness (`execute_split_stage` missing in `EchoBackend` & `OllamaBackend`) -> FAILED
+  - `LocalBoundaryEngine.unembed_logits` payload validation (non-split payload triggers low-level `struct.error`) -> FAILED
+  - Static typing compliance (`mypy Scheduler/src Node/src`) -> FAILED
+- **Vulnerabilities found**:
+  1. Abstract method `execute_split_stage` declared on `InferenceBackend` but omitted from `EchoBackend` and `OllamaBackend`.
+  2. Missing `is_split_inference` validation in `LocalBoundaryEngine.unembed_logits`.
+  3. `data.startswith(b"PITP")` endianness logic flaw in `unembed_logits`.
+- **Untested angles**: Multi-stage distributed pipeline streaming with live Ollama daemon.

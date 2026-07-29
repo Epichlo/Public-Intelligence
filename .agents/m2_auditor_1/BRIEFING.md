@@ -1,45 +1,44 @@
-# BRIEFING — 2026-07-26T13:02:00Z
+# BRIEFING — 2026-07-29T11:25:40Z
 
 ## Mission
-Forensic audit of Milestone M2 (Node Local Telemetry & Control APIs) to verify zero integrity violations and empirical compliance.
+Perform forensic audit on Milestone M2 implementation (Local Boundary Engine & Backends) for code integrity and split-inference security.
 
 ## 🔒 My Identity
 - Archetype: forensic_auditor
 - Roles: [critic, specialist, auditor]
 - Working directory: /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/m2_auditor_1
-- Original parent: 3bd91854-09b7-40fd-92a5-36cd855cef81
-- Target: Milestone M2 (Node Local Telemetry & Control APIs)
+- Original parent: 65182c1c-86fc-4f9a-923b-e1b554003e6d
+- Target: Milestone M2 (Local Boundary Engine & Backends)
 
 ## 🔒 Key Constraints
 - Audit-only — do NOT modify implementation code
 - Trust NOTHING — verify everything independently
-- Check ORIGINAL_REQUEST.md for ground-truth user constraints
-- Inspect source files, execution behavior, tests, and static checks
-- Produce binary verdict: CLEAN or INTEGRITY_VIOLATION with full empirical evidence
+- Integrity mode: development
+- Focus checks: Hardcoded test outputs/mock bypasses in production, dummy/facade implementations, prompt/token leaks in activation payloads
 
 ## Current Parent
-- Conversation ID: 3bd91854-09b7-40fd-92a5-36cd855cef81
-- Updated: 2026-07-26T13:02:00Z
+- Conversation ID: 65182c1c-86fc-4f9a-923b-e1b554003e6d
+- Updated: 2026-07-29T11:25:40Z
 
 ## Audit Scope
-- **Work product**: Node Local Telemetry & Control APIs (`Node/src/node/api/control.py`, `Node/src/node/core/runtime.py`, `Node/src/node/main.py`, `Node/tests/test_control_api.py`, `Node/tests/test_m2_adversarial.py`)
-- **Profile loaded**: General Project / Forensic Auditor
+- **Work product**: `Node/src/node/core/local_boundary.py`, `Scheduler/src/scheduler/core/local_boundary.py`, `Node/src/node/backends/base.py`, `mock.py`, `ollama.py`
+- **Profile loaded**: General Project / Forensic Audit
 - **Audit type**: forensic integrity check
 
 ## Audit Progress
 - **Phase**: reporting
-- **Checks completed**:
-  - Read ORIGINAL_REQUEST.md, PROJECT.md, m2_worker handoff.md
-  - Deep static inspection of control.py, runtime.py, main.py, test_control_api.py, collector.py, telemetry.py
-  - Empirical execution of pytest, ruff check, ruff format --check, mypy src
+- **Checks completed**: [Source Code Analysis, Behavioral Verification, Static Typing & Linting, Prompt Leak Analysis]
 - **Checks remaining**: None
-- **Findings**: INTEGRITY_VIOLATION (pytest failure in test_m2_adversarial.py, 9 ruff check errors, ruff format error, false attestation in worker handoff)
+- **Findings so far**: INTEGRITY VIOLATION (Node PyTest 6 failures, Ruff 40 lint errors, OllamaBackend facade implementation)
 
 ## Key Decisions Made
-- Formulated binary verdict: INTEGRITY_VIOLATION due to failing pytest suite, ruff linter/formatting errors, and false attestation claims in m2_worker handoff report.
-- Generated full forensic audit report and handoff report in `.agents/m2_auditor_1/handoff.md`.
+- Executed empirical verification on Node and Scheduler test suites.
+- Confirmed zero prompt string / token ID leaks in activation payloads.
+- Identified broken `LocalBoundaryEngine` stub in `Node/src/node/core/boundary_engine.py` causing 6 pytest failures.
+- Identified facade transformation in `OllamaBackend.execute_split_stage`.
+- Issued verdict: INTEGRITY VIOLATION.
 
 ## Artifact Index
-- /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/m2_auditor_1/DISPATCH.md — Dispatch log
-- /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/m2_auditor_1/BRIEFING.md — Persistent briefing state
-- /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/m2_auditor_1/handoff.md — Forensic Audit Report & Handoff
+- `.agents/m2_auditor_1/DISPATCH.md` — initial dispatch log
+- `.agents/m2_auditor_1/BRIEFING.md` — briefing state
+- `.agents/m2_auditor_1/handoff.md` — final handoff audit report

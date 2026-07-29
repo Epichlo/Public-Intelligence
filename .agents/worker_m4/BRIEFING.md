@@ -1,60 +1,49 @@
-# BRIEFING — 2026-07-29T00:55:50Z
+# BRIEFING — 2026-07-29T11:23:00Z
 
 ## Mission
-Implement Milestone 4: One-Click POSIX Host Node Installer (`install.sh`), Host Daemon Launcher (`scripts/launch_host_node.sh`), and Node CLI Entry Point (`public-intelligence-node`).
+Author security audit test suite, end-to-end split pipeline test suite, perform closed-loop verification (pytest, ruff check, ruff format, mypy), update project documentation, commit git changes for Phase 4.6.
 
 ## 🔒 My Identity
-- Archetype: implementer
-- Roles: implementer, qa, specialist
+- Archetype: implementer/qa/verifier
+- Roles: coder, verifier
 - Working directory: /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/worker_m4
-- Original parent: e436f93a-97e7-4b41-88fd-47b47b3f8097
-- Milestone: M4 (Host Installer & Launch Harness)
+- Original parent: 65182c1c-86fc-4f9a-923b-e1b554003e6d
+- Milestone: M4 (Verification, Security Audit & Documentation Sync)
 
 ## 🔒 Key Constraints
-- One-Click POSIX Host Installer (`install.sh` at root) supporting `--dry-run`, hardware auto-discovery (NVIDIA, Apple Silicon, AMD ROCm, CPU, RAM), prerequisites check (Python 3.10+, Git, Docker daemon), python virtual environment setup/verification, automatic `Node/.env` WAN endpoint configuration.
-- Daemon launcher script `scripts/launch_host_node.sh` with start/stop/status/restart actions, background logging, PID file tracking.
-- Node CLI entry point `public-intelligence-node` in `Node/pyproject.toml` pointing to `node.main:cli_main`.
-- Clean verification: `./install.sh --dry-run`, `pytest`, `ruff check .`, `ruff format --check .`, `mypy`.
-- No hardcoded test results, facade implementations, or integrity shortcuts.
+- DO NOT CHEAT: all implementations must be genuine.
+- Complete security audit test suite (`Node/tests/test_split_inference_security.py`).
+- Complete E2E split pipeline test suite (`Node/tests/test_split_inference_pipeline.py`).
+- Closed-loop verification: 100% pass on pytest, ruff check, ruff format, mypy across Scheduler and Node.
+- Documentation sync across `docs/ROADMAP.md`, `Scheduler/docs/STATUS.md`, `Node/docs/STATUS.md`, `AGENTS.md`.
+- Git commit with conventional commit message.
+- Handoff report in `handoff.md` and send_message to parent (`65182c1c-86fc-4f9a-923b-e1b554003e6d`).
 
 ## Current Parent
-- Conversation ID: e436f93a-97e7-4b41-88fd-47b47b3f8097
-- Updated: 2026-07-29T00:55:50Z
+- Conversation ID: 65182c1c-86fc-4f9a-923b-e1b554003e6d
+- Updated: 2026-07-29T11:23:00Z
 
 ## Task Summary
-- **What to build**: POSIX `install.sh`, `scripts/launch_host_node.sh`, `Node/pyproject.toml` entry point, `Node/src/node/main.py` `cli_main()` entry point function.
-- **Success criteria**: All scripts executed and tested, `--dry-run` operational, daemon start/stop verified, full project pytest/linting clean (228 tests passing).
-- **Interface contracts**: PROJECT.md Milestone 4 specifications.
-- **Code layout**: Root `install.sh`, `scripts/launch_host_node.sh`, `Node/pyproject.toml`, `Node/src/node/main.py`.
-
-## Change Tracker
-- **Files modified**:
-  - `install.sh`: Created one-click installer script with hardware discovery & `--dry-run`.
-  - `scripts/launch_host_node.sh`: Created daemon launcher harness.
-  - `Node/pyproject.toml`: Added `[project.scripts]` entry point.
-  - `Node/src/node/main.py`: Added `cli_main()` CLI entry point.
-  - `Node/tests/test_main.py`: Added unit test for `cli_main()`.
-  - `Node/tests/test_installer_launcher.py`: Created integration tests.
-- **Build status**: PASS (117 Node passed, 111 Scheduler passed, ruff check clean, ruff format clean, mypy clean)
-- **Pending issues**: None
-
-## Quality Status
-- **Build/test result**: PASS (228 total tests passed)
-- **Lint status**: 0 violations (ruff check & ruff format --check passed)
-- **Tests added/modified**: `Node/tests/test_main.py`, `Node/tests/test_installer_launcher.py`
-
-## Loaded Skills
-- None requested specifically.
+- **What to build**: Verification suites for Phase 4.6 (split-inference security audit & end-to-end pipeline test), full project verification & documentation sync, git commit.
+- **Success criteria**: All tests pass, zero ruff/mypy errors, docs updated, git committed cleanly.
 
 ## Key Decisions Made
-- `install.sh` supports POSIX sh/bash flags including `--dry-run`, `--help`, `--force`, `--skip-docker`, and `--skip-venv`.
-- Hardware detection checks NVIDIA (`nvidia-smi`), macOS Apple Silicon (`sysctl` + `system_profiler`), AMD (`rocm-smi`), CPU cores (`nproc` / `sysctl`), RAM (`/proc/meminfo` / `sysctl`).
-- Environment configuration generates clean `.env` entries if not present in `Node/.env`.
-- CLI entry point `public-intelligence-node` invokes `node.main:cli_main`.
+- Proceeding with step-by-step verification and documentation update.
+
+## Change Tracker
+- **Files modified**: [TBD]
+- **Build status**: [TBD]
+- **Pending issues**: none
+
+## Quality Status
+- **Build/test result**: [TBD]
+- **Lint status**: [TBD]
+- **Tests added/modified**: `Node/tests/test_split_inference_security.py`, `Node/tests/test_split_inference_pipeline.py`
+
+## Loaded Skills
+- None
 
 ## Artifact Index
-- `/Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/worker_m4/DISPATCH.md` — Dispatch prompt
-- `/Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/worker_m4/BRIEFING.md` — Briefing document
-- `/Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/worker_m4/progress.md` — Progress tracker
-- `/Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/worker_m4/changes.md` — Changes report
-- `/Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/worker_m4/handoff.md` — Handoff report
+- `.agents/worker_m4/BRIEFING.md`
+- `.agents/worker_m4/progress.md`
+- `.agents/worker_m4/handoff.md`

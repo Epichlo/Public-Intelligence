@@ -13,6 +13,6 @@ Current iteration: 1 / 32
 - [x] Construct feature inventory and update `PROJECT.md`
 - [x] Dispatch E2E Testing Orchestrator / Test Writer (`e2e_test_writer`)
 - [x] Dispatch Sub-orchestrators / Milestones (`worker_m3`, `worker_m4`)
-- [/] Run closed-loop verification and gates (dispatched reviewer_1, reviewer_2, challenger_1, challenger_2, auditor_1)
-- [ ] Update documentation and AGENTS.md log
-- [ ] Final verification and handoff report
+- [x] Run closed-loop verification and gates (Reviewers, Challengers, Forensic Auditor)
+- [x] Update documentation and AGENTS.md log (`worker_doc_sync`)
+- [x] Final verification and handoff report

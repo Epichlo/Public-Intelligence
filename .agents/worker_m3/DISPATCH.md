@@ -1,18 +1,27 @@
-## 2026-07-29T00:53:04Z
-Implement Milestone 3 in website/:
-1. Host Contributor Telemetry Dashboard (/dashboard):
-   - Host node start/stop toggle component (components/node-control-toggle.tsx) making POST /api/node/control.
-   - Real-time telemetry gauges (components/telemetry-gauge.tsx) displaying CPU %, RAM usage/total, VRAM usage/total, AEAD encrypted telemetry status, heartbeat health indicator, and global P2P WAN connection state.
-   - Real-time Docker sandbox log viewer (components/sandbox-log-viewer.tsx) connecting to SSE endpoint /api/sandbox/logs/stream.
-2. Interactive Requester Chat Playground (/playground):
-   - Responsive chat interface (app/playground/page.tsx & components) supporting real-time Server-Sent Events (SSE) token streaming from /api/chat/completions.
-   - Model selector (fetching /api/models), prompt submission form, temperature/top_p/max_tokens controls, JWT token auth field.
-   - Latency metrics card (Time To First Token [TTFT ms], tokens/sec generation rate, total elapsed time).
-   - Rate limit (429) & error notification banner with actionable advice.
-3. Next.js API Proxy Routes in website/src/app/api/:
-   - /api/chat/completions/route.ts -> proxies POST to Scheduler http://localhost:8000/v1/chat/completions (supporting SSE streaming).
-   - /api/models/route.ts -> proxies GET to Scheduler http://localhost:8000/v1/models.
-   - /api/node/telemetry/route.ts -> proxies GET to Node http://localhost:8080/api/v1/node/telemetry.
-   - /api/node/control/route.ts -> proxies POST to Node http://localhost:8080/api/v1/node/control.
-   - /api/sandbox/logs/stream/route.ts -> proxies GET SSE to Node http://localhost:8080/api/v1/sandbox/logs/stream.
-   - /api/telemetry/all/route.ts -> proxies GET to Scheduler http://localhost:8000/nodes/telemetry.
+## 2026-07-29T05:51:46Z
+Assignee: CODER
+Milestone: M3 (Matchmaker Split Allocation & OpenAI Gateway Split Streaming)
+
+Milestone M3 Scope & Requirements:
+1. Extend `SchedulingEngine` in `Scheduler/src/scheduler/core/engine.py`:
+   - Implement `schedule_split_inference_pipeline(task: TaskProposal, total_layers: int = 32) -> list[PipelineStage]`:
+     - Creates 3-tier asymmetric split-inference chain:
+       * Stage 0 (Client Local Embedding): `stage_index=0`, `layer_range=LayerRange(start_layer=0, end_layer=0)`, `node_id="client_local"`, `is_local_boundary=True`, `stage_type=StageType.CLIENT_EMBEDDING`, `is_split_inference=True`.
+       * Stages 1..K-1 (Remote Host Pipeline): Partition intermediate layers 1..total_layers-1 across eligible compute nodes based on available VRAM, `is_local_boundary=False`, `stage_type=StageType.REMOTE_HIDDEN`, `is_split_inference=True`.
+       * Stage K (Client Local LM Head): `stage_index=K`, `layer_range=LayerRange(start_layer=total_layers, end_layer=total_layers)`, `node_id="client_local"`, `is_local_boundary=True`, `stage_type=StageType.CLIENT_LM_HEAD`, `is_split_inference=True`.
+     - Validates local boundary placement and layer continuity.
+2. Update OpenAI Gateway API in `Scheduler/src/scheduler/api/openai.py`:
+   - Update `POST /v1/chat/completions`:
+     - When split-inference execution path is enabled/requested, route execution through `LocalBoundaryEngine` and `schedule_split_inference_pipeline`.
+     - Tokenize prompt and compute local Layer 0 embeddings H_0 via `LocalBoundaryEngine.embed_prompt(prompt)` at the local gateway.
+     - Stream activation payload H_0 over Zenoh to remote stage 1.
+     - Receive output activation vector H_(N-1) from remote stages.
+     - Compute local Layer N LM Head unembedding/sampling via `LocalBoundaryEngine.unembed_logits(H_(N-1))` locally.
+     - Return/stream OpenAI-compliant SSE completion chunks (`chat.completion.chunk`).
+3. Unit Test Suites:
+   - Create `Scheduler/tests/test_split_pipeline_scheduling.py` testing `schedule_split_inference_pipeline` (3-tier stage construction, boundary flags, layer ranges).
+   - Create `Scheduler/tests/test_openai_split_inference.py` testing `POST /v1/chat/completions` split-inference routing and streaming response.
+4. Closed-Loop Verification:
+   - Run `pytest`, `ruff check .`, `ruff format --check .`, `mypy Scheduler/src Node/src`.
+   - Ensure 100% test pass rate with zero linting or static typing errors across Node and Scheduler.
+   - Write handoff.md in your working directory and notify parent via send_message when complete.

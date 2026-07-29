@@ -1,104 +1,84 @@
-# Milestone M2 Adversarial Challenge Report — Challenger 2
+# Challenger 2 Handoff Report — Milestone M2 (Backend Split Stage Execution)
 
 **Agent**: Challenger 2 (Milestone M2)  
+**Role**: EMPIRICAL CHALLENGER (critic, specialist)  
 **Working Directory**: `/Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/m2_challenger_2`  
 **Target Repository**: `Node/` (`/Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/Node`)  
-**Verdict**: **`APPROVE`**  
-**Date**: 2026-07-26  
+**Verdict**: **REJECT**  
+**Completion Date**: 2026-07-29  
 
 ---
 
 ## 1. Observation
 
-1. **Local Node Telemetry API (`GET /api/v1/node/telemetry`)**:
-   - Location: `Node/src/node/api/control.py:46-86`
-   - Empirical test output from live host telemetry collection:
-     ```python
-     {'node_id': 'node-local', 'cpu_utilization': 16.4, 'ram_used_bytes': 10986831872, 'ram_total_bytes': 25769803776, 'gpu_utilization': 0.0, 'vram_used_bytes': 0, 'vram_total_bytes': 0, 'wan_connected': False, 'status': 'stopped'}
-     ```
-   - Range Validations:
-     - `cpu_utilization`: `16.4%` (valid range `0.0 <= cpu_utilization <= 100.0`).
-     - `ram_used_bytes`: `10986831872` (valid integer, `0 <= ram_used_bytes <= ram_total_bytes`).
-     - `ram_total_bytes`: `25769803776` (valid integer > 0).
-     - `wan_connected`: `False` (boolean type matching P2P connection state).
-     - `status`: `"stopped"` or `"ready"`.
+- **Empirical Test Suite Created**:
+  - Authored `Node/tests/test_backend_split_stage_challenger.py` targeting `EchoBackend` (`Node/src/node/backends/mock.py`) and `OllamaBackend` (`Node/src/node/backends/ollama.py`).
+  - Tested float activation vector transformations (`TensorPayload`), shape/dtype preservation, non-split request rejections (`is_split_inference=False`), invalid input payload types, and corrupt/empty activation data.
 
-2. **Docker Sandbox Log Streaming SSE API (`GET /api/v1/sandbox/logs/stream`)**:
-   - Location: `Node/src/node/api/control.py:142-186`
-   - Empirical raw stream bytes output captured during streaming request:
-     ```
-     b'data: {"entry": {"timestamp": "2026-07-26T13:02:07.697360+00:00", "stream": "stdout", "branch": "main", "message": "Test log message A"}, "log": "[2026-07-26T13:02:07.697360+00:00] [stdout] Test log message A"}\n\ndata: {"entry": {"timestamp": "2026-07-26T13:02:07.697489+00:00", "stream": "stderr", "branch": "main", "message": "Test log message B"}, "log": "[2026-07-26T13:02:07.697489+00:00] [stderr] Test log message B"}\n\n'
-     ```
-   - Headers: `content-type: text/event-stream; charset=utf-8`.
-   - Chunk Framing: Every payload event strictly begins with `data: ` and terminates with double newlines `\n\n`. Keep-alive lines yield `: keep-alive\n\n`.
+- **Empirical Test Failures (10 pytest failures)**:
+  1. **Abstract Class Instantiation Failure in `OllamaBackend`**:
+     - Adding `@abstractmethod execute_split_stage` to `InferenceBackend` in `Node/src/node/backends/base.py` broke `OllamaBackend` instantiation because `OllamaBackend` in `Node/src/node/backends/ollama.py` does not implement `execute_split_stage`.
+     - `TypeError: Can't instantiate abstract class OllamaBackend without an implementation for abstract method 'execute_split_stage'`
+     - Caused failures in 3 challenger tests and 4 existing `test_inference_backends.py` tests.
+  2. **Missing Non-Split Request Guard in `EchoBackend.execute_split_stage`**:
+     - Passing a `TensorPayload` with `is_split_inference=False` was NOT rejected by `EchoBackend.execute_split_stage`. It proceeded to process non-split requests without raising `ValueError`.
+  3. **Unhandled Invalid Input Payload Types in `EchoBackend.execute_split_stage`**:
+     - Passing a non-TensorPayload object (e.g. `str`) caused an unhandled `AttributeError: 'str' object has no attribute 'data'` at line 97 of `Node/src/node/backends/mock.py` rather than raising a clean `TypeError` or `ValueError`.
+  4. **Missing Data Dimension & Shape Consistency Validation**:
+     - Passing a payload with `is_split_inference=True`, `shape=[1, 4, 128]` (expected 512 floats), but empty data `data=[]` did NOT trigger any validation error, silently returning `data=[]`.
 
-3. **Node Control API (`POST /api/v1/node/control`)**:
-   - Location: `Node/src/node/api/control.py:89-124`
-   - Action `"start"` returns `{"status": "ok", "action": "start", "runtime_running": true}`.
-   - Action `"stop"` returns `{"status": "ok", "action": "stop", "runtime_running": false}`.
-   - Action `"invalid"` raises HTTP 400 Bad Request.
-
-4. **Automated Verification Command Results** (`Node/` directory):
-   - `.venv/bin/pytest`: `83 passed, 1 skipped in 1.84s`.
-   - `.venv/bin/ruff check .`: `All checks passed!`.
-   - `.venv/bin/ruff format --check .`: `54 files already formatted`.
-   - `.venv/bin/mypy src`: `Success: no issues found in 34 source files`.
+- **Tri-Factor Verification Commands & Results**:
+  - `pytest`: **10 FAILED**, 125 passed, 1 skipped (Command: `.venv/bin/pytest`)
+  - `mypy`: **3 FAILED** (`Cannot instantiate abstract class "OllamaBackend" with abstract attribute "execute_split_stage"`)
 
 ---
 
 ## 2. Logic Chain
 
-1. **Telemetry Validation**:
-   - Observations 1 shows `TelemetryCollector.collect()` in `collector.py` queries `psutil` and `nvidia-smi` (or non-NVIDIA fallback).
-   - In `get_node_telemetry` (`control.py`), output fields match `NodeTelemetryResponse` Pydantic model.
-   - Empirical execution confirmed: `cpu_utilization` is clamped between 0 and 100%, `ram_used_bytes` <= `ram_total_bytes`, `wan_connected` is boolean, and `status` correctly reflects runtime status.
+1. **Abstract Contract Invariant Violation**:
+   - `InferenceBackend` defines `execute_split_stage` as an `@abstractmethod`. Python enforces that all subclasses must implement all abstract methods before instantiation.
+   - Because `OllamaBackend` omitted `execute_split_stage`, any component attempting to initialize or use `OllamaBackend` fails immediately with a `TypeError`.
 
-2. **SSE Streaming Validation**:
-   - Observation 2 demonstrates that `stream_sandbox_logs` in `control.py` wraps log buffer subscription events in `data: JSON\n\n` SSE format.
-   - Raw bytes verification proved every chunk starts with `data: ` and ends with `\n\n`. When idling, periodic keep-alive comments `: keep-alive\n\n` maintain the streaming connection.
-
-3. **Control API & Code Health**:
-   - Observation 3 confirms node state transitions respond predictably to start/stop actions.
-   - Observation 4 confirms 100% test pass rate, clean linter results, zero formatting issues, and strict type safety across all 34 source files.
+2. **Boundary Validation Invariant Violation**:
+   - Split stage execution is strictly reserved for intermediate vector activation transport (`is_split_inference=True`).
+   - `EchoBackend.execute_split_stage` lacks input validation checks for:
+     a) `not input_payload.is_split_inference` (must raise `ValueError("Non-split inference payloads cannot be processed in execute_split_stage")`).
+     b) `not isinstance(input_payload, TensorPayload)` (must raise `TypeError` or `ValueError`).
+     c) Dimensionality check between `input_payload.shape` and elements in `input_payload.data`.
 
 ---
 
 ## 3. Caveats
 
-- **Docker Execution**: In environments without active Docker daemons, `WorktreeManager.execute_in_sandbox` test cleanly skips (`1 skipped`), which is expected and non-blocking for local API telemetry and control testing.
+- `EchoBackend` successfully handles valid float activation payloads when `is_split_inference=True`, preserving shape `[1, 4, 128]`, dtype `float32`, and outputting transformed floats.
+- However, due to missing input guards and incomplete `OllamaBackend` implementation, the overall Milestone M2 backend execution cannot be approved in its current state.
 
 ---
 
 ## 4. Conclusion
 
-The implementation of Milestone M2 in `Node/` satisfies all specification requirements in `PROJECT.md` and `ORIGINAL_REQUEST.md`. Empirical range validations and SSE stream chunk formatting are verified and compliant.
+Verdict: **REJECT**.
 
-**Verdict**: **`APPROVE`**
+Milestone M2 backend split stage execution fails empirical verification due to abstract class instantiation breakage in `OllamaBackend` and missing boundary input validation guards in `EchoBackend`.
 
 ---
 
 ## 5. Verification Method
 
-Run the following commands from `/Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/Node`:
+To independently reproduce these empirical findings, run the following commands in `Node/`:
 
 ```bash
 cd /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/Node
 
-# 1. Unit & integration test suite
-.venv/bin/pytest
+# 1. Run Challenger split stage test suite & existing backend test suite
+.venv/bin/pytest tests/test_backend_split_stage_challenger.py tests/test_inference_backends.py
 
-# 2. Linter static analysis
-.venv/bin/ruff check .
-
-# 3. Code style format check
-.venv/bin/ruff format --check .
-
-# 4. Strict static type analysis
+# 2. Run static type checker
 .venv/bin/mypy src
 ```
 
-**Expected Results**:
-- `pytest`: 83 passed, 1 skipped
-- `ruff check`: All checks passed!
-- `ruff format`: 54 files formatted
-- `mypy src`: Success: no issues found in 34 source files
+**Expected Empirical Failure Output**:
+- `TypeError: Can't instantiate abstract class OllamaBackend without an implementation for abstract method 'execute_split_stage'`
+- `FAILED test_echo_backend_execute_split_stage_rejects_non_split_request`
+- `FAILED test_echo_backend_execute_split_stage_rejects_invalid_payload_type`
+- `FAILED test_echo_backend_execute_split_stage_rejects_corrupt_or_empty_data`

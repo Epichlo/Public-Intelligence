@@ -66,3 +66,33 @@ Provide single-command host node installation script (install.sh) and launch int
 - [ ] Automated code quality verification passing 100% cleanly (pytest, ruff check ., ruff format --check ., mypy src).
 - [ ] Documentation updated across docs/ROADMAP.md, Scheduler/docs/STATUS.md, Node/docs/STATUS.md, and execution log in AGENTS.md.
 
+## Follow-up — 2026-07-29T01:21:08+05:30
+
+Implement Phase 4.6 Asymmetric Split-Inference & Local Boundary Security for Public Intelligence, decoupling raw prompt tokens from untrusted network nodes by retaining Layer 0 (Embedding) and the final LM Head locally on the client/edge gateway, while streaming intermediate hidden activations across Zenoh P2P channels.
+
+Working directory: /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence
+Integrity mode: development
+
+## Requirements
+
+### R1. Local Boundary Isolation Engine
+Implement client/edge local boundary isolation where Layer 0 (Embedding) and final LM Head (Unembedding / LM Head projection) remain strictly on the local client, preventing raw prompt text or plain token IDs from reaching external nodes.
+
+### R2. Intermediate Vector Activation Transport
+Extend the Zenoh P2P transport payload (TensorPayload) and BackpressuredStreamRouter to stream high-dimensional intermediate activation vectors (Layers 1 to N-1) across pipeline stages with explicit split-inference flags.
+
+### R3. Pipeline Matchmaker & Split-Inference Configuration
+Update the SchedulingEngine.schedule_pipeline() chain allocator and PipelineStage domain models to support split-inference layer boundaries and local boundary verification.
+
+### R4. Comprehensive Test Suite & Closed-Loop Verification
+Provide unit, integration, and security verification tests proving zero prompt leakage on remote nodes and successful end-to-end split-inference execution.
+
+## Acceptance Criteria
+
+### Technical & System Invariants
+- [ ] Remote host nodes receive only high-dimensional intermediate activation vectors (Layers 1..N-1) with zero access to embedding weights or raw prompt tokens.
+- [ ] End-to-end split-inference execution unit & integration test suite passing 100% cleanly.
+- [ ] Full tri-factor static typing and linting compliance (pytest, ruff check ., ruff format --check ., mypy Scheduler/src Node/src).
+- [ ] Documentation updated across docs/ROADMAP.md, Scheduler/docs/STATUS.md, Node/docs/STATUS.md, and event log in AGENTS.md.
+
+

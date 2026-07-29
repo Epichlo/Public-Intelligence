@@ -1,34 +1,21 @@
-## 2026-07-26T18:24:00Z
+## 2026-07-29T11:21:05Z
 
-You are Worker 2 implementing Milestone M2 (Node Local Telemetry, Host Control & Sandbox Log APIs).
-Your working directory is: /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/m2_worker
+Implement Milestone M2 (Local Boundary Isolation Engine & Backend Split-Inference Interfaces) for Public Intelligence Phase 4.6.
 
-MANDATORY INTEGRITY WARNING:
-DO NOT CHEAT. All implementations must be genuine. DO NOT hardcode test results, create dummy/facade implementations, or circumvent the intended task. A teamwork_preview_auditor will independently verify your work. Integrity violations WILL be detected and your work WILL be rejected.
-
-Context & Instructions:
-- Read /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/ORIGINAL_REQUEST.md.
-- Read /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/PROJECT.md.
-- Read /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/explorer_survey_3/survey_report.md.
-
-Implementation Scope (Node Sub-repository: /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/Node):
-1. Create `Node/src/node/api/control.py`:
-   - `GET /api/v1/node/telemetry`: Return real-time CPU, RAM, GPU, VRAM, and `wan_connected` P2P status (scraped via `TelemetryCollector` or system metrics).
-   - `POST /api/v1/node/control`: Endpoint accepting `{"action": "start" | "stop"}` payload to trigger node runtime start/stop sequence.
-   - `GET /api/v1/sandbox/logs`: Return recent Docker container sandbox execution log entries JSON.
-   - `GET /api/v1/sandbox/logs/stream`: Yield real-time Docker sandbox execution logs as SSE stream (`text/event-stream`).
-2. Update `Node/src/node/core/runtime.py`:
-   - Extend `WorktreeManager.execute_in_sandbox()` to capture container stdout/stderr into an in-memory ring buffer (e.g. max 1,000 lines) so container logs are accessible via `control.py`.
-3. Update `Node/src/node/main.py`:
-   - Add `CORSMiddleware` (`allow_origins=["*"]`, `allow_credentials=True`, `allow_methods=["*"]`, `allow_headers=["*"]`).
-   - Include `control_router`.
-4. Create test suite in `Node/tests/test_control_api.py` testing:
-   - `GET /api/v1/node/telemetry`
-   - `POST /api/v1/node/control`
-   - `GET /api/v1/sandbox/logs` & log streaming.
-5. Run verification tools inside `Node/`:
-   - `pytest`
-   - `ruff check .`
-   - `ruff format --check .`
-   - `mypy src`
-6. Write your execution report and handoff report to /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/m2_worker/handoff.md and report back via send_message to parent.
+Milestone M2 Scope & Requirements:
+1. Implement `LocalBoundaryEngine` in `Node/src/node/core/local_boundary.py` (and re-export / mirror in `Scheduler/src/scheduler/core/local_boundary.py` or share as needed):
+   - Client-side engine that holds Layer 0 (Embedding) and Layer N (LM Head / Sampler) locally on the client/edge gateway.
+   - `embed_prompt(prompt: str) -> TensorPayload`: Tokenizes text prompt, computes Layer 0 embeddings H_0 in R^(L x d_model), returns TensorPayload with `is_split_inference=True`, `stage_index=0`, `tensor_type="activation"`. Raw prompt tokens remain strictly in local memory.
+   - `unembed_logits(activation_payload: TensorPayload, temperature: float = 1.0) -> tuple[int, str]`: Accepts H_(N-1) activation payload from remote hidden layers 1..N-1, projects through local LM Head matrix W_lm, samples next token ID and decoded token text string.
+2. Extend `InferenceBackend` abstract class in `Node/src/node/backends/base.py`:
+   - Add async abstract method `execute_split_stage(self, stage: PipelineStage, input_payload: TensorPayload, options: dict[str, Any] | None = None) -> TensorPayload`.
+3. Implement `execute_split_stage` in `EchoBackend` (`Node/src/node/backends/mock.py`) and `OllamaBackend` (`Node/src/node/backends/ollama.py`):
+   - In `EchoBackend`: Transform activation vectors deterministically across intermediate hidden layers (Layers 1..N-1), keeping payload shape, dtype, `is_split_inference=True`.
+   - In `OllamaBackend`: Handle activation payload stage execution.
+4. Unit Tests:
+   - Create `Node/tests/test_local_boundary.py` testing `LocalBoundaryEngine` (embedding generation, unembedding/sampling, shape validation).
+   - Update `Node/tests/test_backends.py` (or existing backend test suite) verifying `execute_split_stage` on `EchoBackend` and `OllamaBackend`.
+5. Verification:
+   - Run `pytest`, `ruff check .`, `ruff format --check .`, `mypy Scheduler/src Node/src`.
+   - Ensure 100% test pass rate with zero linting or typing errors across Node and Scheduler repositories.
+   - Write handoff.md in your working directory and notify parent via send_message when complete.

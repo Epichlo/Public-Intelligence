@@ -1,15 +1,14 @@
-# Progress
+# Progress Log - worker_m3
 
-Last visited: 2026-07-29T00:55:55Z
+Last visited: 2026-07-29T05:59:00Z
 
-## Status
-Task complete! Milestone 3 implemented and verified.
-
-- Host Contributor Telemetry Dashboard (`/dashboard`) implemented with node control toggle, hardware gauges, AEAD encryption guard badge, heartbeat indicator, P2P WAN status card, and Docker sandbox log viewer.
-- Interactive Requester Chat Playground (`/playground`) implemented with SSE token streaming, model selector, parameter drawer, latency metrics card (TTFT, t/s), rate-limit 429 banner, and RS256 JWT auth field.
-- Next.js API Proxy routes created under `website/src/app/api/`.
-- Site navigation updated with `/playground` and `/dashboard` header links.
-- `npm run build` passed cleanly (0 errors).
-- `npm run lint` passed cleanly (0 errors).
-- Scheduler and Node test suites passed 100% cleanly (111 and 117 tests passed).
-- Reports written to `changes.md` and `handoff.md`.
+- [x] Initialized DISPATCH.md, BRIEFING.md, progress.md
+- [x] Inspect codebase files for M3 requirements
+- [x] Implemented `LocalBoundaryEngine` in `Scheduler/src/scheduler/core/boundary_engine.py` and `Node/src/node/core/boundary_engine.py`
+- [x] Extended `StageType`, `TaskProposal`, and `PipelineStage` in `Scheduler/src/scheduler/models/pipeline.py` and `Node/src/node/models/sharding.py`
+- [x] Implemented `SchedulingEngine.schedule_split_inference_pipeline` in `Scheduler/src/scheduler/core/engine.py`
+- [x] Extended `ChatCompletionRequest` and updated `POST /v1/chat/completions` in `Scheduler/src/scheduler/api/openai.py` with split inference local boundary routing and streaming SSE generator
+- [x] Created unit test suites `test_split_pipeline_scheduling.py` and `test_openai_split_inference.py` in `Scheduler/tests/`
+- [x] Closed-loop verification passed: 275 tests passed (125 Scheduler, 150 Node), 0 ruff errors, 0 mypy static type errors
+- [x] Updated BRIEFING.md and progress.md
+- [x] Write handoff.md and send notification to parent agent

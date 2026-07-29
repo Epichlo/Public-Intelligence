@@ -1,250 +1,330 @@
-# Comprehensive Technical Analysis: R3 OpenAI-Compatible REST Gateway Router (`POST /v1/chat/completions`)
+# Phase 4.6 Architecture Analysis: Asymmetric Split-Inference & Local Boundary Security
 
-**Author:** `explorer_1` (teamwork_preview_explorer)  
-**Target Subsystem:** Scheduler Service (`/Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/Scheduler`)  
-**Date:** 2026-07-29  
+## 1. Executive Summary
 
----
+Phase 4.6 introduces **Asymmetric Split-Inference & Local Boundary Security** to Public Intelligence. In decentralized AI networks, host compute nodes are untrusted third-party participants. In the existing Phase 4/4.5 architecture, raw text prompts (or token ID sequences) are transmitted in plaintext from the client/gateway to remote host nodes, exposing user prompts, system instructions, and generated completions to remote host operators.
 
-## Executive Summary
+Phase 4.6 decouples the transformer execution chain into:
+1. **Local Boundary (Client / Edge Gateway)**: Holds Layer 0 (**Embedding Matrix $E$**) and final Layer $N$ (**LM Head projection matrix $W_{\text{lm}}$** and Token Sampler). Executes token embedding and logit unembedding locally.
+2. **Remote Host Network (Layers $1 \dots N-1$)**: Executes intermediate hidden transformer blocks across 1 or more remote host compute nodes in the P2P network. Remote nodes receive ONLY high-dimensional intermediate activation vectors (tensors $H_0 \in \mathbb{R}^{L \times d_{\text{model}}}$).
 
-This document provides a thorough technical analysis of the OpenAI-compatible REST API Gateway router within the Public Intelligence Scheduler service. It details how standard OpenAI request payloads (`POST /v1/chat/completions`) are authenticated, rate-limited, scheduled via `SchedulingEngine`, committed to the Raft consensus log (`RaftConsensusEngine`), proxied to node compute backends (`/infer`), and formatted into OpenAI-compliant JSON responses or Server-Sent Event (SSE) streams (`text/event-stream`).
-
----
-
-## 1. Existing Ingress Infrastructure Audit
-
-### 1.1 Ingress Endpoint & Pipeline Architecture
-The standard task submission ingress gateway is implemented in `Scheduler/src/scheduler/api/ingress.py`:
-
-- **Endpoint:** `POST /api/v1/tasks/submit`
-- **Request Schema (`TaskSubmission`):**
-  - `task_id: str`: Unique identifier for the task.
-  - `action: str`: Instruction / state machine action payload.
-  - `data: dict[str, Any]`: Task arguments (e.g., `model_name`, `min_vram_gb`, `backend_type`).
-
-### 1.2 Authentication Mechanism (`verify_jwt`)
-Implemented as a FastAPI `Depends` dependency in `Scheduler/src/scheduler/api/ingress.py` (lines 37–74):
-- Decodes bearer tokens supplied in the `Authorization: Bearer <token>` header.
-- Uses RS256 asymmetric signature verification against `request.app.state.jwt_public_key` or environment variable `JWT_PUBLIC_KEY` (with a hardcoded fallback RSA public key).
-- Verifies the presence of the `tenant_id` claim in the decoded payload.
-- **Failure modes:**
-  - Header not starting with `"Bearer "`: Returns HTTP `401 Unauthorized` (`"Invalid Authorization header format. Must be Bearer <JWT>."`).
-  - PyJWT decoding / signature error: Returns HTTP `401 Unauthorized` (`"JWT signature verification failed: <error>"`).
-  - Missing `tenant_id` claim: Returns HTTP `401 Unauthorized` (`"Invalid claims: Missing 'tenant_id' in token payload."`).
-
-### 1.3 Multi-Tenant Token-Bucket Rate Limiter
-Implemented in `Scheduler/src/scheduler/core/rate_limiter.py`:
-- `TokenBucketLimiter` enforces dynamic per-`tenant_id` rate limits.
-- **Parameters:** Default `capacity = 5` (burst threshold) and `refill_rate = 0.5` tokens/sec (1 token per 2.0s).
-- **Operation:**
-  ```python
-  allowed = await rate_limiter.acquire(tenant_id)
-  ```
-  If `allowed` is `False`, raises HTTP `429 Too Many Requests` (`"Rate limit exceeded. Multi-tenant quota exhausted."`).
-
-### 1.4 Two-Stage Scheduling Engine & Consensus Log
-Implemented in `Scheduler/src/scheduler/core/engine.py` and `Scheduler/src/scheduler/core/consensus.py`:
-- **Stage 1 (Filtering):** `CapabilityMatchmaker.filter_nodes()` filters live nodes by required model (`model_name`), minimum VRAM, and pulse staleness ($\Delta t \le 15.0$s).
-- **Stage 2 (Scoring):** `CapabilityMatchmaker.score_nodes()` ranks eligible nodes using fitness score:
-  $$\text{Score} = (\text{Reliability} \times 100.0) - (\text{QueueDepth} \times 15.0) - (\text{CPUUtilization} \times 0.5)$$
-- **Telemetry update:** Increments `queue_depth` for the selected node in `NodeRegistry._telemetry`.
-- **Transaction Hash:** Generates `tx_hash = sha256(f"{node_id}:{task_id}:{score}")`.
-- **Consensus Replication:** When `RaftConsensusEngine` is active, proposes `"allocate_task"` action containing `{task_id, node_id, tx_hash, action, data}` over Zenoh channel `public-intelligence/net/consensus/*` and waits for majority quorum consensus commitment before proceeding.
+By strictly retaining Layer 0 and final LM Head on the client/edge gateway, remote host nodes are completely blinded to token lookup dictionaries, vocabulary IDs, and plaintext strings.
 
 ---
 
-## 2. Payload Translation Architecture (`POST /v1/chat/completions`)
+## 2. Comprehensive Codebase Audit
 
-### 2.1 Schema Definition
-The request model `ChatCompletionRequest` is defined in `Scheduler/src/scheduler/models/openai.py`:
+### 2.1 Prompt & Inference Path in Compute Nodes
 
-```python
-class ChatMessage(BaseModel):
-    role: str
-    content: str
-    name: str | None = None
+#### A. Node Backend Contract (`Node/src/node/backends/base.py`, `ollama.py`, `mock.py`)
+- `InferenceBackend` exposes `generate(model, prompt, options)` and `generate_stream(model, prompt, options)` accepting a plaintext string `prompt: str`.
+- `execute_pipeline_stage(stage, input_tensors, options)` was added in Phase 4 Step 3, but currently constructs string prompts like `f"Stage {stage.stage_index} [Layers ...]: {input_tensors}"` or passes text strings.
+- `OllamaBackend` routes prompts via HTTP POST to Ollama (`/api/generate`) with `{"model": ..., "prompt": prompt}`. Ollama performs tokenization, embedding, layer evaluation, and LM head projection internally within a single monolithic process.
 
-class ChatCompletionRequest(BaseModel):
-    model: str
-    messages: list[ChatMessage]
-    stream: bool = False
-    temperature: float | None = 1.0
-    max_tokens: int | None = None
+#### B. Node API & Task Runtime (`Node/src/node/api/inference.py`, `Node/src/node/runtime.py`)
+- In `inference.py`, `POST /infer` accepts an `InferenceRequest` containing `prompt: str`. It checks `RadixTrieCache` for prefix matches and streams tokens or return responses directly to the requester.
+- In `runtime.py`, the background task worker `_worker_loop()` picks up tasks from `task_queue`, extracts `task["prompt"]`, calls `inference_backend.generate()`, writes plaintext output to `LocalDiskArtifactStore`, and publishes artifact metadata via Zenoh.
+
+### 2.2 Gateway & Scheduler Routing (`Scheduler/src/scheduler/api/openai.py`, `ingress.py`, `engine.py`)
+- In `openai.py`, `create_chat_completion()` formats user messages into a single prompt string `messages_to_prompt(req_data.messages)`.
+- The Scheduler selects a target compute node using `SchedulingEngine.schedule_task()` or direct registry lookup.
+- The gateway sends an HTTP POST request containing `{"model": req_data.model, "prompt": prompt_text, "stream": req_data.stream}` straight to the compute node's `http://<node_ip>:<port>/infer` endpoint.
+
+### 2.3 Existing Pipeline Sharding Architecture (`Node/src/node/models/sharding.py`, `Scheduler/src/scheduler/models/pipeline.py`)
+- `LayerRange`: Specifies contiguous layer bounds (`start_layer`, `end_layer`, `num_layers`).
+- `PipelineStage`: Tracks `stage_index`, `total_stages`, `layer_range`, `node_id`, `model_id`.
+- `TensorPayload`: Serializes intermediate data with fields `task_id`, `stage_index`, `data` (`bytes` / `list[float]` / `dict`), `shape`, `dtype`, `shm_name`.
+- `SchedulingEngine.schedule_pipeline()` partitions total model layers across available nodes based on VRAM capacity.
+
+### 2.4 Privacy Vulnerabilities Identified
+1. **Monolithic Prompt Delivery**: Raw user prompts and token IDs are delivered directly to remote nodes.
+2. **Lack of Layer 0 / LM Head Isolation**: Remote nodes possess full vocabulary weights and perform token embedding/unembedding.
+3. **No Intermediate Tensor Pipeline Mode**: `InferenceBackend` lacks a dedicated, high-performance tensor activation forward pass method that processes raw float tensor buffers without string conversion.
+
+---
+
+## 3. Asymmetric Split-Inference Architecture
+
+### 3.1 Mathematical Execution Pipeline
+
+```
+[ Local Client / Edge Gateway ]
+   │
+   ├── 1. Prompt String: P = "System: ... User: Hello"
+   ├── 2. Tokenization: T = [t_1, t_2, ..., t_L]
+   ├── 3. Layer 0 Embedding (Local): H_0 = Embed(T) ∈ R^(L × d_model)
+   │
+   ▼  (Stream TensorPayload over Zenoh P2P: H_0 activations ONLY)
+[ Remote Host Node Stage 1..K-1 ]
+   │
+   ├── 4. Forward Pass (Layers 1..N-1): H_(N-1) = TransformerBlocks_{1..N-1}(H_0)
+   │      * Remote node has NO embedding matrix E
+   │      * Remote node has NO LM head matrix W_lm
+   │      * Remote node receives ONLY float32/fp16 activation vectors
+   │
+   ▼  (Stream TensorPayload over Zenoh P2P: H_(N-1) activations ONLY)
+[ Local Client / Edge Gateway ]
+   │
+   ├── 5. Layer N LM Head (Local): Logits = RMSNorm(H_(N-1)) · W_lm^T ∈ R^(1 × V)
+   ├── 6. Sampling (Local): t_next ~ Softmax(Logits / τ)
+   ├── 7. Detokenization: Chunk = Decode(t_next)
+   └── 8. Autoregressive Loop: Append t_next, Embed(t_next), send to Remote Node
 ```
 
-### 2.2 Translation & Dispatch Logic
-When a request arrives at `POST /v1/chat/completions` (`Scheduler/src/scheduler/api/openai.py`):
+### 3.2 Security Properties & Privacy Invariants
 
-1. **Task ID Generation:**  
-   `task_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"`
-2. **Prompt Assembly (`messages_to_prompt`):**  
-   Concatenates list of `ChatMessage` objects into unified LLM prompt format:
-   ```text
-   System: <system_prompt>
-
-   User: <user_prompt>
-
-   Assistant:
-   ```
-3. **Task Requirement Mapping:**  
-   Packs `req_data.model` into `task_data`:
-   ```python
-   task_data = {
-       "task_id": task_id,
-       "requirements": {"model_name": req_data.model},
-   }
-   ```
-4. **Target Node Scheduling:**  
-   Invokes `scheduling_engine.schedule_task(task_data)` to execute Stage 1/Stage 2 selection, returning `(tx_hash, target_node_id)`. If no nodes are available, falls back to direct `NodeRegistry` scan or raises HTTP `503 Service Unavailable`.
-5. **Consensus Proposal:**  
-   Proposes log entry to Raft consensus engine:
-   ```python
-   await consensus_engine.propose(
-       "allocate_task",
-       {
-           "task_id": task_id,
-           "node_id": target_node_id,
-           "tx_hash": tx_hash or task_id,
-           "action": "chat_completion",
-           "data": {"model": req_data.model, "stream": req_data.stream},
-       },
-   )
-   ```
-6. **Backend Routing Payload:**  
-   Constructs `/infer` HTTP payload for node execution:
-   ```python
-   infer_payload = {
-       "model": req_data.model,
-       "prompt": prompt_text,
-       "stream": req_data.stream,
-   }
-   ```
+| Property | Monolithic Architecture | Phase 4.6 Asymmetric Split-Inference |
+| :--- | :--- | :--- |
+| **Prompt Text Visibility on Remote Node** | Plaintext String (`"User: secret..."`) | **Zero Visibility** (Never sent) |
+| **Token ID Visibility on Remote Node** | Plaintext Array (`[101, 2054, ...]`) | **Zero Visibility** (Never sent) |
+| **Embedding Matrix $E$ Location** | Remote Host Node | **Local Client / Edge Gateway Only** |
+| **LM Head Projection $W_{\text{lm}}$ Location** | Remote Host Node | **Local Client / Edge Gateway Only** |
+| **Payload Transmitted to Remote Node** | JSON String / Prompt Text | **Continuous Tensor Activations ($H_0 \in \mathbb{R}^{L \times d_{\text{model}}}$)** |
+| **Payload Returned from Remote Node** | Text Tokens / Completion String | **Continuous Tensor Activations ($H_{N-1} \in \mathbb{R}^{1 \times d_{\text{model}}}$)** |
 
 ---
 
-## 3. Auth & Rate Limiting Enforcement for Gateway Router
+## 4. Technical Specifications & Architectural Recommendations
 
-Both JWT authentication and token-bucket rate limiting are strictly enforced on `POST /v1/chat/completions`:
+### 4.1 Domain Model Extensions
+
+#### A. Node Sharding Models (`Node/src/node/models/sharding.py`) & Scheduler Models (`Scheduler/src/scheduler/models/pipeline.py`)
+
+Add stage classification flags and split-inference fields:
 
 ```python
-@router.post("/v1/chat/completions")
-async def create_chat_completion(
-    request: Request,
-    req_data: ChatCompletionRequest,
-    jwt_claims: Annotated[dict[str, Any], Depends(verify_jwt)],
-) -> ChatCompletionResponse | StreamingResponse:
-    tenant_id = jwt_claims.get("tenant_id")
-    if not tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid claims: Missing 'tenant_id' in token payload.",
+from enum import Enum
+from pydantic import BaseModel, Field
+
+class StageType(str, Enum):
+    CLIENT_EMBEDDING = "client_embedding"  # Stage 0: Local Layer 0
+    REMOTE_HIDDEN = "remote_hidden"        # Stages 1..K-1: Layers 1..N-1
+    CLIENT_LM_HEAD = "client_lm_head"      # Stage K: Local Layer N
+
+class PipelineStage(BaseModel):
+    stage_index: int = Field(ge=0, description="Index of this pipeline stage (0-based)")
+    total_stages: int = Field(gt=0, description="Total number of stages in pipeline")
+    layer_range: LayerRange = Field(description="Layer range assigned to this stage")
+    node_id: str = Field(description="ID of node assigned to run this stage")
+    model_id: str = Field(default="", description="Target model identifier")
+    is_local_boundary: bool = Field(
+        default=False,
+        description="Whether this stage runs locally on client/edge gateway"
+    )
+    stage_type: StageType = Field(
+        default=StageType.REMOTE_HIDDEN,
+        description="Type of processing performed in this stage"
+    )
+
+class TensorPayload(BaseModel):
+    task_id: str = Field(description="Unique pipeline execution task ID")
+    stage_index: int = Field(ge=0, description="Stage index sending the payload")
+    data: bytes | list[float] | dict[str, Any] = Field(
+        description="Tensor activation data or payload content"
+    )
+    shape: list[int] = Field(
+        default_factory=list, description="Dimensions of the tensor shape [batch, seq, d_model]"
+    )
+    dtype: str = Field(default="float32", description="Data type of tensor values")
+    shm_name: str | None = Field(
+        default=None,
+        description="Optional shared memory block name for co-located IPC"
+    )
+    is_split_inference: bool = Field(
+        default=True,
+        description="Flag indicating asymmetric split-inference activation vector transport"
+    )
+    tensor_type: str = Field(
+        default="activation",
+        description="Type of tensor: activation, logit_input, or gradient"
+    )
+```
+
+### 4.2 Local Boundary Isolation Engine (`LocalBoundaryEngine`)
+
+Create a dedicated local boundary isolation engine module: `Node/src/node/core/local_boundary.py` (and helper in Scheduler for gateway local boundary execution):
+
+```python
+class LocalBoundaryEngine:
+    """Executes Layer 0 (Embedding) and Layer N (LM Head / Unembedding) locally on client/gateway."""
+
+    def __init__(self, model_id: str, vocab_size: int = 32000, hidden_dim: int = 4096) -> None:
+        self.model_id = model_id
+        self.vocab_size = vocab_size
+        self.hidden_dim = hidden_dim
+        # Lightweight local token embedding matrix & LM head projection weights
+        self._init_local_weights()
+
+    def embed_prompt(self, prompt: str) -> TensorPayload:
+        """Tokenize text prompt and project into Layer 0 hidden activation vectors H_0.
+        
+        Guarantees that raw prompt tokens/IDs remain inside local memory.
+        """
+        token_ids = self._tokenize(prompt)
+        # Compute H_0 = Embed(token_ids)
+        h0_vectors = self._compute_embeddings(token_ids)
+        return TensorPayload(
+            task_id="",
+            stage_index=0,
+            data=h0_vectors,
+            shape=[1, len(token_ids), self.hidden_dim],
+            dtype="float32",
+            is_split_inference=True,
+            tensor_type="activation",
         )
 
-    rate_limiter = getattr(request.app.state, "rate_limiter", None)
-    if rate_limiter is not None:
-        allowed = await rate_limiter.acquire(tenant_id)
-        if not allowed:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Rate limit exceeded. Multi-tenant quota exhausted.",
-            )
+    def unembed_logits(self, activation_payload: TensorPayload, temperature: float = 1.0) -> tuple[int, str]:
+        """Apply final Layer N LM Head projection & sampling locally.
+        
+        Returns next token ID and decoded token text string.
+        """
+        h_last = activation_payload.data
+        logits = self._compute_lm_head(h_last)
+        token_id = self._sample_logits(logits, temperature=temperature)
+        token_text = self._decode_token(token_id)
+        return token_id, token_text
 ```
+
+### 4.3 Inference Backend Interface Extensions (`InferenceBackend`)
+
+Update `Node/src/node/backends/base.py`, `mock.py`, and `ollama.py`:
+
+```python
+class InferenceBackend(ABC):
+    ...
+    @abstractmethod
+    async def execute_split_stage(
+        self,
+        stage: PipelineStage,
+        input_payload: TensorPayload,
+        options: dict[str, Any] | None = None,
+    ) -> TensorPayload:
+        """Execute intermediate transformer layers (1..N-1) on activation tensor payloads.
+        
+        Args:
+            stage: PipelineStage assigned to this remote host node.
+            input_payload: Incoming TensorPayload containing activation vectors.
+            options: Execution control arguments.
+            
+        Returns:
+            TensorPayload containing output activation vectors for next stage.
+        """
+        pass
+```
+
+In `EchoBackend` (`mock.py`):
+```python
+async def execute_split_stage(
+    self,
+    stage: PipelineStage,
+    input_payload: TensorPayload,
+    options: dict[str, Any] | None = None,
+) -> TensorPayload:
+    """Transform activation vectors deterministically across intermediate layers."""
+    # Simulates transformer block matrix multiplication on floating point activations
+    if isinstance(input_payload.data, list):
+        transformed_data = [x + 0.01 * (stage.stage_index + 1) for x in input_payload.data]
+    elif isinstance(input_payload.data, bytes):
+        transformed_data = input_payload.data  # Preserve binary tensor bytes
+    else:
+        transformed_data = input_payload.data
+
+    return TensorPayload(
+        task_id=input_payload.task_id,
+        stage_index=stage.stage_index,
+        data=transformed_data,
+        shape=input_payload.shape,
+        dtype=input_payload.dtype,
+        is_split_inference=True,
+        tensor_type="activation",
+    )
+```
+
+### 4.4 Matchmaker & Chain Allocation Engine (`SchedulingEngine.schedule_split_inference_pipeline`)
+
+Update `Scheduler/src/scheduler/core/engine.py` to add `schedule_split_inference_pipeline`:
+
+1. **Stage 0 (Client Local Boundary)**:
+   - `stage_index = 0`
+   - `layer_range = LayerRange(start_layer=0, end_layer=0)`
+   - `node_id = "client_local"`
+   - `is_local_boundary = True`
+   - `stage_type = StageType.CLIENT_EMBEDDING`
+
+2. **Stages $1 \dots K-1$ (Remote Compute Nodes)**:
+   - Layers $1 \dots N-1$ partitioned across eligible cluster nodes according to VRAM availability.
+   - `node_id = <remote_node_id>`
+   - `is_local_boundary = False`
+   - `stage_type = StageType.REMOTE_HIDDEN`
+
+3. **Stage $K$ (Client Local Boundary)**:
+   - `stage_index = K`
+   - `layer_range = LayerRange(start_layer=N, end_layer=N)`
+   - `node_id = "client_local"`
+   - `is_local_boundary = True`
+   - `stage_type = StageType.CLIENT_LM_HEAD`
+
+4. **Validation**:
+   - Verify that Stage 0 and Stage $K$ are strictly marked `is_local_boundary = True`.
+   - Verify that remote stages ($1 \dots K-1$) handle ONLY layers $1 \dots N-1$.
+
+### 4.5 Gateway Integration (`Scheduler/src/scheduler/api/openai.py`)
+
+In `POST /v1/chat/completions`:
+- Add split-inference execution path when requested or configured.
+- When `split_inference=True`:
+  1. Initialize `LocalBoundaryEngine` locally at gateway/client.
+  2. Call `schedule_split_inference_pipeline(task)` to partition layers.
+  3. Generate $H_0$ locally via `local_boundary.embed_prompt(prompt_text)`.
+  4. Transmit $H_0$ to remote stage $1$ over Zenoh via `BackpressuredStreamRouter`.
+  5. Remote nodes process layers $1 \dots N-1$ and return $H_{N-1}$ activation payload over Zenoh.
+  6. Apply local LM Head via `local_boundary.unembed_logits(H_{N-1})`.
+  7. Stream OpenAI-compliant SSE token chunks (`chat.completion.chunk`) to requester.
 
 ---
 
-## 4. Response Formatting Specifications
+## 5. Security & Verification Plan
 
-### 4.1 Non-Streaming Response (`stream: false`)
+### 5.1 Privacy & Leakage Proof
 
-**HTTP Proxy Flow:**
-- Sends async POST request to `http://{node_ip}:{node_port}/infer`.
-- Parses JSON output: `{"model": "...", "response": "<generated_text>"}`.
-- Estimates token usage using standard character count heuristic: $\text{tokens} = \max(1, \text{len}(\text{text}) // 4)$.
+To prove zero prompt leakage:
+1. **Payload Inspection Guard**: Intercept all Zenoh messages and network frames sent to remote host nodes during execution.
+2. **Assertion Check**:
+   - `assert "prompt" not in payload_json`
+   - `assert "messages" not in payload_json`
+   - `assert not isinstance(payload.data, str)`
+   - `assert all(isinstance(val, float) for val in payload.data)` (for list data) or raw float byte tensor.
+3. **Information Theory Property**: High-dimensional vector $H_0 \in \mathbb{R}^{d_{\text{model}}}$ without the embedding dictionary matrix $E$ cannot be mapped back to token text without solving an under-determined continuous-to-discrete inverse problem.
 
-**Output Object Structure (`ChatCompletionResponse`):**
-```json
-{
-  "id": "chatcmpl-a1b2c3d4e5f6",
-  "object": "chat.completion",
-  "created": 1700000000,
-  "model": "llama3",
-  "choices": [
-    {
-      "index": 0,
-      "message": {
-        "role": "assistant",
-        "content": "Generated text response..."
-      },
-      "finish_reason": "stop"
-    }
-  ],
-  "usage": {
-    "prompt_tokens": 12,
-    "completion_tokens": 25,
-    "total_tokens": 37
-  }
-}
-```
+### 5.2 Test Strategy & Matrix
 
-### 4.2 SSE Streaming Response (`stream: true`)
-
-**HTTP Proxy Flow:**
-- Returns `fastapi.responses.StreamingResponse(sse_generator(), media_type="text/event-stream")`.
-- `sse_generator()` produces Server-Sent Events with framing `data: <JSON>\n\n`.
-
-**Chunk Sequence:**
-1. **Initial Role Chunk:**
-   ```text
-   data: {"id":"chatcmpl-a1b2c3d4e5f6","object":"chat.completion.chunk","created":1700000000,"model":"llama3","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
-
-   ```
-2. **Token Delta Chunks:**
-   ```text
-   data: {"id":"chatcmpl-a1b2c3d4e5f6","object":"chat.completion.chunk","created":1700000000,"model":"llama3","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}
-
-   data: {"id":"chatcmpl-a1b2c3d4e5f6","object":"chat.completion.chunk","created":1700000000,"model":"llama3","choices":[{"index":0,"delta":{"content":" world"},"finish_reason":null}]}
-
-   ```
-3. **Final Termination Chunk & Stop Signal:**
-   ```text
-   data: {"id":"chatcmpl-a1b2c3d4e5f6","object":"chat.completion.chunk","created":1700000000,"model":"llama3","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
-
-   data: [DONE]
-
-   ```
+| Test Suite | File | Verified Condition |
+| :--- | :--- | :--- |
+| **Split Sharding Models** | `Node/tests/test_sharding.py` | Validates `StageType`, `is_local_boundary`, and `TensorPayload.is_split_inference`. |
+| **Local Boundary Isolation** | `Node/tests/test_local_boundary.py` | Verifies embedding $H_0$ generation and LM Head unembedding locally without external calls. |
+| **Backend Split Stage Exec** | `Node/tests/test_inference_backends.py` | Verifies `execute_split_stage` processes activation tensors cleanly in `EchoBackend`. |
+| **Split Pipeline Matchmaker** | `Scheduler/tests/test_pipeline_scheduler.py` | Verifies `schedule_split_inference_pipeline` assigns Stage 0 (Layer 0) and Stage K (Layer N) to local boundary and remote nodes to Layers 1..N-1. |
+| **Zero Prompt Leakage Audit** | `Node/tests/test_split_inference_security.py` | Adversarial test intercepting remote payloads and verifying 0 text/token ID leakage. |
+| **End-to-End Split Pipeline** | `Node/tests/test_end_to_end_pipeline.py` | Full integration test executing split inference end-to-end and producing valid tokens. |
 
 ---
 
-## 5. Endpoints, Error Codes, and Test Strategies
+## 6. Execution Roadmap for Sub-Agents
 
-### 5.1 Endpoint Matrix
+1. **ARCHITECT**:
+   - Audit system spec & finalize model schemas (`StageType`, `PipelineStage`, `TensorPayload`).
+   - Define exact API interfaces for `LocalBoundaryEngine` and `schedule_split_inference_pipeline`.
 
-| Method | Endpoint | Description | Auth Required | Rate Limited |
-|---|---|---|---|---|
-| `POST` | `/v1/chat/completions` | Create OpenAI chat completion (streaming / non-streaming) | Yes (RS256 JWT) | Yes (`TokenBucketLimiter`) |
-| `GET` | `/v1/models` | List all available models across registered nodes | No | No |
-| `GET` | `/v1/models/{model_id}` | Retrieve details for a specific model | No | No |
-| `POST` | `/api/v1/tasks/submit` | Low-level task submission gateway | Yes (RS256 JWT) | Yes (`TokenBucketLimiter`) |
+2. **CODER**:
+   - Implement `LocalBoundaryEngine` in `Node/src/node/core/local_boundary.py` (and gateway helper).
+   - Extend `InferenceBackend.execute_split_stage()` in `base.py`, `mock.py`, and `ollama.py`.
+   - Implement `schedule_split_inference_pipeline()` in `SchedulingEngine` (`Scheduler/src/scheduler/core/engine.py`).
+   - Wire split-inference route into `Scheduler/src/scheduler/api/openai.py`.
 
-### 5.2 HTTP Error Code Mapping
+3. **AUDITOR**:
+   - Perform security audit on network payload streams to ensure zero text strings or integer token IDs are exposed to remote nodes.
+   - Audit memory leaks in tensor array allocations.
 
-| Status Code | Reason / Condition | Error Response Detail |
-|---|---|---|
-| `401 Unauthorized` | Missing / malformed `Authorization` header, invalid RS256 JWT signature, or missing `tenant_id` | `"Invalid Authorization header format."` / `"JWT signature verification failed."` / `"Missing 'tenant_id'"` |
-| `429 Too Many Requests` | Tenant token bucket exhausted (burst > 5 requests without refill) | `"Rate limit exceeded. Multi-tenant quota exhausted."` |
-| `422 Unprocessable Entity` | Pydantic validation failure (e.g. missing `model` or `messages` field) | FastAPI standard validation error detail |
-| `404 Not Found` | Requested `model_id` not found in active nodes via `GET /v1/models/{model_id}` | `"Model '<model_id>' not found among active nodes."` |
-| `502 Bad Gateway` | Compute node unreachable or refused connection during `/infer` POST | `"Failed to communicate with compute node: <error>"` |
-| `503 Service Unavailable` | No live compute node satisfies requirements for specified model | `"No suitable compute node available for model '<model>'"` |
-| `500 Internal Server Error` | Scheduler internal failure or Raft consensus proposal exception | `"Consensus log commitment failed: <error>"` |
-
-### 5.3 Automated Verification Strategy
-Verification is performed via `tests/test_openai_gateway.py`:
-
-1. **Authentication Tests:** Generate valid and invalid RS256 JWTs using RSA key pair fixtures. Assert 200 on valid token, 401 on expired/signature-tampered tokens, and 401/422 on missing headers.
-2. **Rate Limiting Tests:** Fire 5 consecutive requests to consume bucket capacity, verify HTTP 200. Fire 6th request and assert HTTP 429 response.
-3. **Non-Streaming Integration Test:** Mock `httpx.AsyncClient.post` return payload. Assert HTTP 200, schema compliance of `ChatCompletionResponse`, correct choice indexing, and non-zero token usage stats.
-4. **Streaming SSE Test:** Mock `httpx.AsyncClient.stream` returning an async line generator. Assert HTTP 200, `text/event-stream` media type, initial role delta chunk, token content chunks, final stop chunk, and `data: [DONE]`.
-5. **Model Registry Tests:** Query `GET /v1/models` and `GET /v1/models/{model_id}`, verifying valid model discovery and 404 behavior for unknown models.
-6. **Code Quality Standards:** Run `pytest`, `ruff check .`, `ruff format --check .`, and `mypy src` to guarantee 100% test pass rate and zero static typing errors.
+4. **VERIFIER**:
+   - Execute PyTest suites (`pytest`).
+   - Enforce 100% `ruff check .`, `ruff format --check .`, and strict `mypy Scheduler/src Node/src`.

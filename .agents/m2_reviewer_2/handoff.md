@@ -1,115 +1,141 @@
-# Milestone M2 Review & Handoff Report — Node Local Telemetry & Control APIs
+# Handoff Report — Milestone M2 (Local Boundary Engine & Backends) Code Review
 
-**Reviewer**: Reviewer 2 (Milestone M2)  
+**Role**: REVIEWER 2 (Objective Code Reviewer & Adversarial Critic)  
+**Milestone**: M2 — Local Boundary Engine & Backends  
 **Working Directory**: `/Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/m2_reviewer_2`  
-**Target Repository**: `Node/` (`/Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/Node`)  
-**Date**: 2026-07-26  
-**Verdict**: **APPROVE**  
+**Verdict**: **REQUEST_CHANGES**
 
 ---
 
-## Quality & Adversarial Review Report
+## 1. Observation
 
-### Review Summary
-**Verdict**: **APPROVE**
+Direct tool outputs and empirical evidence captured during review:
 
-Milestone M2 introduces the host node local telemetry, execution control, and Docker sandbox log streaming endpoints in the `Node/` sub-repository. The code strictly satisfies all specifications outlined in `PROJECT.md` (§ Interface Contracts 2 & 3) and `ORIGINAL_REQUEST.md` (Requirement R1). Implementation is clean, modular, fully typed, thread-safe, and passes all verification tools (`pytest`, `ruff check`, `ruff format`, `mypy`).
+1. **Static Type Checking Failure (`mypy`)**:
+   Command executed: `Node/.venv/bin/mypy Scheduler/src Node/src`
+   ```
+   Node/src/node/runtime.py:163: error: Cannot instantiate abstract class "EchoBackend" with abstract attribute "execute_split_stage"  [abstract]
+   Found 1 error in 1 file (checked 71 source files)
+   ```
+
+2. **Test Suite Failures (`pytest`)**:
+   Command executed: `(cd Node && .venv/bin/pytest)`
+   ```
+   FAILED tests/test_backend_split_stage_challenger.py::test_echo_backend_execute_split_stage_valid_float_payload[asyncio]
+   FAILED tests/test_backend_split_stage_challenger.py::test_echo_backend_execute_split_stage_rejects_non_split_request[asyncio]
+   FAILED tests/test_backend_split_stage_challenger.py::test_echo_backend_execute_split_stage_rejects_invalid_payload_type[asyncio]
+   FAILED tests/test_backend_split_stage_challenger.py::test_echo_backend_execute_split_stage_rejects_corrupt_or_empty_data[asyncio]
+   FAILED tests/test_backend_split_stage_challenger.py::test_ollama_backend_execute_split_stage_valid_float_payload[asyncio]
+   FAILED tests/test_backend_split_stage_challenger.py::test_ollama_backend_execute_split_stage_rejects_non_split_request[asyncio]
+   FAILED tests/test_backend_split_stage_challenger.py::test_ollama_backend_execute_split_stage_rejects_invalid_payload_type[asyncio]
+   ============= 7 failed, 122 passed, 1 skipped, 1 warning in 2.58s ==============
+   ```
+   Verbatim error snippet:
+   ```
+   AttributeError: 'EchoBackend' object has no attribute 'execute_split_stage'. Did you mean: 'execute_pipeline_stage'?
+   AttributeError: 'OllamaBackend' object has no attribute 'execute_split_stage'. Did you mean: 'execute_pipeline_stage'?
+   ```
+
+3. **Incomplete Abstract Interface Implementation**:
+   In `Node/src/node/backends/base.py` (lines 73–90):
+   ```python
+   @abstractmethod
+   async def execute_split_stage(
+       self,
+       stage: PipelineStage,
+       input_payload: TensorPayload,
+       options: dict[str, Any] | None = None,
+   ) -> TensorPayload:
+       ...
+   ```
+   Neither `EchoBackend` (`Node/src/node/backends/mock.py`) nor `OllamaBackend` (`Node/src/node/backends/ollama.py`) implements `execute_split_stage`.
+
+4. **Unhandled Non-Split Payload Error in `LocalBoundaryEngine`**:
+   In `Node/src/node/core/local_boundary.py` & `Scheduler/src/scheduler/core/local_boundary.py` (lines 257–275):
+   ```python
+   def unembed_logits(
+       self, activation_payload: TensorPayload, temperature: float = 1.0
+   ) -> tuple[int, str]:
+       data = activation_payload.data
+       ...
+       if isinstance(data, bytes):
+           num_floats = len(data) // 4
+           fmt = f">{num_floats}f" if data.startswith(b"PITP") else f"{num_floats}f"
+           unpacked = list(struct.unpack(fmt, data))
+   ```
+   Command executed: `(cd Node && .venv/bin/pytest tests/test_local_boundary_challenger.py)`
+   ```
+   FAILED tests/test_local_boundary_challenger.py::test_unembed_logits_rejects_non_split_payload[asyncio]
+   E struct.error: unpack requires a buffer of 12 bytes
+   ```
 
 ---
 
-### Findings
+## 2. Logic Chain
 
-#### [Minor] Finding 1: SSE Stream Keep-Alive Polling Frequency
-- **What**: In `Node/src/node/api/control.py:179`, `stream_sandbox_logs` sets `timeout=0.1` when waiting for new queue log items. When no new logs arrive within 100ms, it catches `asyncio.TimeoutError` and yields `: keep-alive\n\n`.
-- **Where**: `Node/src/node/api/control.py`, lines 166–182.
-- **Why**: When `max_events` is `None` (standard long-lived connection), the generator emits a keep-alive SSE comment every 100 milliseconds (10 keep-alives per second). While functional and non-breaking, this creates unnecessary SSE stream chunk traffic over long connections.
-- **Suggestion**: Consider increasing the idle timeout for keep-alive comments (e.g. to 5.0 seconds) in production settings, while retaining quick poll loops or bounded test fixtures for unit tests.
-
----
-
-### Verified Claims
-
-- **Claim 1**: `GET /api/v1/node/telemetry` retrieves real-time CPU, RAM, GPU, VRAM, and P2P connection state.
-  - *Method*: Verified via `Node/tests/test_control_api.py::test_get_node_telemetry_success` and inspection of `Node/src/node/api/control.py:46-86`.
-  - *Result*: **PASS**. Correctly formats `NodeTelemetryResponse` matching spec contract.
-- **Claim 2**: `POST /api/v1/node/control` cleanly triggers node execution start and stop routines.
-  - *Method*: Verified via `Node/tests/test_control_api.py::test_post_node_control_start_and_stop` and inspection of `Node/src/node/api/control.py:89-124`.
-  - *Result*: **PASS**. Handles `"start"`, `"stop"`, and rejects invalid actions with HTTP 400.
-- **Claim 3**: `GET /api/v1/sandbox/logs` and `/stream` expose Docker container execution log history and real-time SSE stream.
-  - *Method*: Verified via `test_get_sandbox_logs`, `test_stream_sandbox_logs`, and `test_worktree_manager_captures_sandbox_logs` in `Node/tests/test_control_api.py`.
-  - *Result*: **PASS**. Ring buffer (`SandboxLogBuffer`) caps memory at 1000 items and unsubscribes queues on disconnect.
-- **Claim 4**: System fallback gracefully handles non-NVIDIA hosts without raising exceptions.
-  - *Method*: Verified code in `Node/src/node/telemetry/collector.py:48-99`.
-  - *Result*: **PASS**. `shutil.which("nvidia-smi")` check and `try...except` block safely return default zeroes for systems without NVIDIA GPUs (e.g., macOS Apple Silicon or CPU-only Linux).
-- **Claim 5**: Zero linting, formatting, or static typing errors across `Node/`.
-  - *Method*: Executed commands `.venv/bin/pytest`, `.venv/bin/ruff check .`, `.venv/bin/ruff format --check .`, `.venv/bin/mypy src`.
-  - *Result*: **PASS** (83 passed, 1 skipped; 0 ruff errors; 0 mypy type errors across 34 files).
+1. **Observation 1 & 3 → Logic Step 1**: `InferenceBackend` in `Node/src/node/backends/base.py` declared `@abstractmethod async def execute_split_stage(...)`. Python's `abc.ABC` semantics require every non-abstract subclass to implement all `@abstractmethod`s.
+2. **Logic Step 1 → Logic Step 2**: Because neither `EchoBackend` (`mock.py`) nor `OllamaBackend` (`ollama.py`) implemented `execute_split_stage`, `EchoBackend` remains an abstract class in Python runtime. Attempting to instantiate `EchoBackend()` in `Node/src/node/runtime.py:163` triggers a MyPy static typing error (`Cannot instantiate abstract class "EchoBackend"`).
+3. **Logic Step 2 & Observation 2 → Logic Step 3**: When test suites or runtime callers invoke `backend.execute_split_stage(...)`, Python raises `AttributeError: 'EchoBackend' object has no attribute 'execute_split_stage'`, causing 7 test failures in `test_backend_split_stage_challenger.py`.
+4. **Observation 4 → Logic Step 4**: In `LocalBoundaryEngine.unembed_logits`, there is no validation check verifying `activation_payload.is_split_inference is True`. When a non-split payload (such as string/bytes text prompt) is passed to `unembed_logits`, the engine attempts binary float unpacking, resulting in an unhandled `struct.error` instead of raising a descriptive `ValueError`.
 
 ---
 
-### Coverage Gaps
-- None. All relevant dependencies and call sites for control, telemetry, logging, and CORS wireup were thoroughly reviewed.
+## 3. Findings & Review Summary
+
+### Finding 1 [Critical]: Incomplete Backend Interface Implementation (`execute_split_stage`)
+- **What**: Abstract method `execute_split_stage` declared on `InferenceBackend` is missing from concrete subclasses `EchoBackend` and `OllamaBackend`.
+- **Where**: `Node/src/node/backends/mock.py` and `Node/src/node/backends/ollama.py`.
+- **Why**: Violates interface contract, breaks static typing (`mypy`), and causes runtime `AttributeError` on split-inference execution calls.
+- **Suggestion**: Implement `execute_split_stage(stage, input_payload, options)` on `EchoBackend` (returning transformed `TensorPayload` with `is_split_inference=True`) and `OllamaBackend` (processing layer activations and returning activation `TensorPayload`).
+
+### Finding 2 [Major]: Unvalidated Non-Split Payload Error Handling in `LocalBoundaryEngine`
+- **What**: `LocalBoundaryEngine.unembed_logits()` does not validate `activation_payload.is_split_inference`.
+- **Where**: `Node/src/node/core/local_boundary.py:257` and `Scheduler/src/scheduler/core/local_boundary.py:258`.
+- **Why**: Passing a non-split payload causes low-level `struct.error` instead of clean input validation error handling.
+- **Suggestion**: Add explicit validation at start of `unembed_logits`:
+  ```python
+  if not getattr(activation_payload, "is_split_inference", False):
+      raise ValueError("Local boundary unembedding requires a valid split-inference activation payload (is_split_inference=True)")
+  ```
+
+### Finding 3 [Minor]: Flawed Framing Header Endianness Check
+- **What**: `data.startswith(b"PITP")` checks raw float data instead of the payload envelope.
+- **Where**: `Node/src/node/core/local_boundary.py:274` and `Scheduler/src/scheduler/core/local_boundary.py:275`.
+- **Why**: Raw float activation data inside `TensorPayload.data` does not contain the `PITP` magic envelope header (which belongs to `TensorPayload.to_framed_bytes()`).
+- **Suggestion**: Remove `data.startswith(b"PITP")` check from `data` vector unpacking.
 
 ---
 
-### Unverified Items
-- None.
+## 4. Verified Claims
+
+| Claim | Method | Result |
+|---|---|---|
+| `LocalBoundaryEngine` exists in `Node/src/node/core/local_boundary.py` | `view_file` | PASS |
+| `LocalBoundaryEngine` exists in `Scheduler/src/scheduler/core/local_boundary.py` | `view_file` | PASS |
+| `InferenceBackend` defines `execute_split_stage` | `view_file Node/src/node/backends/base.py` | PASS |
+| `EchoBackend` implements `execute_split_stage` | `(cd Node && .venv/bin/pytest)` | **FAIL** (`AttributeError`) |
+| `OllamaBackend` implements `execute_split_stage` | `(cd Node && .venv/bin/pytest)` | **FAIL** (`AttributeError`) |
+| `mypy Scheduler/src Node/src` clean | `Node/.venv/bin/mypy Scheduler/src Node/src` | **FAIL** (1 error) |
 
 ---
 
-### Adversarial Challenge & Stress-Testing
+## 5. Caveats
 
-1. **Integrity Audit**:
-   - Evaluated source code for hardcoded test results, facade implementations, or verification shortcuts.
-   - Result: **CLEAN**. Code implements genuine telemetry scraping via `psutil` / `nvidia-smi`, real `SandboxLogBuffer` ring buffer and pub/sub queues, and live FastAPI endpoint routing. No integrity violations found.
-
-2. **Null/Uninitialized Runtime State**:
-   - Evaluated behavior if `fastapi_request.app.state.runtime` is uninitialized when calling `/telemetry` or `/control`.
-   - Result: `get_node_telemetry` safely falls back to direct configuration lookup (`get_settings().node_id`) and sets `wan_connected=False`, `status="stopped"`. `control_node` lazily instantiates `Runtime(get_settings())` and attaches it to `app.state.runtime`.
-
-3. **Memory & Concurrent Subscriber Leaks**:
-   - Evaluated `SandboxLogBuffer` subscriber list cleanup during client drop-offs.
-   - Result: `stream_sandbox_logs` wraps subscriber consumer loop in a `try...finally` block that calls `sandbox_log_buffer.unsubscribe(queue)`, guaranteeing queue removal on stream termination. `SandboxLogBuffer._buffer` uses `collections.deque(maxlen=1000)` ensuring bounded memory consumption.
+- End-to-end multi-node streaming over live network was not tested due to missing backend split stage implementation.
 
 ---
 
-## 5-Component Handoff Protocol
+## 6. Conclusion
 
-### 1. Observation
-- **`Node/src/node/api/control.py`**: FastAPI router defining endpoints `GET /api/v1/node/telemetry` (lines 46–86), `POST /api/v1/node/control` (lines 89–124), `GET /api/v1/sandbox/logs` (lines 126–140), and `GET /api/v1/sandbox/logs/stream` (lines 142–186).
-- **`Node/src/node/core/runtime.py`**: Ring buffer class `SandboxLogBuffer` (lines 18–63) managing max 1000 deque entries and subscriber queues protected by `threading.Lock`. `WorktreeManager.execute_in_sandbox` (lines 238–352) captures container `stdout`/`stderr` into `self.log_buffer`.
-- **`Node/src/node/main.py`**: Added `CORSMiddleware` (lines 41–47) and included `control_router` (line 51).
-- **`Node/src/node/telemetry/collector.py`**: Scrapes CPU, RAM, and NVIDIA GPU metrics with non-NVIDIA fallback (lines 48–99).
-- **`Node/tests/test_control_api.py`**: Automated test suite with 5 test cases verifying telemetry, control start/stop, log retrieval, log streaming, and worktree container log buffering.
-- **Verification Commands Executed**:
-  - Command: `.venv/bin/pytest` in `Node/`  
-    Result: `83 passed, 1 skipped in 1.34s`
-  - Command: `.venv/bin/ruff check .` in `Node/`  
-    Result: `All checks passed!`
-  - Command: `.venv/bin/ruff format --check .` in `Node/`  
-    Result: `54 files already formatted`
-  - Command: `.venv/bin/mypy src` in `Node/`  
-    Result: `Success: no issues found in 34 source files`
+Milestone M2 cannot be approved in its current state. The abstract interface contract `execute_split_stage` was added to `InferenceBackend`, but neither `EchoBackend` nor `OllamaBackend` implements it, causing static typing errors (`mypy`) and 7 test failures in pytest. Furthermore, `LocalBoundaryEngine` lacks non-split payload validation.
 
-### 2. Logic Chain
-- Requirements R1 from `ORIGINAL_REQUEST.md` and Milestone M2 from `PROJECT.md` mandate local node hardware telemetry (`GET /api/v1/node/telemetry`), node execution start/stop toggle (`POST /api/v1/node/control`), and Docker sandbox log viewing (`GET /api/v1/sandbox/logs` and `/stream`).
-- Review of `control.py`, `runtime.py`, `main.py`, and `collector.py` confirms that all data schemas match the spec contracts exactly.
-- Verification outputs confirm 100% test pass rate and strict zero-error compliance for linting and static typing.
-- Stress testing confirmed robust error handling, memory safety (bounded ring buffer), clean disconnect resource management, and hardware fallback for non-NVIDIA hosts.
+Verdict: **REQUEST_CHANGES**
 
-### 3. Caveats
-- No caveats. The implementation in `Node/` is robust and ready for integration with the Visual Control Plane (`website/`).
+---
 
-### 4. Conclusion
-The implementation of Milestone M2 in the `Node/` sub-repository is complete, correct, and fully verified. Final Verdict: **APPROVE**.
+## 7. Verification Method
 
-### 5. Verification Method
-To independently verify the `Node/` sub-repository state:
-```bash
-cd /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/Node
-.venv/bin/pytest
-.venv/bin/ruff check .
-.venv/bin/ruff format --check .
-.venv/bin/mypy src
-```
-Expected output: 83 passed (1 skipped), 0 ruff issues, 0 mypy issues across 34 source files.
+To independently verify after remediation:
+1. `(cd Node && .venv/bin/pytest)` (Must pass 100% cleanly without `AttributeError` or `struct.error`).
+2. `Node/.venv/bin/mypy Scheduler/src Node/src` (Must report 0 errors across 71+ files).
+3. `Node/.venv/bin/ruff check .` and `Node/.venv/bin/ruff format --check .`

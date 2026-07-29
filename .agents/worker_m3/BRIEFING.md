@@ -1,72 +1,50 @@
-# BRIEFING — 2026-07-29T00:55:52Z
+# BRIEFING — 2026-07-29T05:59:00Z
 
 ## Mission
-Implement Milestone 3 in `website/`: Host Contributor Telemetry Dashboard (/dashboard), Interactive Requester Chat Playground (/playground), and Next.js API Proxy Routes in `website/src/app/api/`.
+Implement Milestone M3: Matchmaker Split Allocation & OpenAI Gateway Split Streaming for Public Intelligence Phase 4.6.
 
 ## 🔒 My Identity
-- Archetype: worker_m3 (teamwork_preview_worker)
-- Roles: implementer, qa, specialist
+- Archetype: implementer / qa / specialist
+- Roles: CODER
 - Working directory: /Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/worker_m3
-- Original parent: e436f93a-97e7-4b41-88fd-47b47b3f8097
-- Milestone: Milestone 3 (Website Dashboard & Playground & API Proxies)
+- Original parent: 65182c1c-86fc-4f9a-923b-e1b554003e6d
+- Milestone: M3 (Matchmaker Split Allocation & OpenAI Gateway Split Streaming)
 
 ## 🔒 Key Constraints
-- Genuine implementation — no hardcoded test results, facade implementations, or cheating.
-- Build & test verification in `website/` using `npm run build` and `npm run lint`.
-- Follow layout and conventions of website codebase.
+- Pure non-bypass implementation. No dummy/facade implementations or hardcoded verification values.
+- Maintain compatibility with existing pipeline scheduling, model sharding models, local boundary engine, and OpenAI endpoints.
+- Closed-loop verification: `pytest`, `ruff check .`, `ruff format --check .`, `mypy Scheduler/src Node/src` must pass with zero errors.
 
 ## Current Parent
-- Conversation ID: e436f93a-97e7-4b41-88fd-47b47b3f8097
-- Updated: 2026-07-29T00:55:52Z
+- Conversation ID: 65182c1c-86fc-4f9a-923b-e1b554003e6d
+- Updated: 2026-07-29T05:59:00Z
 
 ## Task Summary
 - **What to build**:
-  1. `/dashboard`: Host Contributor Telemetry Dashboard with node control toggle, telemetry gauges, and sandbox log viewer.
-  2. `/playground`: Interactive Requester Chat Playground with SSE token streaming, model selector, control drawer, latency metrics card, error/rate-limit banner, JWT auth field.
-  3. `website/src/app/api/`: Proxy API routes connecting Next.js frontend to Scheduler (`http://localhost:8000`) and Node (`http://localhost:8080`).
-- **Success criteria**:
-  - `npm run build` succeeds without errors. (Passed)
-  - `npm run lint` passes without errors. (Passed)
-  - All requested components and routes are properly structured and functional. (Done)
+  1. `SchedulingEngine.schedule_split_inference_pipeline` in `Scheduler/src/scheduler/core/engine.py`.
+  2. Split inference routing in `POST /v1/chat/completions` in `Scheduler/src/scheduler/api/openai.py`.
+  3. `test_split_pipeline_scheduling.py` and `test_openai_split_inference.py` in `Scheduler/tests/`.
+- **Success criteria**: All 275 tests pass, 100% ruff/mypy compliance, full split inference pipeline execution chain working correctly.
 
 ## Change Tracker
 - **Files modified**:
-  - `website/src/app/api/chat/completions/route.ts` — Proxy for `/v1/chat/completions` (SSE)
-  - `website/src/app/api/models/route.ts` — Proxy for `/v1/models`
-  - `website/src/app/api/node/telemetry/route.ts` — Proxy for `/api/v1/node/telemetry`
-  - `website/src/app/api/node/control/route.ts` — Proxy for `/api/v1/node/control`
-  - `website/src/app/api/sandbox/logs/stream/route.ts` — Proxy for `/api/v1/sandbox/logs/stream`
-  - `website/src/app/api/telemetry/all/route.ts` — Proxy for `/nodes/telemetry`
-  - `website/src/components/node-control-toggle.tsx` — Node runtime start/stop toggle component
-  - `website/src/components/telemetry-gauge.tsx` — CPU, RAM, VRAM, AEAD, Heartbeat, WAN gauges
-  - `website/src/components/sandbox-log-viewer.tsx` — Real-time Docker sandbox log viewer
-  - `website/src/app/dashboard/page.tsx` — Host Contributor Telemetry Dashboard page
-  - `website/src/components/playground/model-selector.tsx` — Model selector component
-  - `website/src/components/playground/latency-metrics-card.tsx` — Inference TTFT & t/s metrics card
-  - `website/src/components/playground/error-rate-limit-banner.tsx` — Rate limit 429 & error banner
-  - `website/src/components/playground/playground-controls.tsx` — Inference parameters & auth controls
-  - `website/src/components/playground/chat-messages.tsx` — Chat messages thread & token stream rendering
-  - `website/src/components/playground/prompt-input.tsx` — Prompt textarea input with submit/stop
-  - `website/src/app/playground/page.tsx` — Interactive Requester Chat Playground page
-  - `website/src/components/site-navigation.ts` — Added /playground and /dashboard header links
-- **Build status**: PASS (npm run build: 0 errors; npm run lint: 0 errors; pytest Scheduler: 111 passed; pytest Node: 117 passed)
+  - `Scheduler/src/scheduler/models/pipeline.py`: Added `StageType` enum, `TaskProposal` model, updated `PipelineStage` and `PipelineConfig` validation.
+  - `Scheduler/src/scheduler/core/boundary_engine.py`: Implemented `LocalBoundaryEngine` for Layer 0 embedding and Layer N LM Head unembedding.
+  - `Scheduler/src/scheduler/core/engine.py`: Implemented `schedule_split_inference_pipeline` creating 3-tier asymmetric split-inference chain.
+  - `Scheduler/src/scheduler/models/openai.py`: Added `split_inference` field to `ChatCompletionRequest`.
+  - `Scheduler/src/scheduler/api/openai.py`: Integrated split-inference routing path, `LocalBoundaryEngine`, and SSE streaming generator in `POST /v1/chat/completions`.
+  - `Node/src/node/models/sharding.py`: Added `StageType` enum and updated `PipelineStage`.
+  - `Node/src/node/core/boundary_engine.py`: Implemented `LocalBoundaryEngine`.
+  - `Node/src/node/core/local_boundary.py`: Re-exported `LocalBoundaryEngine`.
+  - `Scheduler/tests/test_split_pipeline_scheduling.py`: Unit test suite for split-inference matchmaker pipeline scheduling.
+  - `Scheduler/tests/test_openai_split_inference.py`: Unit test suite for OpenAI Gateway split-inference routing and streaming.
+- **Build status**: PASS (275 tests passing, 100% ruff and mypy clean)
 - **Pending issues**: None
 
 ## Quality Status
-- **Build/test result**: PASS
-- **Lint status**: PASS (0 errors)
-- **Tests added/modified**: Verified with Next.js build, ESLint, Scheduler pytest (111 passed), Node pytest (117 passed)
+- **Build/test result**: PASS (125 Scheduler tests passed, 150 Node tests passed, 1 skipped)
+- **Lint status**: CLEAN (0 ruff errors, 0 format warnings across Scheduler and Node)
+- **Tests added/modified**: `test_split_pipeline_scheduling.py` (4 tests), `test_openai_split_inference.py` (3 tests)
 
 ## Loaded Skills
-- None
-
-## Key Decisions Made
-- Implemented Next.js App Router API proxy handlers under `website/src/app/api/` supporting SSE streaming and fallback parameters.
-- Modularized dashboard and playground components into reusable, type-safe client React components matching existing theme.
-
-## Artifact Index
-- `.agents/worker_m3/DISPATCH.md` — Dispatch record
-- `.agents/worker_m3/BRIEFING.md` — Briefing document
-- `.agents/worker_m3/progress.md` — Progress heartbeat
-- `.agents/worker_m3/changes.md` — Implementation report
-- `.agents/worker_m3/handoff.md` — Handoff report
+- None loaded.

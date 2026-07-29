@@ -1,293 +1,386 @@
-# Architectural Analysis & Implementation Specification: Phase 4.5 Web Visual Control Plane
+# Comprehensive Technical Analysis: Intermediate Vector Activation Transport (Phase 4.6)
 
-**Author**: `explorer_2` (teamwork_preview_explorer)  
-**Working Directory**: `/Users/atharvdeshpande/Desktop/Projects/Public-Intelligence/.agents/explorer_2`  
-**Date**: 2026-07-29  
-**Target Subsystem**: `website/` (Next.js 16 + React 19 + Tailwind CSS v4)
+## Executive Summary
 
----
+Phase 4.6 introduces **Asymmetric Split-Inference & Local Boundary Security** for Public Intelligence. Under this architecture, raw prompt tokens, text strings, token IDs, token embedding weights (Layer 0), and final language model projection weights (LM Head / Unembedding) remain strictly local on the user's client or edge gateway. Remote untrusted P2P nodes only execute intermediate transformer layers (Layers 1 to $N-1$) by consuming and producing high-dimensional intermediate activation vectors ($H \in \mathbb{R}^{B \times S \times D}$).
 
-## 1. Executive Summary
-
-This report establishes the technical architecture, component breakdown, state management model, styling standards, and API integration paths for building **R1 (Host Contributor Telemetry Dashboard)** and **R2 (Interactive Requester Chat Playground)** inside `website/`.
-
-### Key Findings
-1. **Existing Stack**: `website/` is a Next.js 16 (App Router) project built with React 19, TypeScript 5, Tailwind CSS v4 (`@import "tailwindcss"; @import "shadcn/tailwind.css";`), `clsx`, and `tailwind-merge`.
-2. **Backend API Readiness**:
-   - **Scheduler API** (`http://localhost:8000`): Offers `/v1/chat/completions` (OpenAI-compatible SSE streaming & non-streaming with RS256 JWT auth + token-bucket rate limiting), `/v1/models`, `/nodes`, `/nodes/telemetry` (AEAD decrypted hardware telemetry feed over Zenoh).
-   - **Node API** (`http://localhost:8080`): Offers `/api/v1/node/control` (`start` / `stop` host runtime), `/api/v1/node/telemetry` (CPU, RAM, VRAM, WAN state), `/api/v1/sandbox/logs` and `/api/v1/sandbox/logs/stream` (Docker sandbox log SSE stream).
-3. **Integration Strategy**:
-   - Create Next.js API Proxy Routes in `website/src/app/api/` to avoid browser CORS/mixed-content issues, manage environment variables (`SCHEDULER_URL`, `NODE_URL`, `SCHEDULER_NETWORK_AUTH_TOKEN`), and safely stream SSE payloads.
-   - Implement `/dashboard` (or update `/status`) for R1 (Host Contributor Telemetry) and `/playground` for R2 (Requester Chat Playground).
-   - Update navigation in `website/src/components/site-navigation.ts` and `SiteHeader` to provide seamless navigation.
+This report provides an in-depth architectural investigation of:
+1. `TensorPayload` domain models in `Node/src/node/models/sharding.py` and `Scheduler/src/scheduler/models/pipeline.py`.
+2. `BackpressuredStreamRouter` and `BackpressuredReceiver` transport systems in `Node/src/node/core/transport.py` and `Scheduler/src/scheduler/core/transport.py`.
+3. High-dimensional vector activation serialization, deserialization, zero-copy shared memory IPC, and Zenoh P2P backpressured WAN streaming.
+4. Concrete recommendations and code extension specifications for the implementation phase.
 
 ---
 
-## 2. Existing Website Audit
+## 1. Baseline Codebase Inspection & Observations
 
-| File Path | Purpose | Key Imports / Dependencies |
-| :--- | :--- | :--- |
-| `website/package.json` | Project dependencies | Next 16.2.10, React 19.2.4, Tailwind v4, clsx 2.1.1, tailwind-merge 3.6.0 |
-| `website/src/app/globals.css` | Styling & CSS variables | Tailwind CSS v4 `@theme` configuration using OKLCH color variables |
-| `website/src/app/page.tsx` | Main landing page | `PageShell`, `Logo`, `SystemDiagram`, `TwitterTimeline` |
-| `website/src/app/status/page.tsx` | Legacy status page | Client component polling `/api/status` and running inference probe |
-| `website/src/app/api/status/route.ts` | Legacy proxy route | Next.js GET/POST route proxying to `SCHEDULER_URL` and `NODE_URL` |
-| `website/src/components/site-navigation.ts` | Navigation config | Array of nav items (`/vision`, `/architecture`, `/research`, `/roadmap`, `/contribute`) |
-| `website/src/components/site-header.tsx` | Navigation bar | Renders logo and navigation links |
-| `website/src/components/page-shell.tsx` | Layout wrapper | Enforces max-width container and renders `SiteFooter` |
+### 1.1 Existing Model Definitions
 
----
+#### `Node/src/node/models/sharding.py`
+In `Node/src/node/models/sharding.py` (lines 60-76):
+```python
+class TensorPayload(BaseModel):
+    """Payload representing serialized tensor activation data across stages."""
 
-## 3. R1 Specification: Host Contributor Telemetry Dashboard (`/dashboard`)
-
-The Host Contributor Telemetry Dashboard enables node operators to monitor host health, toggle runtime execution, inspect AEAD-encrypted telemetry feeds, verify P2P WAN connectivity, and view real-time Docker sandbox execution logs.
-
-### 3.1 Components Breakdown
-
-#### `HostControlCard` (`src/components/dashboard/host-control-card.tsx`)
-- **Function**: Interactive control panel to launch or halt host node background runtime.
-- **Controls**: "Start Host Node" / "Stop Host Node" action button with confirmation state and pulse ring.
-- **State**:
-  - `status`: `"ready" | "running" | "stopped" | "unreachable" | "transitioning"`
-  - `actionPending`: boolean lock during POST `/api/v1/node/control` requests.
-- **Data Call**: POST `/api/node/control` with body `{ "action": "start" | "stop" }`.
-
-#### `TelemetryGauges` (`src/components/dashboard/telemetry-gauges.tsx`)
-- **Function**: Visual progress gauges & numeric readouts for hardware utilization.
-- **Gauges**:
-  - **CPU Utilization**: Percentage readout (0-100%) with color thresholding (Green < 70%, Yellow < 90%, Red >= 90%).
-  - **RAM Utilization**: Used GB / Total GB readout + percentage bar.
-  - **VRAM Utilization**: Used GB / Total GB readout + percentage bar (specifically for GPU acceleration).
-- **Data Source**: `GET /api/node/telemetry` or `GET /api/telemetry/all`.
-
-#### `AEADTelemetryBadge` (`src/components/dashboard/aead-telemetry-badge.tsx`)
-- **Function**: Visual indicator verifying end-to-end cryptographic telemetry integrity.
-- **Metrics**:
-  - Cipher: `AES-256-GCM`
-  - Signature Check: `SHA-256 HMAC` signature constant-time verification status (`Verified` / `Tampered / Dropped`).
-  - Staleness Boundary: Check $\Delta t \le 30.0\text{s}$ against host clock.
-  - Payload Pulse Counter: Number of telemetry frames received in current session.
-
-#### `P2PWanStatus` (`src/components/dashboard/p2p-wan-status.tsx`)
-- **Function**: Network connection state and Zenoh router P2P topology status.
-- **Display**:
-  - WAN Connection Badge: `Connected (P2P Mesh)` or `Disconnected / Direct`.
-  - Zenoh Endpoints: Configured peer endpoints and listen addresses.
-  - Scouting Mode: Gossip scouting status (`gossip enabled`).
-
-#### `HeartbeatHealthCard` (`src/components/dashboard/heartbeat-health-card.tsx`)
-- **Function**: Monitors Scheduler registration and pulse vitality.
-- **Display**:
-  - Heartbeat status: `Healthy (< 5s)` / `Lagging (< 15s)` / `Stale Evicted (> 15s)`.
-  - Dynamic herd dampening factor and registered node ID.
-
-#### `DockerSandboxLogViewer` (`src/components/dashboard/docker-sandbox-log-viewer.tsx`)
-- **Function**: Live streaming log console for short-lived Docker sandbox executions (512MB RAM, 60s timeout, non-root user isolation).
-- **Features**:
-  - SSE Stream Client connected to `/api/sandbox/logs/stream`.
-  - Auto-scroll lock toggle (stick to bottom on new log line).
-  - Search / Filter by level (`stdout`, `stderr`, `info`, `error`).
-  - Clear log history button.
-  - Formatted dark terminal styling (`font-mono text-xs`).
-
----
-
-## 4. R2 Specification: Interactive Requester Chat Playground (`/playground`)
-
-The Requester Chat Playground provides an OpenAI-compatible interactive chat interface with real-time SSE token generation streaming, detailed performance metrics (TTFT, t/s), and parameter customization.
-
-### 4.1 Components Breakdown
-
-#### `ChatPlayground` (`src/app/playground/page.tsx` & `src/components/playground/chat-playground.tsx`)
-- **Function**: Layout container housing message thread, prompt input form, settings sidebar, and performance metrics panel.
-- **State Management**:
-  - `messages`: Array of `ChatMessage` (`role: "user" | "assistant" | "system"`, `content: string`, `timestamp?: string`).
-  - `selectedModel`: String (e.g. `llama3.2`, default selected from available models list).
-  - `temperature`: Number (0.0 to 2.0, default 0.7).
-  - `maxTokens`: Number (64 to 4096, default 1024).
-  - `topP`: Number (0.0 to 1.0, default 0.9).
-  - `systemPrompt`: String custom system message.
-  - `jwtToken`: Custom RS256 Bearer JWT string for authentication.
-  - `isGenerating`: Boolean flag indicating active streaming.
-  - `metrics`: `{ ttftMs: number | null, tokensPerSec: number | null, totalTokens: number, promptTokens: number, completionTokens: number, elapsedTimeMs: number }`.
-  - `errorState`: `{ statusCode: number | null, message: string | null }`.
-
-#### `ChatMessageList` (`src/components/playground/chat-message-list.tsx`)
-- **Function**: Renders conversation history with distinct styling for System, User, and Assistant roles.
-- **Features**:
-  - Real-time token append animation during SSE streaming.
-  - Blinking cursor (`█` or pulsing emerald dot) attached to the active assistant response chunk.
-  - Copy code block / copy message content button.
-  - Clear chat history trigger.
-
-#### `ChatInputForm` (`src/components/playground/chat-input-form.tsx`)
-- **Function**: User input text area with submit/stop controls.
-- **Controls**:
-  - Auto-resizing multi-line text area.
-  - Keyboard shortcuts (`Enter` to submit, `Shift+Enter` for new line).
-  - "Stop Generation" button when streaming is active (aborts `Fetch` signal).
-
-#### `PlaygroundSettings` (`src/components/playground/playground-settings.tsx`)
-- **Function**: Side drawer/panel for tuning inference parameters and auth headers.
-- **Controls**:
-  - Model Dropdown: Populated dynamically via GET `/api/models`.
-  - Temperature Slider (0.0 - 2.0).
-  - Max Tokens Input/Slider (64 - 4096).
-  - Top-P Slider (0.0 - 1.0).
-  - JWT Authorization Header Input (Configures `Authorization: Bearer <jwt>`).
-  - System Prompt Editor.
-
-#### `LatencyMetricsCard` (`src/components/playground/latency-metrics-card.tsx`)
-- **Function**: Displays real-time generation performance telemetry.
-- **Readouts**:
-  - **TTFT (Time To First Token)**: Measured in ms from request click to first SSE token chunk.
-  - **Generation Speed**: Tokens per second (t/s) calculated continuously during streaming.
-  - **Elapsed Time**: Total inference duration in seconds.
-  - **Token Counts**: Estimated prompt, completion, and total tokens.
-
-#### `ErrorRateLimitBanner` (`src/components/playground/error-rate-limit-banner.tsx`)
-- **Function**: Actionable warning and error alerts.
-- **Triggers**:
-  - **HTTP 429**: "Rate limit exceeded. Token bucket quota exhausted (5 burst / 1 token per 2s). Please wait before submitting another query."
-  - **HTTP 503**: "No active compute node available serving model '{model_id}'."
-  - **HTTP 401**: "Unauthorized. Invalid RS256 JWT signature or missing tenant claim."
-  - **Network Error**: "Connection reset or gateway timeout."
-
----
-
-## 5. API Integration & Proxy Architecture
-
-To guarantee security, bypass CORS restrictions, and support SSE streaming across environments, Next.js API routes will be implemented under `website/src/app/api/`.
-
-### 5.1 Route Handler Mapping
-
-```
-Browser Client (React)
-    │
-    ├── POST /api/chat/completions ────> Scheduler (http://localhost:8000/v1/chat/completions) [SSE Stream]
-    ├── GET  /api/models           ────> Scheduler (http://localhost:8000/v1/models)
-    ├── GET  /api/telemetry/all    ────> Scheduler (http://localhost:8000/nodes/telemetry)
-    ├── GET  /api/node/telemetry   ────> Node      (http://localhost:8080/api/v1/node/telemetry)
-    ├── POST /api/node/control     ────> Node      (http://localhost:8080/api/v1/node/control)
-    └── GET  /api/sandbox/logs/stream ─> Node     (http://localhost:8080/api/v1/sandbox/logs/stream) [SSE Stream]
+    task_id: str = Field(description="Unique pipeline execution task ID")
+    stage_index: int = Field(ge=0, description="Stage index sending the payload")
+    data: bytes | list[float] | dict[str, Any] = Field(
+        description="Tensor activation data or payload content"
+    )
+    shape: list[int] = Field(
+        default_factory=list, description="Dimensions of the tensor shape"
+    )
+    dtype: str = Field(default="float32", description="Data type of tensor values")
+    shm_name: str | None = Field(
+        default=None,
+        description="Optional shared memory block name for co-located IPC",
+    )
 ```
 
-### 5.2 SSE Stream Handling Implementation Details
-In Next.js 16 App Router, streaming SSE from an upstream FastAPI service is handled using `ReadableStream`:
+#### `Scheduler/src/scheduler/models/pipeline.py`
+Currently defines `LayerRange`, `PipelineStage`, and `PipelineConfig`, but does not yet export `TensorPayload`. For architectural consistency and client/scheduler verification, `TensorPayload` should be symmetrically available or shared between `Scheduler` and `Node`.
 
-```ts
-// Example: src/app/api/chat/completions/route.ts
-import { NextResponse } from "next/server";
+### 1.2 Existing Transport Layer Subsystem
 
-export async function POST(request: Request) {
-  const body = await request.json();
-  const authHeader = request.headers.get("authorization");
+#### `Node/src/node/core/transport.py` & `Scheduler/src/scheduler/core/transport.py`
+1. **Shared Memory IPC (`SharedMemoryIPC`)**:
+   - `write_data(data: bytes) -> str`: Writes length-prefixed binary buffer into `multiprocessing.shared_memory.SharedMemory` with handle format `pi_shm_<uuid_12>`.
+   - `read_data(name: str) -> bytes`: Reads length-prefixed bytes from shared memory.
+   - `cleanup(name: str) -> None`: Closes and unlinks shared memory block.
+2. **Backpressured Stream Router (`BackpressuredStreamRouter`)**:
+   - Sliding window flow control initialized with `window_size` (default: 4).
+   - Subscribes to ACK channel: `public-intelligence/net/transport/ack/{session_id}`.
+   - Publishes to stream topic: `public-intelligence/net/transport/stream/{session_id}`.
+   - Topic helpers (lines 209-232 of `Node/src/node/core/transport.py`):
+     - `get_tensor_topic(task_id, stage_index)` $\rightarrow$ `public-intelligence/net/tasks/{task_id}/tensors/{stage_index}`
+     - `get_tensor_ack_topic(task_id, stage_index)` $\rightarrow$ `public-intelligence/net/tasks/{task_id}/tensors/{stage_index}/ack`
+3. **Backpressured Receiver (`BackpressuredReceiver`)**:
+   - Subscribes to stream topic, executes `on_chunk` callback.
+   - Automatically detects `shm://` prefixes, resolves shared memory contents, performs cleanup, and returns binary payload.
+   - Transmits capacity signal back to sender: `{"seq": self.processed_count}`.
 
-  const schedulerUrl = (process.env.SCHEDULER_URL ?? "http://localhost:8000").replace(/\/$/, "");
-  const upstreamUrl = `${schedulerUrl}/v1/chat/completions`;
+---
 
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  if (authHeader) {
-    headers["Authorization"] = authHeader;
-  }
+## 2. Gap Analysis & Rationale for Extensions
 
-  const upstreamRes = await fetch(upstreamUrl, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
+| Feature Dimension | Current Baseline | Phase 4.6 Requirement | Deficit & Architectural Remedy |
+|---|---|---|---|
+| **Split-Inference Flag** | Not present | Explicit flag signaling local boundary isolation mode | Add `is_split_inference: bool = True` to `TensorPayload` |
+| **Pipeline Target Stage** | `stage_index` (sender) only | Explicit `target_stage_index: int` | Add `target_stage_index: int` to prevent cross-stage routing errors |
+| **Tensor Type Categorization** | Generic payload | Distinct classification of activation vs embedding vs LM head input | Add `tensor_type: str = "intermediate_activation"` |
+| **Sequence Step Tracking** | None | Multi-step / autoregressive generation step index | Add `sequence_id: int = 0` to preserve causal ordering |
+| **Binary Payload Framing** | Untyped `bytes` or `list[float]` | Framed header + binary C-contiguous buffer | Implement binary framing protocol (`to_framed_bytes` / `from_framed_bytes`) |
+| **NumPy/PyTorch Integration** | Manual list/bytes conversion | Native `to_numpy()` and `from_numpy()` helpers | Add zero-copy array mapping helpers |
+| **Typed Transport API** | Generic chunk streaming (`send_chunk`) | High-level `send_tensor_payload()` and `start_tensor_listener()` | Extend `BackpressuredStreamRouter` & `BackpressuredReceiver` |
 
-  if (!upstreamRes.ok || !upstreamRes.body) {
-    const errorText = await upstreamRes.text();
-    return NextResponse.json(
-      { error: errorText || "Upstream request failed" },
-      { status: upstreamRes.status }
-    );
-  }
+---
 
-  return new Response(upstreamRes.body, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      "Connection": "keep-alive",
-    },
-  });
-}
+## 3. High-Dimensional Activation Vector Serialization Analysis
+
+### 3.1 Data Volume & Bandwidth Benchmark
+
+Consider an intermediate hidden state matrix $H$ produced by Layer 0 (Embedding) for a Llama-3 8B model ($D = 4096$, sequence length $S = 128$, batch size $B = 1$):
+- Shape: $[1, 128, 4096]$
+- Element Count: $1 \times 128 \times 4096 = 524,288$ float elements
+
+| Format | Byte Overhead per Element | Total Payload Size | Transport Latency over 100 Mbps WAN | Evaluation & Recommendation |
+|---|---|---|---|---|
+| **JSON float list** (`[0.012, ...]`) | $\approx 20\text{–}30\text{ bytes}$ | $\approx 10.5\text{ MB}\text{–}15.7\text{ MB}$ | $\approx 840\text{ ms}\text{–}1250\text{ ms}$ | **Unacceptable**: Extreme serialization bloat & CPU overhead. |
+| **Base64 encoded bytes** | $\approx 5.33\text{ bytes}$ | $\approx 2.8\text{ MB}$ | $\approx 224\text{ ms}$ | **Suboptimal**: 33% inflation over raw bytes. |
+| **Raw Binary FP32** (`float32`) | $4.00\text{ bytes}$ | $2,097,152\text{ bytes} \approx 2.0\text{ MB}$ | $\approx 160\text{ ms}$ | **Standard**: Exact precision, zero conversion loss. |
+| **Raw Binary FP16 / BF16** (`float16` / `bfloat16`) | $2.00\text{ bytes}$ | $1,048,576\text{ bytes} \approx 1.0\text{ MB}$ | $\approx 80\text{ ms}$ | **Recommended for WAN**: 50% bandwidth reduction. |
+| **FP8 (E4M3FN format)** | $1.00\text{ byte}$ | $524,288\text{ bytes} \approx 512\text{ KB}$ | $\approx 40\text{ ms}$ | **Optimal for WAN**: 75% bandwidth reduction. |
+| **Local Shared Memory** (`SharedMemoryIPC`) | 20 bytes handle | 20 bytes (`shm://pi_shm_...`) | $<0.1\text{ ms}$ | **Mandatory for Co-Located Nodes**: Complete zero WAN overhead! |
+
+### 3.2 Binary Framing Layout Protocol
+
+To avoid JSON parsing overhead while remaining self-describing, framed payloads transmitted over Zenoh follow a 2-part layout:
+
+```
++-----------------------------------+-----------------------------------+-----------------------------------+
+| Field                             | Type / Length                     | Description                       |
++-----------------------------------+-----------------------------------+-----------------------------------+
+| Magic Header                      | 4 bytes (ASCII "PITP")            | Protocol Identification ("Public  |
+|                                   |                                   | Intelligence Tensor Payload")     |
+| Metadata Length (N)               | 4 bytes (Big-Endian uint32)       | Byte length of JSON header        |
+| JSON Metadata Header              | N bytes (UTF-8 JSON string)       | Pydantic metadata (task_id, shape,|
+|                                   |                                   | dtype, is_split_inference, etc.)  |
+| Binary Activation Buffer          | Remaining bytes                   | Contiguous float raw byte array   |
++-----------------------------------+-----------------------------------+-----------------------------------+
+```
+
+#### Python Framing Implementation Logic:
+```python
+MAGIC_BYTES = b"PITP"
+
+def to_framed_bytes(self) -> bytes:
+    # 1. Prepare metadata dict (excluding raw heavy data bytes)
+    meta = {
+        "task_id": self.task_id,
+        "stage_index": self.stage_index,
+        "target_stage_index": self.target_stage_index,
+        "is_split_inference": self.is_split_inference,
+        "tensor_type": self.tensor_type,
+        "shape": self.shape,
+        "dtype": self.dtype,
+        "sequence_id": self.sequence_id,
+    }
+    meta_bytes = json.dumps(meta).encode("utf-8")
+    meta_len = len(meta_bytes)
+    
+    # 2. Extract raw activation bytes
+    if isinstance(self.data, bytes):
+        raw_data = self.data
+    else:
+        # Convert list or array to bytes
+        raw_data = np.array(self.data, dtype=self.dtype).tobytes()
+        
+    # 3. Assemble binary frame
+    return MAGIC_BYTES + meta_len.to_bytes(4, "big") + meta_bytes + raw_data
 ```
 
 ---
 
-## 6. Proposed Directory & Component Structure
+## 4. End-to-End Split-Inference Sequence & Topic Architecture
 
-Below is the exact file tree to be created in `website/`:
+### 4.1 Topic Hierarchy for Pipeline Stages
+
+For a pipeline consisting of Stage 0 (Client Local), Stage 1 (Remote Node A), and Stage 2 (Client Local LM Head):
 
 ```
-website/
-├── src/
-│   ├── app/
-│   │   ├── api/
-│   │   │   ├── chat/
-│   │   │   │   └── completions/
-│   │   │   │       └── route.ts         # Proxy for Scheduler POST /v1/chat/completions
-│   │   │   ├── models/
-│   │   │   │   └── route.ts             # Proxy for Scheduler GET /v1/models
-│   │   │   ├── node/
-│   │   │   │   ├── control/
-│   │   │   │   │   └── route.ts         # Proxy for Node POST /api/v1/node/control
-│   │   │   │   └── telemetry/
-│   │   │   │       └── route.ts         # Proxy for Node GET /api/v1/node/telemetry
-│   │   │   ├── sandbox/
-│   │   │   │   └── logs/
-│   │   │   │       └── stream/
-│   │   │   │           └── route.ts     # Proxy for Node GET /api/v1/sandbox/logs/stream
-│   │   │   └── telemetry/
-│   │   │       └── all/
-│   │   │           └── route.ts         # Proxy for Scheduler GET /nodes/telemetry
-│   │   ├── dashboard/
-│   │   │   └── page.tsx                 # R1: Host Contributor Telemetry Dashboard
-│   │   ├── playground/
-│   │   │   └── page.tsx                 # R2: Interactive Requester Chat Playground
-│   │   └── ...
-│   ├── components/
-│   │   ├── dashboard/
-│   │   │   ├── aead-telemetry-badge.tsx
-│   │   │   ├── docker-sandbox-log-viewer.tsx
-│   │   │   ├── heartbeat-health-card.tsx
-│   │   │   ├── host-control-card.tsx
-│   │   │   ├── p2p-wan-status.tsx
-│   │   │   └── telemetry-gauges.tsx
-│   │   ├── playground/
-│   │   │   ├── chat-input-form.tsx
-│   │   │   ├── chat-message-list.tsx
-│   │   │   ├── chat-playground.tsx
-│   │   │   ├── error-rate-limit-banner.tsx
-│   │   │   ├── latency-metrics-card.tsx
-│   │   │   └── playground-settings.tsx
-│   │   ├── site-navigation.ts           # Add /dashboard and /playground
-│   │   └── ...
+                       STAGE 0 (Client Local)
+               [Layer 0: Embedding Token Projection]
+                                 |
+                                 | TensorPayload (H_0) over Zenoh Topic:
+                                 | "public-intelligence/net/tasks/{task_id}/tensors/1"
+                                 v
+                       STAGE 1 (Remote Node A)
+              [Layers 1..N-1: Hidden Transformer Blocks]
+                                 |
+                                 | TensorPayload (H_1) over Zenoh Topic:
+                                 | "public-intelligence/net/tasks/{task_id}/tensors/2"
+                                 v
+                       STAGE 2 (Client Local)
+               [LM Head: Unembedding / Token Projection]
+```
+
+Backpressure Flow Control ACKs flow in reverse:
+- Stage 1 publishes ACK to `public-intelligence/net/tasks/{task_id}/tensors/0/ack` (received by Stage 0 router).
+- Stage 2 publishes ACK to `public-intelligence/net/tasks/{task_id}/tensors/1/ack` (received by Stage 1 router).
+
+### 4.2 Detailed Message Flow Diagram
+
+```
+Client (Stage 0)             Remote Node A (Stage 1)              Client (Stage 0)
+   [Local Layer 0]                [Layers 1..N-1]                     [Local LM Head]
+         |                               |                                   |
+  1. Compute H_0 = Embed(X)              |                                   |
+         |                               |                                   |
+  2. Send TensorPayload(H_0)             |                                   |
+     Topic: .../tensors/1 -------------->|                                   |
+         |                         3. Process H_1 = Stage1(H_0)              |
+  4. Send ACK (seq=1)                    |                                   |
+     Topic: .../tensors/0/ack <----------|                                   |
+         |                               |                                   |
+         |                        5. Send TensorPayload(H_1)                 |
+         |                           Topic: .../tensors/2 ------------------>|
+         |                               |                            6. Process Logits = LM_Head(H_1)
+         |                               |                               Sample Token Y
+         |                               |                            7. Send ACK (seq=1)
+         |                               |<-------------------------- Topic: .../tensors/1/ack
 ```
 
 ---
 
-## 7. Styling & UX Design Language Invariants
+## 5. Architectural Recommendations & Detailed Code Extensions
 
-1. **Color Palette**: Strict adherence to the dark infrastructure theme defined in `globals.css`:
-   - Primary accents: Emerald Green `#86EFAC` / Lime `#D9F99D` for active statuses, connected states, and metrics.
-   - Backgrounds: Dark slate OKLCH (`var(--background)`), card containers (`var(--card)`).
-   - Borders: Subtle border opacity `border-border/40`.
-2. **Typography**: Mono accents (`font-mono`) for node IDs, timestamps, token counts, and terminal logs.
-3. **Accessibility & Responsive Grid**: Flexbox and grid layouts (`md:grid-cols-2`, `lg:grid-cols-3`) with screen reader `aria-labelledby` attributes.
+### 5.1 Recommendation 1: Extend `TensorPayload` in `Node/src/node/models/sharding.py` & `Scheduler/src/scheduler/models/pipeline.py`
+
+Update `TensorPayload` to support split-inference flags, target stage indexing, tensor type classification, sequence ID, and binary framing helpers:
+
+```python
+class TensorPayload(BaseModel):
+    """Payload representing serialized tensor activation data across stages."""
+
+    task_id: str = Field(description="Unique pipeline execution task ID")
+    stage_index: int = Field(ge=0, description="Stage index sending the payload")
+    target_stage_index: int = Field(
+        default=0, description="Target stage index receiving the payload"
+    )
+    is_split_inference: bool = Field(
+        default=False,
+        description="Flag indicating asymmetric split-inference mode (Layer 0 & LM Head local)",
+    )
+    tensor_type: str = Field(
+        default="intermediate_activation",
+        description="Type of tensor ('intermediate_activation', 'embedding', 'lm_head_input')",
+    )
+    data: bytes | list[float] | dict[str, Any] = Field(
+        description="Tensor activation data or payload content"
+    )
+    shape: list[int] = Field(
+        default_factory=list, description="Dimensions of the tensor shape"
+    )
+    dtype: str = Field(default="float32", description="Data type ('float32', 'float16', 'bfloat16', 'fp8')")
+    sequence_id: int = Field(default=0, description="Sequence step or micro-batch index")
+    shm_name: str | None = Field(
+        default=None,
+        description="Optional shared memory block name for co-located IPC",
+    )
+
+    def to_framed_bytes(self) -> bytes:
+        """Serialize TensorPayload metadata and activation bytes into binary frame."""
+        meta = {
+            "task_id": self.task_id,
+            "stage_index": self.stage_index,
+            "target_stage_index": self.target_stage_index,
+            "is_split_inference": self.is_split_inference,
+            "tensor_type": self.tensor_type,
+            "shape": self.shape,
+            "dtype": self.dtype,
+            "sequence_id": self.sequence_id,
+            "shm_name": self.shm_name,
+        }
+        meta_bytes = json.dumps(meta).encode("utf-8")
+        raw_bytes: bytes
+        if isinstance(self.data, bytes):
+            raw_bytes = self.data
+        elif isinstance(self.data, list):
+            import numpy as np
+            raw_bytes = np.array(self.data, dtype=np.dtype(self.dtype)).tobytes()
+        else:
+            raw_bytes = json.dumps(self.data).encode("utf-8")
+
+        return b"PITP" + len(meta_bytes).to_bytes(4, "big") + meta_bytes + raw_bytes
+
+    @classmethod
+    def from_framed_bytes(cls, raw: bytes) -> "TensorPayload":
+        """Deserialize a binary frame into a TensorPayload instance."""
+        if not raw.startswith(b"PITP"):
+            raise ValueError("Invalid TensorPayload binary header magic string")
+        meta_len = int.from_bytes(raw[4:8], "big")
+        meta_bytes = raw[8 : 8 + meta_len]
+        meta = json.loads(meta_bytes.decode("utf-8"))
+        data_bytes = raw[8 + meta_len :]
+
+        return cls(
+            task_id=meta["task_id"],
+            stage_index=meta["stage_index"],
+            target_stage_index=meta.get("target_stage_index", 0),
+            is_split_inference=meta.get("is_split_inference", False),
+            tensor_type=meta.get("tensor_type", "intermediate_activation"),
+            data=data_bytes,
+            shape=meta.get("shape", []),
+            dtype=meta.get("dtype", "float32"),
+            sequence_id=meta.get("sequence_id", 0),
+            shm_name=meta.get("shm_name"),
+        )
+```
+
+### 5.2 Recommendation 2: Extend `BackpressuredStreamRouter` in `Node/src/node/core/transport.py`
+
+Add high-level method `send_tensor_payload`:
+
+```python
+async def send_tensor_payload(
+    self,
+    payload: TensorPayload,
+    is_local: bool = False,
+) -> bytes:
+    """Stream a TensorPayload across pipeline stages with sliding window flow control.
+
+    Args:
+        payload: TensorPayload object containing activations and metadata.
+        is_local: Whether the target stage runs co-located on the local machine.
+
+    Returns:
+        The transmitted byte payload (either shm token or framed binary payload).
+    """
+    raw_frame = payload.to_framed_bytes()
+    target_topic = get_tensor_topic(payload.task_id, payload.target_stage_index)
+
+    # Temporary override or declare publisher for target topic
+    pub = self.zenoh_session.declare_publisher(target_topic)
+    try:
+        def _pub(data: bytes) -> None:
+            pub.put(data)
+
+        return await self.send_chunk(raw_frame, publish_func=_pub, is_local=is_local)
+    finally:
+        if hasattr(pub, "undeclare"):
+            pub.undeclare()
+```
+
+### 5.3 Recommendation 3: Extend `BackpressuredReceiver` in `Node/src/node/core/transport.py` & `Scheduler/src/scheduler/core/transport.py`
+
+Add high-level method `start_tensor_listener`:
+
+```python
+def start_tensor_listener(
+    self,
+    task_id: str,
+    stage_index: int,
+    on_payload: Callable[[TensorPayload], Any],
+) -> None:
+    """Subscribe to stage tensor channel and process incoming activation payloads.
+
+    Args:
+        task_id: Pipeline task ID.
+        stage_index: Local stage index to listen on.
+        on_payload: Callback invoked with deserialized TensorPayload.
+    """
+    self.stream_topic = get_tensor_topic(task_id, stage_index)
+    self.ack_topic = get_tensor_ack_topic(task_id, stage_index)
+    self._loop = asyncio.get_running_loop()
+
+    def _on_sample(sample: zenoh.Sample) -> None:
+        raw_bytes: bytes
+        try:
+            payload_str = sample.payload.to_string()
+        except AttributeError:
+            payload_str = sample.payload.decode("utf-8", errors="ignore")
+
+        if payload_str.startswith("shm://"):
+            shm_name = payload_str[6:]
+            try:
+                raw_bytes = SharedMemoryIPC.read_data(shm_name)
+            finally:
+                SharedMemoryIPC.cleanup(shm_name)
+        else:
+            if isinstance(sample.payload, bytes):
+                raw_bytes = sample.payload
+            else:
+                raw_bytes = payload_str.encode("utf-8")
+
+        tensor_payload = TensorPayload.from_framed_bytes(raw_bytes)
+        res = on_payload(tensor_payload)
+
+        if asyncio.iscoroutine(res) and self._loop and self._loop.is_running():
+            self._loop.call_soon_threadsafe(lambda: asyncio.create_task(res))
+
+        self.send_ack()
+
+    self.subscriber = self.zenoh_session.declare_subscriber(self.stream_topic, _on_sample)
+```
 
 ---
 
-## 8. Implementation Guidance for CODER Role
+## 6. Security Invariants & Zero Prompt Leakage Guarantees
 
-1. **Step 1**: Create API Proxy routes under `website/src/app/api/`.
-2. **Step 2**: Implement R1 Dashboard components under `website/src/components/dashboard/` and `/dashboard/page.tsx`.
-3. **Step 3**: Implement R2 Playground components under `website/src/components/playground/` and `/playground/page.tsx`.
-4. **Step 4**: Update `site-navigation.ts` to expose Playground and Dashboard in the header.
-5. **Step 5**: Run `npm run build` in `website/` to verify zero TypeScript errors or build failures.
+1. **Local Boundary Invariant**:
+   - The user's input string $X$ is tokenized into IDs $T = [t_1, t_2, \dots, t_S]$ strictly inside the local boundary process.
+   - Local Embedding Layer produces hidden vector $H_0 = \text{Embedding}(T) \in \mathbb{R}^{B \times S \times D}$.
+   - Neither $X$ nor $T$ is ever transmitted across network channels or stored in `TensorPayload`.
+2. **Intermediate Activation Irreversibility**:
+   - High-dimensional intermediate activations $H_k$ ($D = 4096$) represent abstract vector spaces. Without the corresponding vocabulary embedding projection matrix $W_{\text{embed}} \in \mathbb{R}^{V \times D}$ or LM Head matrix $W_{\text{lm\_head}} \in \mathbb{R}^{V \times D}$ (where $V \approx 128,000$), external nodes cannot invert $H_k$ back to discrete tokens or text.
+3. **Payload Integrity Guard**:
+   - `TensorPayload` frames can include SHA-256 activation checksums (`activation_hash`) to verify that activations were not altered in transit across untrusted P2P links.
 
 ---
+
+## 7. Next Steps for Implementation
+
+1. Update `TensorPayload` in `Node/src/node/models/sharding.py` and `Scheduler/src/scheduler/models/pipeline.py`.
+2. Add binary framing methods (`to_framed_bytes` and `from_framed_bytes`) to `TensorPayload`.
+3. Update `BackpressuredStreamRouter` and `BackpressuredReceiver` with `send_tensor_payload` and `start_tensor_listener`.
+4. Add comprehensive unit tests in `Node/tests/test_sharding.py`, `Node/tests/test_transport.py`, and `Scheduler/tests/test_transport.py`.
