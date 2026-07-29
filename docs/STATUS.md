@@ -47,14 +47,13 @@ Completed
 - Global P2P WAN Router Configuration (`ZENOH_LISTEN_ENDPOINTS`, `ZENOH_PEER_ENDPOINTS`, `ZENOH_MULTICAST_SCOUTING`)
 - `ZenohRouter` auto-configuration for WAN router and peer mode
 - Phase 4.5 OpenAI REST Gateway router (`POST /v1/chat/completions`, `GET /v1/models`) with RS256 JWT authorization, TokenBucket rate limiting, SSE streaming, and telemetry endpoints (`GET /nodes/{node_id}/telemetry`)
-- Phase 4.8 Async KV-Cache Checkpointing & Dynamic State Rerouting (`KVCacheSnapshot` binary state replication with SHA-256 checksum validation and `SchedulingEngine.restitch_pipeline_on_eviction` for zero-recomputation node failover).
+- Phase 4.9 Workload-Aware System Routing, Asynchronous Batch Processing (`POST /v1/batch` & `GET /v1/batch/{batch_id}`), and Tokenless Fiat Credit Exchange Ledger (`CreditLedger`, $1\text{ GB VRAM-Hour Hosted} = 100\text{ Credits}$).
 
 Current State
 
-Phase 4.8 is 100% realized on Scheduler. The Scheduler currently supports OpenAI Chat Completions, multi-tenant JWT auth, token-bucket rate limiting (429), decrypted telemetry REST endpoints, asymmetric split-inference planning, production remote activation-response execution over Zenoh tensor topics, speculative FP8 WAN execution, and async KV-cache snapshot checkpointing with 135/135 passing unit and integration test assertions.
+Phase 4.9 is 100% realized on Scheduler. The Scheduler currently supports OpenAI Chat Completions, multi-tenant JWT auth, token-bucket rate limiting (429), decrypted telemetry REST endpoints, asymmetric split-inference planning, production remote activation-response execution over Zenoh tensor topics, speculative FP8 WAN execution, async KV-cache snapshot checkpointing, and asynchronous batch processing with 137/137 passing unit and integration test assertions.
 
 Next Feature
 
-Phase 4.9: Workload-Aware System Routing, Apple Silicon Onboarding & Tokenless Fiat Credit Exchange Ledger (v0.55).
-- Interactive `/v1/chat/completions` vs `/v1/batch` bulk asynchronous processing.
-- Apple Silicon M1-M4 Metal Unified Memory hardware discovery & tokenless fiat credit ledger.
+Phase 5: Autonomous Self-Improving Fabric (v1.0).
+- LangGraph Multi-Agent Orchestrator & n8n webhook event automation.

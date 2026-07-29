@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from scheduler import __version__
+from scheduler.api.batch import router as batch_router
 from scheduler.api.health import router as health_router
 from scheduler.api.heartbeat import router as heartbeat_router
 from scheduler.api.ingress import router as ingress_router
@@ -94,6 +95,7 @@ def create_app() -> FastAPI:
     app.include_router(schedule_router)
     app.include_router(ingress_router)
     app.include_router(openai_router)
+    app.include_router(batch_router)
 
     return app
 
