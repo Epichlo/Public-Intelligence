@@ -13,7 +13,7 @@ This specification details the sequential architectural evolution of the Public 
 | **v0.40 (Realized)** | **Phase 4.6** | **Asymmetric Split-Inference & Local Boundary Isolation** M1/M2 boundary contracts: Layer 0 Embedding & LM Head retained locally; remote hidden stages executed over Zenoh activation channels with 504 timeout & 502 validation error guards. | Client edge boundary isolation, activation-only split-stage validation, zero prompt/token leakage tests, production remote activation-response collection over Zenoh tensor topics. |
 | **v0.45 (Realized)** | **Phase 4.7** | **Speculative WAN Pipeline Engine & FP8 Activation Compression** (Local 8B draft speculation $K=5$, 75% RTT reduction, FP8 E4M3 quantization with dynamic scaling factor). | Multi-token candidate block verification over WAN, FP8 `FP8Quantizer` dynamic max-abs scaling (50%-75% bandwidth reduction). |
 | **v0.50 (Realized)** | **Phase 4.8** | **Async KV-Cache Checkpointing & Dynamic State Rerouting** (Background KV replication over Zenoh gossip, seamless restitching on node drop). | Non-blocking `KVCacheSnapshot` gossip streaming, zero-recomputation pipeline rerouting (`SchedulingEngine.restitch_pipeline_on_eviction`) upon stale worker eviction ($\Delta t > 15.05\text{s}$). |
-| **v0.55 (Planned)** | **Phase 4.9** | **Workload-Aware System Routing (`/v1/chat/completions` vs `/v1/batch`), Apple Silicon Onboarding & Fiat Credit Exchange Ledger**. | Interactive single-node / LAN routing vs multi-node WAN batch processing (`POST /v1/batch`), Apple Silicon Metal Unified Memory profiling, tokenless fiat credit exchange ledger. |
+| **v0.55 (Realized)** | **Phase 4.9** | **Workload-Aware System Routing (`/v1/chat/completions` vs `/v1/batch`), Apple Silicon Onboarding & Fiat Credit Exchange Ledger**. | Interactive single-node / LAN routing vs multi-node WAN batch processing (`POST /v1/batch`), Apple Silicon Metal Unified Memory profiling (`detect_apple_silicon_hardware`), tokenless fiat credit exchange ledger (`CreditLedger`, $1\text{ GB VRAM-Hour Hosted} = 100\text{ Credits}$). |
 | **v1.0 (Full Vision)** | **Phase 5** | Fully autonomous self-improving fabric (agents analyze GitHub issues, run WAN tests, and merge verified PRs). | LangGraph multi-agent orchestrator, n8n webhook event automation, self-correcting agent loops. |
 
 ---
@@ -61,11 +61,11 @@ This specification details the sequential architectural evolution of the Public 
 
 ---
 
-### Phase 4.9: Workload-Aware System Routing & Fiat Credit Exchange Ledger (v0.55 — Planned)
+### Phase 4.9: Workload-Aware System Routing & Fiat Credit Exchange Ledger (v0.55 — Realized)
 - **Interactive Routing (`/v1/chat/completions`):** Target real-time streaming requests to single-node high-VRAM devices or co-located local LAN clusters.
-- **Asynchronous Batch Routing (`POST /v1/batch`):** Dedicated endpoint for bulk asynchronous processing (synthetic data generation, document processing, offline agent loops) over multi-node WAN pipeline mesh where aggregate throughput supersedes TTFT constraints.
-- **Apple Silicon Hardware Onboarding:** Targeted supply-side onboarding for Apple Silicon M1/M2/M3/M4 Max & Ultra (64GB–192GB Unified Memory) workstations operating as silent, low-power background layer hosts.
-- **Tokenless Fiat Credit Ledger:** Credit-exchange model ($1\text{ GB VRAM-Hour Hosted} = \text{Fixed Credit Allocation}$) paired with standard fiat gateways for commercial API usage, eliminating Web3 wallet/gas fee friction.
+- **Asynchronous Batch Routing (`POST /v1/batch` & `GET /v1/batch/{batch_id}`):** Dedicated endpoint for bulk asynchronous processing over multi-node WAN pipeline mesh where aggregate throughput supersedes TTFT constraints.
+- **Apple Silicon Hardware Onboarding:** Supply-side onboarding helper (`detect_apple_silicon_hardware`) for Apple Silicon M1/M2/M3/M4 Max & Ultra (64GB–192GB Unified Memory) workstations operating as silent, low-power background layer hosts.
+- **Tokenless Fiat Credit Ledger:** Credit-exchange model (`CreditLedger`, $1\text{ GB VRAM-Hour Hosted} = 100\text{ Credits}$) paired with standard fiat gateways for commercial API usage, eliminating Web3 wallet/gas fee friction.
 
 ---
 
