@@ -41,6 +41,7 @@ class Runtime:
         self.zenoh_client = zenoh_client or ZenohHeartbeatClient(settings)
         self.heartbeat_task: asyncio.Task[None] | None = None
         self.telemetry_emitter: TelemetryEmitter | None = None
+        self.split_stage_sub: Any | None = None
         self.is_running = False
 
         if TYPE_CHECKING:
@@ -97,6 +98,7 @@ class Runtime:
                     self.settings.node_id, self.zenoh_client.session
                 )
                 self.telemetry_emitter.start()
+                self._setup_split_stage_listener()
 
             # 4. Start periodic heartbeats
             self.heartbeat_task = asyncio.create_task(self._heartbeat_loop())
@@ -114,6 +116,13 @@ class Runtime:
             return
         self.is_running = False
         self.registration_status = "stopping"
+
+        # Undeclare split stage subscriber
+        if self.split_stage_sub is not None:
+            with suppress(Exception):
+                if hasattr(self.split_stage_sub, "undeclare"):
+                    self.split_stage_sub.undeclare()
+            self.split_stage_sub = None
 
         # Cancel background heartbeat task
         if self.heartbeat_task is not None:
@@ -180,9 +189,7 @@ class Runtime:
                 # 3. Report only the resulting ArtifactMetadata block via Zenoh
                 if self.zenoh_client.session is not None:
                     path = f"public-intelligence/net/tasks/{task_id}/result"
-                    self.zenoh_client.session.put(
-                        path, json.dumps(metadata.model_dump())
-                    )
+                    self.zenoh_client.session.put(path, json.dumps(metadata.model_dump()))
 
                 self.task_queue.task_done()
             except asyncio.CancelledError:
@@ -262,6 +269,83 @@ class Runtime:
             "gpu_utilization": 0.0,
             "vram_available_gb": 0.0,
         }
+
+    def _setup_split_stage_listener(self) -> None:
+        """Subscribe to split-stage activation topics over Zenoh."""
+        if self.zenoh_client.session is None:
+            return
+
+        from node.core.transport import SharedMemoryIPC, get_tensor_topic
+        from node.models.sharding import LayerRange, PipelineStage, StageType, TensorPayload
+
+        topic = "public-intelligence/net/tasks/*/tensors/*"
+        loop = asyncio.get_running_loop()
+
+        def _on_activation_sample(sample: Any) -> None:
+            try:
+                key_expr = str(sample.key_expr)
+                parts = key_expr.split("/")
+                if len(parts) < 6 or parts[-1] == "ack":
+                    return
+
+                task_id = parts[3]
+                stage_idx = int(parts[5])
+
+                if hasattr(sample.payload, "to_bytes"):
+                    raw_bytes = sample.payload.to_bytes()
+                elif isinstance(sample.payload, bytes):
+                    raw_bytes = sample.payload
+                elif isinstance(sample.payload, str):
+                    raw_bytes = sample.payload.encode("utf-8")
+                else:
+                    raw_bytes = bytes(sample.payload)
+
+                if raw_bytes.startswith(b"shm://"):
+                    shm_name = raw_bytes[6:].decode("utf-8", errors="ignore")
+                    raw_bytes = SharedMemoryIPC.read_data(shm_name)
+                    SharedMemoryIPC.cleanup(shm_name)
+
+                payload = TensorPayload.from_framed_bytes(raw_bytes)
+                payload.validate_split_activation_boundary()
+
+                async def _process_and_respond() -> None:
+                    if self.inference_backend is None:
+                        from node.backends.mock import EchoBackend
+
+                        self.inference_backend = EchoBackend()
+
+                    stage = PipelineStage(
+                        stage_index=stage_idx,
+                        total_stages=3,
+                        layer_range=LayerRange(start_layer=1, end_layer=31),
+                        node_id=self.settings.node_id,
+                        model_id=self.settings.hosted_models[0]
+                        if self.settings.hosted_models
+                        else "default",
+                        is_local_boundary=False,
+                        stage_type=StageType.REMOTE_HIDDEN,
+                        is_split_inference=True,
+                    )
+                    output_payload = await self.inference_backend.execute_split_stage(
+                        stage, payload
+                    )
+                    output_payload.validate_split_activation_boundary()
+
+                    out_bytes = output_payload.to_framed_bytes()
+                    resp_topic = get_tensor_topic(task_id, stage_idx + 1)
+                    if self.zenoh_client.session is not None:
+                        self.zenoh_client.session.put(resp_topic, out_bytes)
+
+                loop.call_soon_threadsafe(lambda: asyncio.create_task(_process_and_respond()))
+            except Exception as e:
+                logger.error("Error processing split stage activation sample: %s", e)
+
+        try:
+            self.split_stage_sub = self.zenoh_client.session.declare_subscriber(
+                topic, _on_activation_sample
+            )
+        except Exception as e:
+            logger.error("Failed to declare split stage subscriber: %s", e)
 
 
 if __name__ == "__main__":

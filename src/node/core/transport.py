@@ -73,9 +73,7 @@ class SharedMemoryIPC:
 class BackpressuredStreamRouter:
     """WAN streaming router enforcing backpressure via sliding window flow control."""
 
-    def __init__(
-        self, session_id: str, zenoh_session: zenoh.Session, window_size: int = 4
-    ) -> None:
+    def __init__(self, session_id: str, zenoh_session: zenoh.Session, window_size: int = 4) -> None:
         """Initialize the BackpressuredStreamRouter.
 
         Args:
@@ -92,13 +90,11 @@ class BackpressuredStreamRouter:
         self._tensor_ack_subs: dict[str, Any] = {}
 
         self.ack_topic = f"public-intelligence/net/transport/ack/{self.session_id}"
-        self.subscriber: zenoh.Subscriber[Any] | None = (
-            self.zenoh_session.declare_subscriber(self.ack_topic, self._on_ack)
+        self.subscriber: zenoh.Subscriber[Any] | None = self.zenoh_session.declare_subscriber(
+            self.ack_topic, self._on_ack
         )
 
-        self.stream_topic = (
-            f"public-intelligence/net/transport/stream/{self.session_id}"
-        )
+        self.stream_topic = f"public-intelligence/net/transport/stream/{self.session_id}"
         self.publisher: zenoh.Publisher | None = self.zenoh_session.declare_publisher(
             self.stream_topic
         )
@@ -117,9 +113,7 @@ class BackpressuredStreamRouter:
             seq = data.get("seq", 0)
             self.receive_ack(seq)
         except Exception as e:
-            logger.debug(
-                "Failed to parse ACK json in session %s: %s", self.session_id, e
-            )
+            logger.debug("Failed to parse ACK json in session %s: %s", self.session_id, e)
 
     def receive_ack(self, ack_seq: int) -> None:
         """Process incoming capacity acknowledgments from the consumer."""
@@ -192,9 +186,7 @@ class BackpressuredStreamRouter:
                 if asyncio.iscoroutine(res):
                     await res
 
-            await self.send_chunk(
-                raw_frame, publish_func=_pub_wrapper, is_local=is_local
-            )
+            await self.send_chunk(raw_frame, publish_func=_pub_wrapper, is_local=is_local)
         else:
             pub = self.zenoh_session.declare_publisher(target_topic)
             try:
@@ -208,9 +200,7 @@ class BackpressuredStreamRouter:
                     try:
                         pub.undeclare()  # type: ignore[no-untyped-call]
                     except Exception as e:
-                        logger.debug(
-                            "Failed to undeclare temporary tensor publisher: %s", e
-                        )
+                        logger.debug("Failed to undeclare temporary tensor publisher: %s", e)
 
     async def start_tensor_listener(
         self,
@@ -246,9 +236,7 @@ class BackpressuredStreamRouter:
                 try:
                     raw_bytes = SharedMemoryIPC.read_data(shm_name)
                 except Exception as e:
-                    logger.error(
-                        "Failed to read from shared memory %s: %s", shm_name, e
-                    )
+                    logger.error("Failed to read from shared memory %s: %s", shm_name, e)
                     return
                 finally:
                     SharedMemoryIPC.cleanup(shm_name)
@@ -304,11 +292,9 @@ class BackpressuredStreamRouter:
         for topic, sub in list(self._tensor_ack_subs.items()):
             try:
                 if hasattr(sub, "undeclare"):
-                    sub.undeclare()  # type: ignore[no-untyped-call]
+                    sub.undeclare()
             except Exception as e:
-                logger.debug(
-                    "Failed to undeclare tensor ACK subscriber for %s: %s", topic, e
-                )
+                logger.debug("Failed to undeclare tensor ACK subscriber for %s: %s", topic, e)
         self._tensor_ack_subs.clear()
 
     @staticmethod
@@ -363,9 +349,7 @@ class BackpressuredReceiver:
 
     def start(self, on_chunk: Callable[[bytes], Any]) -> None:
         """Subscribe to the stream topic and process incoming chunks."""
-        self.stream_topic = (
-            f"public-intelligence/net/transport/stream/{self.session_id}"
-        )
+        self.stream_topic = f"public-intelligence/net/transport/stream/{self.session_id}"
         self._loop = asyncio.get_running_loop()
 
         def _on_sample(sample: zenoh.Sample) -> None:
@@ -383,9 +367,7 @@ class BackpressuredReceiver:
                 try:
                     data = SharedMemoryIPC.read_data(shm_name)
                 except Exception as e:
-                    logger.error(
-                        "Failed to read from shared memory %s: %s", shm_name, e
-                    )
+                    logger.error("Failed to read from shared memory %s: %s", shm_name, e)
                     return
                 finally:
                     SharedMemoryIPC.cleanup(shm_name)
@@ -401,18 +383,12 @@ class BackpressuredReceiver:
                     data = payload_str.encode("utf-8")
 
             res = on_chunk(data)
-            if (
-                asyncio.iscoroutine(res)
-                and self._loop is not None
-                and self._loop.is_running()
-            ):
+            if asyncio.iscoroutine(res) and self._loop is not None and self._loop.is_running():
                 self._loop.call_soon_threadsafe(lambda: asyncio.create_task(res))
 
             self.send_ack()
 
-        self.subscriber = self.zenoh_session.declare_subscriber(
-            self.stream_topic, _on_sample
-        )
+        self.subscriber = self.zenoh_session.declare_subscriber(self.stream_topic, _on_sample)
 
     async def send_tensor_payload(
         self,
@@ -427,13 +403,9 @@ class BackpressuredReceiver:
             publish_func: Optional publisher taking (topic, payload_bytes).
             is_local: Whether target is co-located on same machine.
         """
-        router = BackpressuredStreamRouter(
-            f"rec-send-{uuid.uuid4().hex[:8]}", self.zenoh_session
-        )
+        router = BackpressuredStreamRouter(f"rec-send-{uuid.uuid4().hex[:8]}", self.zenoh_session)
         try:
-            await router.send_tensor_payload(
-                payload, publish_func=publish_func, is_local=is_local
-            )
+            await router.send_tensor_payload(payload, publish_func=publish_func, is_local=is_local)
         finally:
             router.stop()
 
@@ -472,9 +444,7 @@ class BackpressuredReceiver:
                 try:
                     raw_bytes = SharedMemoryIPC.read_data(shm_name)
                 except Exception as e:
-                    logger.error(
-                        "Failed to read from shared memory %s: %s", shm_name, e
-                    )
+                    logger.error("Failed to read from shared memory %s: %s", shm_name, e)
                     return
                 finally:
                     SharedMemoryIPC.cleanup(shm_name)

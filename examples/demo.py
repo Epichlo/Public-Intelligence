@@ -53,9 +53,7 @@ async def run_demo() -> None:
     local_model_names = {m.name for m in models}
 
     # Default to llama3.2:1b for demo if hosted_models is empty
-    target_models = (
-        settings.hosted_models if settings.hosted_models else ["llama3.2:1b"]
-    )
+    target_models = settings.hosted_models if settings.hosted_models else ["llama3.2:1b"]
     missing_models = []
     for model_name in target_models:
         matched = False
@@ -211,10 +209,7 @@ async def run_demo() -> None:
                     print("Response payload:")
                     print(json.dumps(resp_json, indent=2))
                 else:
-                    print(
-                        f"\033[91m✗ Inference failed: {resp.status_code} "
-                        f"- {resp.text}\033[0m"
-                    )
+                    print(f"\033[91m✗ Inference failed: {resp.status_code} - {resp.text}\033[0m")
         except Exception as e:
             print(f"\033[91m✗ Inference failed: {e}\033[0m")
 
@@ -255,10 +250,7 @@ async def run_demo() -> None:
         if unregistered:
             print("✓ Node successfully unregistered from the Scheduler registry.")
         else:
-            print(
-                "\033[91m✗ Node remains registered on the Scheduler "
-                "after shutdown!\033[0m"
-            )
+            print("\033[91m✗ Node remains registered on the Scheduler after shutdown!\033[0m")
 
     # STEP 9: Print final summary
     print("\n" + "=" * 45)

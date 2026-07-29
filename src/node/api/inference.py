@@ -203,9 +203,7 @@ async def readiness(
     )
     inference_ready = runtime_ready and ollama_ready and scheduler_registered
     is_ready = inference_ready
-    response.status_code = (
-        status.HTTP_200_OK if is_ready else status.HTTP_503_SERVICE_UNAVAILABLE
-    )
+    response.status_code = status.HTTP_200_OK if is_ready else status.HTTP_503_SERVICE_UNAVAILABLE
 
     return {
         "status": "ready" if is_ready else "degraded",
@@ -214,13 +212,7 @@ async def readiness(
         "scheduler_registered": scheduler_registered,
         "wan_connected": wan_connected,
         "inference_ready": inference_ready,
-        "last_heartbeat_at": (
-            runtime.last_heartbeat_at if runtime is not None else None
-        ),
-        "last_heartbeat_ok": (
-            runtime.last_heartbeat_ok if runtime is not None else False
-        ),
-        "last_heartbeat_error": (
-            runtime.last_heartbeat_error if runtime is not None else None
-        ),
+        "last_heartbeat_at": (runtime.last_heartbeat_at if runtime is not None else None),
+        "last_heartbeat_ok": (runtime.last_heartbeat_ok if runtime is not None else False),
+        "last_heartbeat_error": (runtime.last_heartbeat_error if runtime is not None else None),
     }

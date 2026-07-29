@@ -170,8 +170,7 @@ def test_tensor_payload_binary_framing_json_data() -> None:
 def test_tensor_payload_fallback_json_deserialization() -> None:
     """Verify fallback JSON parsing when magic header is absent."""
     json_bytes = (
-        b'{"task_id": "json-task", "stage_index": 0, '
-        b'"target_stage_index": 1, "data": [1.0, 2.0]}'
+        b'{"task_id": "json-task", "stage_index": 0, "target_stage_index": 1, "data": [1.0, 2.0]}'
     )
     restored = TensorPayload.from_framed_bytes(json_bytes)
     assert restored.task_id == "json-task"

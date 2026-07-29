@@ -10,9 +10,7 @@ from .base import ArtifactMetadata, ArtifactStore
 class LocalDiskArtifactStore(ArtifactStore):
     """Concrete implementation of ArtifactStore using the local filesystem."""
 
-    def __init__(
-        self, base_directory: str = "/tmp/public_intelligence/artifacts"
-    ) -> None:
+    def __init__(self, base_directory: str = "/tmp/public_intelligence/artifacts") -> None:
         """Initialize the LocalDiskArtifactStore.
 
         Ensures the base directory exists safely.
@@ -78,18 +76,14 @@ class LocalDiskArtifactStore(ArtifactStore):
         """
         prefix = "file://"
         if not uri.startswith(prefix):
-            raise ValueError(
-                f"Invalid URI format. Expected protocol prefix: '{prefix}'"
-            )
+            raise ValueError(f"Invalid URI format. Expected protocol prefix: '{prefix}'")
 
         # Strip the 'file://' prefix to get the absolute path
         filepath = uri[len(prefix) :]
 
         # Verify the file exists on the local disk
         if not os.path.exists(filepath):
-            raise FileNotFoundError(
-                f"Artifact file not found at local storage path: '{filepath}'"
-            )
+            raise FileNotFoundError(f"Artifact file not found at local storage path: '{filepath}'")
 
         with open(filepath, "rb") as f:
             return f.read()

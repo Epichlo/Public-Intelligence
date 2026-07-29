@@ -63,9 +63,7 @@ async def get_node_telemetry(fastapi_request: Request) -> NodeTelemetryResponse:
     collector = TelemetryCollector()
     metrics = await collector.collect()
 
-    zenoh_client = (
-        getattr(runtime, "zenoh_client", None) if runtime is not None else None
-    )
+    zenoh_client = getattr(runtime, "zenoh_client", None) if runtime is not None else None
     wan_connected = False
     if runtime is not None and runtime.is_running and zenoh_client is not None:
         conn = zenoh_client.is_connected()
@@ -130,9 +128,7 @@ async def control_node(
 async def get_sandbox_logs(limit: int = 100) -> dict[str, Any]:
     """Retrieve recent Docker sandbox container execution log entries."""
     entries = sandbox_log_buffer.get_logs(limit=limit)
-    formatted_logs = [
-        f"[{e['timestamp']}] [{e['stream']}] {e['message']}" for e in entries
-    ]
+    formatted_logs = [f"[{e['timestamp']}] [{e['stream']}] {e['message']}" for e in entries]
     return {
         "logs": formatted_logs,
         "entries": entries,
@@ -154,9 +150,7 @@ async def stream_sandbox_logs(
         count = 0
         try:
             for entry in sandbox_log_buffer.get_logs(limit=50):
-                formatted = (
-                    f"[{entry['timestamp']}] [{entry['stream']}] {entry['message']}"
-                )
+                formatted = f"[{entry['timestamp']}] [{entry['stream']}] {entry['message']}"
                 payload = json.dumps({"entry": entry, "log": formatted})
                 yield f"data: {payload}\n\n"
                 count += 1
@@ -168,9 +162,7 @@ async def stream_sandbox_logs(
                     break
                 try:
                     entry = await asyncio.wait_for(queue.get(), timeout=0.1)
-                    formatted = (
-                        f"[{entry['timestamp']}] [{entry['stream']}] {entry['message']}"
-                    )
+                    formatted = f"[{entry['timestamp']}] [{entry['stream']}] {entry['message']}"
                     payload = json.dumps({"entry": entry, "log": formatted})
                     yield f"data: {payload}\n\n"
                     count += 1

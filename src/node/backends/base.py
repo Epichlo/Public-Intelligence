@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from node.models.sharding import PipelineStage
+from node.models.sharding import PipelineStage, TensorPayload
 
 
 class InferenceBackend(ABC):
@@ -20,9 +20,7 @@ class InferenceBackend(ABC):
         pass
 
     @abstractmethod
-    async def generate(
-        self, model: str, prompt: str, options: dict[str, Any] | None = None
-    ) -> str:
+    async def generate(self, model: str, prompt: str, options: dict[str, Any] | None = None) -> str:
         """Perform non-streaming text generation.
 
         Args:
@@ -67,5 +65,24 @@ class InferenceBackend(ABC):
 
         Returns:
             Processed stage tensor output or model payload.
+        """
+        pass
+
+    @abstractmethod
+    async def execute_split_stage(
+        self,
+        stage: PipelineStage,
+        input_payload: TensorPayload,
+        options: dict[str, Any] | None = None,
+    ) -> TensorPayload:
+        """Execute intermediate transformer layers on an activation tensor payload.
+
+        Args:
+            stage: PipelineStage specification assigned to this node.
+            input_payload: Incoming TensorPayload containing activation vectors.
+            options: Execution control arguments.
+
+        Returns:
+            TensorPayload containing output activation vectors for next stage.
         """
         pass

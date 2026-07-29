@@ -54,9 +54,7 @@ def test_health_endpoint_degraded(mock_ollama_client: AsyncMock) -> None:
 
 def test_list_models_success(mock_ollama_client: AsyncMock) -> None:
     """Verify GET /models returns list of hosted models from Ollama."""
-    mock_model = ModelInfo(
-        name="llama3-8b", size_gb=4.7, family="llama", context_length=8192
-    )
+    mock_model = ModelInfo(name="llama3-8b", size_gb=4.7, family="llama", context_length=8192)
     mock_ollama_client.list_models.return_value = [mock_model]
 
     mock_runtime = AsyncMock()
@@ -117,9 +115,7 @@ def test_infer_success(mock_ollama_client: AsyncMock) -> None:
 
 def test_infer_model_not_found(mock_ollama_client: AsyncMock) -> None:
     """Verify POST /infer returns 404 when model is not found in Ollama."""
-    mock_ollama_client.generate.side_effect = OllamaError(
-        "Model 'non-existent' was not found"
-    )
+    mock_ollama_client.generate.side_effect = OllamaError("Model 'non-existent' was not found")
 
     mock_runtime = AsyncMock()
     mock_runtime.ollama_client = mock_ollama_client

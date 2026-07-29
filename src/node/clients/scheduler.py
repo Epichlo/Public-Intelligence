@@ -17,9 +17,7 @@ class SchedulerError(Exception):
 class SchedulerClient:
     """Client responsible for all communication with the Scheduler."""
 
-    def __init__(
-        self, settings: Settings, client: httpx.AsyncClient | None = None
-    ) -> None:
+    def __init__(self, settings: Settings, client: httpx.AsyncClient | None = None) -> None:
         """Initialize the SchedulerClient.
 
         Args:
@@ -65,15 +63,11 @@ class SchedulerClient:
                     f"{e.response.status_code}: {e.response.text}"
                 ) from e
             except httpx.RequestError as e:
-                raise SchedulerError(
-                    f"Scheduler request {method} {path} failed: {e}"
-                ) from e
+                raise SchedulerError(f"Scheduler request {method} {path} failed: {e}") from e
         else:
             try:
                 async with httpx.AsyncClient(timeout=self.timeout) as client:
-                    response = await client.request(
-                        method, url, json=json_data, headers=headers
-                    )
+                    response = await client.request(method, url, json=json_data, headers=headers)
                     response.raise_for_status()
             except httpx.HTTPStatusError as e:
                 raise SchedulerError(
@@ -81,9 +75,7 @@ class SchedulerClient:
                     f"{e.response.status_code}: {e.response.text}"
                 ) from e
             except httpx.RequestError as e:
-                raise SchedulerError(
-                    f"Scheduler request {method} {path} failed: {e}"
-                ) from e
+                raise SchedulerError(f"Scheduler request {method} {path} failed: {e}") from e
 
     async def register(self, node_info: NodeInfo) -> None:
         """Register the Node with the Scheduler.
@@ -96,9 +88,7 @@ class SchedulerClient:
         """
         payload = node_info.model_dump(mode="json")
         # Translate available_models from ModelInfo list to list[str] of names
-        payload["available_models"] = [
-            m["name"] for m in payload.get("available_models", [])
-        ]
+        payload["available_models"] = [m["name"] for m in payload.get("available_models", [])]
         # Inject standard GPUInfo structure required by Scheduler
         payload["gpu"] = {
             "name": "unknown",

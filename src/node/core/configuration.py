@@ -97,9 +97,7 @@ class Settings(BaseSettings):
     )
     zenoh_peer_endpoints: list[str] = Field(
         default_factory=list,
-        validation_alias=AliasChoices(
-            "NODE_ZENOH_PEER_ENDPOINTS", "ZENOH_PEER_ENDPOINTS"
-        ),
+        validation_alias=AliasChoices("NODE_ZENOH_PEER_ENDPOINTS", "ZENOH_PEER_ENDPOINTS"),
         description="Additional Zenoh WAN peer endpoints for redundancy.",
     )
     bootstrap_routers: list[str] = Field(
@@ -109,9 +107,7 @@ class Settings(BaseSettings):
     )
     zenoh_gossip_scouting: bool = Field(
         default=True,
-        validation_alias=AliasChoices(
-            "NODE_ZENOH_GOSSIP_SCOUTING", "ZENOH_GOSSIP_SCOUTING"
-        ),
+        validation_alias=AliasChoices("NODE_ZENOH_GOSSIP_SCOUTING", "ZENOH_GOSSIP_SCOUTING"),
         description="Enable/disable Zenoh gossip scouting for dynamic WAN peer join.",
     )
     zenoh_connect_timeout_seconds: float = Field(
@@ -130,9 +126,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="NODE_",
         env_file=(
-            None
-            if ("pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ)
-            else ".env"
+            None if ("pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ) else ".env"
         ),
         env_file_encoding="utf-8",
         extra="ignore",
@@ -169,9 +163,7 @@ class Settings(BaseSettings):
     def validate_heartbeat_interval(cls, v: int) -> int:
         """Validate that the heartbeat interval is in range [1, 300]."""
         if not (1 <= v <= 300):
-            raise ValueError(
-                "Heartbeat interval must be between 1 and 300 seconds inclusive."
-            )
+            raise ValueError("Heartbeat interval must be between 1 and 300 seconds inclusive.")
         return v
 
     @field_validator("log_level")

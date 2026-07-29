@@ -18,9 +18,7 @@ class OllamaError(Exception):
 class OllamaClient:
     """Client responsible for all interaction with the local Ollama server."""
 
-    def __init__(
-        self, settings: Settings, client: ollama.AsyncClient | None = None
-    ) -> None:
+    def __init__(self, settings: Settings, client: ollama.AsyncClient | None = None) -> None:
         """Initialize the OllamaClient.
 
         Args:
@@ -95,9 +93,7 @@ class OllamaClient:
                 or connection fails.
         """
         try:
-            response = await self.client.generate(
-                model=request.model, prompt=request.prompt
-            )
+            response = await self.client.generate(model=request.model, prompt=request.prompt)
             model_name = response.model or request.model
             resp_text = response.response or ""
             return InferenceResponse(model=model_name, response=resp_text)
@@ -112,9 +108,7 @@ class OllamaClient:
         except Exception as e:
             raise OllamaError(f"Ollama generation failed: {e}") from e
 
-    async def generate_stream(
-        self, request: InferenceRequest
-    ) -> AsyncGenerator[str, None]:
+    async def generate_stream(self, request: InferenceRequest) -> AsyncGenerator[str, None]:
         """Execute streaming inference against a local model.
 
         Args:

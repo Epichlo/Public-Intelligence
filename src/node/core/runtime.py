@@ -106,9 +106,7 @@ class WorktreeManager:
         """
         safe_name = "".join(c for c in branch_name if c.isalnum() or c in "-_")
         temp_dir = tempfile.gettempdir()
-        worktree_path = os.path.abspath(
-            os.path.join(temp_dir, f"node_worktree_{safe_name}")
-        )
+        worktree_path = os.path.abspath(os.path.join(temp_dir, f"node_worktree_{safe_name}"))
 
         # Cleanup existing directory path to prevent conflicts
         if os.path.exists(worktree_path):
@@ -173,9 +171,7 @@ class WorktreeManager:
                 stdout_retry, stderr_retry = await proc_retry.communicate()
                 if proc_retry.returncode != 0:
                     err_retry = stderr_retry.decode().strip()
-                    raise RuntimeError(
-                        f"Failed to create git worktree on retry: {err_retry}"
-                    )
+                    raise RuntimeError(f"Failed to create git worktree on retry: {err_retry}")
             else:
                 raise RuntimeError(f"Failed to create git worktree: {err_msg}")
 
@@ -192,9 +188,7 @@ class WorktreeManager:
         if not worktree_path:
             safe_name = "".join(c for c in branch_name if c.isalnum() or c in "-_")
             temp_dir = tempfile.gettempdir()
-            worktree_path = os.path.abspath(
-                os.path.join(temp_dir, f"node_worktree_{safe_name}")
-            )
+            worktree_path = os.path.abspath(os.path.join(temp_dir, f"node_worktree_{safe_name}"))
 
         logger.info("Cleaning worktree for branch %s at %s", branch_name, worktree_path)
 
@@ -316,23 +310,17 @@ class WorktreeManager:
             if stdout:
                 for line in stdout.decode("utf-8", errors="replace").splitlines():
                     if line.strip():
-                        self.log_buffer.add_log(
-                            line, stream="stdout", branch=branch_name
-                        )
+                        self.log_buffer.add_log(line, stream="stdout", branch=branch_name)
             if stderr:
                 for line in stderr.decode("utf-8", errors="replace").splitlines():
                     if line.strip():
-                        self.log_buffer.add_log(
-                            line, stream="stderr", branch=branch_name
-                        )
+                        self.log_buffer.add_log(line, stream="stderr", branch=branch_name)
             self.log_buffer.add_log(
                 f"Sandbox execution timed out on branch {branch_name}.",
                 stream="stderr",
                 branch=branch_name,
             )
-            raise asyncio.TimeoutError(
-                "Sandbox execution exceeded timeout limit."
-            ) from None
+            raise asyncio.TimeoutError("Sandbox execution exceeded timeout limit.") from None
 
         if stdout:
             for line in stdout.decode("utf-8", errors="replace").splitlines():

@@ -58,12 +58,8 @@ def cli_main() -> None:
     import uvicorn
 
     parser = argparse.ArgumentParser(description="Public Intelligence Node runner")
-    parser.add_argument(
-        "--host", type=str, default=settings.host, help="Host interface to bind"
-    )
-    parser.add_argument(
-        "--port", type=int, default=settings.port, help="Port to listen on"
-    )
+    parser.add_argument("--host", type=str, default=settings.host, help="Host interface to bind")
+    parser.add_argument("--port", type=int, default=settings.port, help="Port to listen on")
     parser.add_argument("--reload", action="store_true", help="Enable auto-reload")
     args = parser.parse_args()
 

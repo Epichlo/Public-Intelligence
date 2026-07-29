@@ -164,9 +164,7 @@ async def test_graceful_shutdown_unregister_failure(
     mock_zenoh_client: MagicMock,
 ) -> None:
     """Verify shutdown is still graceful when Scheduler unregister raises an error."""
-    mock_scheduler_client.unregister.side_effect = SchedulerError(
-        "Unregister connection failed"
-    )
+    mock_scheduler_client.unregister.side_effect = SchedulerError("Unregister connection failed")
 
     runtime = Runtime(
         settings=settings,

@@ -45,9 +45,7 @@ async def test_zenoh_telemetry_heartbeat_uri() -> None:
         region="us-east",
     )
     heartbeat = ZenohTelemetryHeartbeat(settings=settings)
-    assert (
-        heartbeat._key_expr == "public-intelligence/net/nodes/test-node-555/telemetry"
-    )
+    assert heartbeat._key_expr == "public-intelligence/net/nodes/test-node-555/telemetry"
 
 
 @pytest.mark.anyio

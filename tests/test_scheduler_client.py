@@ -224,9 +224,7 @@ async def test_timeout_failure(
 
 
 @pytest.mark.anyio
-async def test_client_sends_auth_token(
-    settings: Settings, dummy_request: httpx.Request
-) -> None:
+async def test_client_sends_auth_token(settings: Settings, dummy_request: httpx.Request) -> None:
     """Verify that the client passes the X-Network-Auth-Token header when configured."""
     mock_client = AsyncMock()
     mock_response = httpx.Response(200, request=dummy_request)

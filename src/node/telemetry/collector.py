@@ -5,7 +5,7 @@ import shutil
 import subprocess
 from typing import Any
 
-import psutil  # type: ignore[import-untyped]
+import psutil
 
 
 class TelemetryCollector:

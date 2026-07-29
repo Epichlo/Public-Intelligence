@@ -102,12 +102,8 @@ def test_post_node_control_start_and_stop(mock_runtime: AsyncMock) -> None:
 
 def test_get_sandbox_logs(mock_runtime: AsyncMock) -> None:
     """Verify GET /api/v1/sandbox/logs returns recent log buffer entries."""
-    sandbox_log_buffer.add_log(
-        "Container init completed", stream="stdout", branch="feature/test"
-    )
-    sandbox_log_buffer.add_log(
-        "Execution warning message", stream="stderr", branch="feature/test"
-    )
+    sandbox_log_buffer.add_log("Container init completed", stream="stdout", branch="feature/test")
+    sandbox_log_buffer.add_log("Execution warning message", stream="stderr", branch="feature/test")
 
     with (
         patch("node.main.Runtime", return_value=mock_runtime),

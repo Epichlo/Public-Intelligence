@@ -1,6 +1,8 @@
 """Pipeline sharding and tensor payload domain models."""
 
 import json
+from enum import Enum
+from math import prod
 from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
@@ -26,6 +28,15 @@ class LayerRange(BaseModel):
         return self.end_layer - self.start_layer + 1
 
 
+class StageType(str, Enum):  # noqa: UP042
+    """Stage type classification for pipeline sharding and local boundary isolation."""
+
+    CLIENT_EMBEDDING = "client_embedding"
+    REMOTE_HIDDEN = "remote_hidden"
+    CLIENT_LM_HEAD = "client_lm_head"
+    COMPUTE = "compute"
+
+
 class PipelineStage(BaseModel):
     """Represents a single stage in a pipeline parallel model execution chain."""
 
@@ -37,9 +48,9 @@ class PipelineStage(BaseModel):
     is_local_boundary: bool = Field(
         default=False, description="Whether stage runs locally on client boundary"
     )
-    stage_type: str = Field(
-        default="compute",
-        description="Stage type: local_embedding, compute, or local_lm_head",
+    stage_type: StageType | str = Field(
+        default=StageType.COMPUTE,
+        description="Stage type classification",
     )
     is_split_inference: bool = Field(
         default=False, description="Whether stage participates in split inference"
@@ -73,9 +84,7 @@ class TensorPayload(BaseModel):
 
     task_id: str = Field(description="Unique pipeline execution task ID")
     stage_index: int = Field(ge=0, description="Stage index sending the payload")
-    target_stage_index: int = Field(
-        default=0, ge=0, description="Target pipeline stage index"
-    )
+    target_stage_index: int = Field(default=0, ge=0, description="Target pipeline stage index")
     is_split_inference: bool = Field(
         default=False, description="Flag indicating asymmetric split-inference mode"
     )
@@ -85,17 +94,46 @@ class TensorPayload(BaseModel):
     data: bytes | list[float] | dict[str, Any] = Field(
         description="Tensor activation data or payload content"
     )
-    shape: list[int] = Field(
-        default_factory=list, description="Dimensions of the tensor shape"
-    )
+    shape: list[int] = Field(default_factory=list, description="Dimensions of the tensor shape")
     dtype: str = Field(default="float32", description="Data type of tensor values")
-    sequence_id: int = Field(
-        default=0, ge=0, description="Sequence ID for token generation steps"
-    )
+    sequence_id: int = Field(default=0, ge=0, description="Sequence ID for token generation steps")
     shm_name: str | None = Field(
         default=None,
         description="Optional shared memory block name for co-located IPC",
     )
+
+    def validate_split_activation_boundary(self) -> None:
+        """Reject payloads that violate the split-inference activation-only boundary."""
+        if not self.is_split_inference:
+            raise ValueError("Split stage payload must set is_split_inference=True")
+
+        allowed_tensor_types = {"activation", "intermediate_activation"}
+        if self.tensor_type not in allowed_tensor_types:
+            raise ValueError("Split stage payload tensor_type must be an activation")
+
+        allowed_dtypes = {"float16", "float32", "float64", "bfloat16"}
+        if self.dtype not in allowed_dtypes:
+            raise ValueError("Split stage payload dtype must be a floating-point tensor type")
+
+        if not self.shape or any(dim <= 0 for dim in self.shape):
+            raise ValueError("Split stage payload shape must contain positive dimensions")
+
+        if isinstance(self.data, dict):
+            raise ValueError("Split stage payload data must not contain structured prompt fields")
+
+        if isinstance(self.data, bytes):
+            if not self.data:
+                raise ValueError("Split stage payload bytes cannot be empty")
+            if self.dtype in {"float32", "float64"} and len(self.data) % 4 != 0:
+                raise ValueError("Split stage payload bytes must align to float elements")
+            return
+
+        if not self.data:
+            raise ValueError("Split stage payload data cannot be empty")
+
+        expected_elements = prod(self.shape)
+        if expected_elements != len(self.data):
+            raise ValueError("Split stage payload data length must match tensor shape")
 
     def to_framed_bytes(self) -> bytes:
         """Construct binary frame: b'PITP' + 4-byte len + JSON + raw bytes."""

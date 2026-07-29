@@ -20,9 +20,7 @@ from node.models import (
 
 def test_model_info_success() -> None:
     """Verify successful construction of ModelInfo."""
-    model = ModelInfo(
-        name="llama3-8b", size_gb=4.7, family="llama", context_length=8192
-    )
+    model = ModelInfo(name="llama3-8b", size_gb=4.7, family="llama", context_length=8192)
     assert model.name == "llama3-8b"
     assert model.size_gb == 4.7
     assert model.family == "llama"
@@ -60,9 +58,7 @@ def test_model_info_failures() -> None:
 
 def test_node_info_success() -> None:
     """Verify successful construction of NodeInfo."""
-    model_a = ModelInfo(
-        name="llama3-8b", size_gb=4.7, family="llama", context_length=8192
-    )
+    model_a = ModelInfo(name="llama3-8b", size_gb=4.7, family="llama", context_length=8192)
     node = NodeInfo(
         node_id="node-1",
         hostname="node.local",

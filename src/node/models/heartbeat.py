@@ -58,9 +58,7 @@ class Heartbeat(BaseModel):
     def validate_utilization(cls, v: float) -> float:
         """Validate that utilization is between 0.0 and 100.0 inclusive."""
         if not (0.0 <= v <= 100.0):
-            raise ValueError(
-                "Utilization percentage must be between 0.0 and 100.0 inclusive."
-            )
+            raise ValueError("Utilization percentage must be between 0.0 and 100.0 inclusive.")
         return v
 
     @field_validator("ram_available_gb", "vram_available_gb")

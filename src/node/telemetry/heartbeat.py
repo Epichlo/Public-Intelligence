@@ -17,9 +17,7 @@ logger = logging.getLogger(__name__)
 class ZenohTelemetryHeartbeat:
     """Publishes system hardware utilization stats periodically over Zenoh."""
 
-    def __init__(
-        self, settings: Settings, collector: TelemetryCollector | None = None
-    ) -> None:
+    def __init__(self, settings: Settings, collector: TelemetryCollector | None = None) -> None:
         """Initialize the ZenohTelemetryHeartbeat.
 
         Args:
@@ -30,9 +28,7 @@ class ZenohTelemetryHeartbeat:
         self.collector = collector or TelemetryCollector()
         self.session: zenoh.Session | None = None
         self.publisher: zenoh.Publisher | None = None
-        self._key_expr = (
-            f"public-intelligence/net/nodes/{self.settings.node_id}/telemetry"
-        )
+        self._key_expr = f"public-intelligence/net/nodes/{self.settings.node_id}/telemetry"
         self._loop_task: asyncio.Task[None] | None = None
         self.is_running = False
 

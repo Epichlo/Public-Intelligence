@@ -84,9 +84,7 @@ def get_ram_usage_bytes() -> int:
     """
     if sys.platform == "darwin":
         try:
-            total_bytes = int(
-                subprocess.check_output(["sysctl", "-n", "hw.memsize"]).strip()
-            )
+            total_bytes = int(subprocess.check_output(["sysctl", "-n", "hw.memsize"]).strip())
             vm_output = subprocess.getoutput("vm_stat")
             pages_free = 0
             pages_speculative = 0

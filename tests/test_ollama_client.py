@@ -103,9 +103,7 @@ async def test_generate_success(settings: Settings) -> None:
 async def test_generate_missing_model(settings: Settings) -> None:
     """Verify that ResponseError 404 raises a clean model not found error."""
     mock_client = AsyncMock()
-    mock_client.generate.side_effect = ollama.ResponseError(
-        "model not found", status_code=404
-    )
+    mock_client.generate.side_effect = ollama.ResponseError("model not found", status_code=404)
 
     client = OllamaClient(settings, client=mock_client)
     req = InferenceRequest(model="non-existent", prompt="Hello")
@@ -149,12 +147,6 @@ async def test_generate_stream_success(settings: Settings) -> None:
         chunks.append(chunk)
 
     assert len(chunks) == 2
-    assert chunks[0] == (
-        'data: {"model": "llama3-8b", "response": "chunk1", "done": false}\n\n'
-    )
-    assert chunks[1] == (
-        'data: {"model": "llama3-8b", "response": "chunk2", "done": true}\n\n'
-    )
-    mock_client.generate.assert_called_once_with(
-        model="llama3-8b", prompt="Hello", stream=True
-    )
+    assert chunks[0] == ('data: {"model": "llama3-8b", "response": "chunk1", "done": false}\n\n')
+    assert chunks[1] == ('data: {"model": "llama3-8b", "response": "chunk2", "done": true}\n\n')
+    mock_client.generate.assert_called_once_with(model="llama3-8b", prompt="Hello", stream=True)

@@ -24,9 +24,7 @@ async def test_echo_backend_generation() -> None:
 
     # 2. Streaming generation check
     chunks = []
-    async for chunk in backend.generate_stream(
-        model="mock-model", prompt="Hello control plane"
-    ):
+    async for chunk in backend.generate_stream(model="mock-model", prompt="Hello control plane"):
         chunks.append(chunk)
     assert "".join(chunks) == "Echo: Hello control plane"
 
@@ -96,3 +94,65 @@ async def test_ollama_backend_generate_stream_success() -> None:
             chunks.append(chunk)
 
         assert "".join(chunks) == "Hello world"
+
+
+@pytest.mark.anyio
+async def test_echo_backend_execute_split_stage() -> None:
+    """Verify EchoBackend.execute_split_stage transforms activation payload."""
+    from node.models.sharding import LayerRange, PipelineStage, TensorPayload
+
+    backend = EchoBackend()
+    stage = PipelineStage(
+        stage_index=1,
+        total_stages=3,
+        layer_range=LayerRange(start_layer=1, end_layer=15),
+        node_id="node_1",
+    )
+    payload = TensorPayload(
+        task_id="task_split_001",
+        stage_index=0,
+        target_stage_index=1,
+        is_split_inference=True,
+        tensor_type="activation",
+        data=[1.0, 2.0, 3.0, 4.0],
+        shape=[1, 1, 4],
+        dtype="float32",
+    )
+
+    result = await backend.execute_split_stage(stage, payload)
+
+    assert result.is_split_inference is True
+    assert result.stage_index == 1
+    assert result.target_stage_index == 2
+    assert result.data == [1.02, 2.02, 3.02, 4.02]
+
+
+@pytest.mark.anyio
+async def test_ollama_backend_execute_split_stage() -> None:
+    """Verify OllamaBackend.execute_split_stage transforms activation payload."""
+    from node.models.sharding import LayerRange, PipelineStage, TensorPayload
+
+    backend = OllamaBackend()
+    stage = PipelineStage(
+        stage_index=1,
+        total_stages=3,
+        layer_range=LayerRange(start_layer=1, end_layer=15),
+        node_id="node_1",
+    )
+    payload = TensorPayload(
+        task_id="task_split_002",
+        stage_index=0,
+        target_stage_index=1,
+        is_split_inference=True,
+        tensor_type="activation",
+        data=[0.5, 1.5],
+        shape=[1, 1, 2],
+        dtype="float32",
+    )
+
+    result = await backend.execute_split_stage(stage, payload)
+
+    assert result.is_split_inference is True
+    assert result.stage_index == 1
+    assert result.target_stage_index == 2
+    assert result.data == [0.52, 1.52]
