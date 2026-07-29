@@ -32,19 +32,18 @@ Repository State:
 - [x] NAT Traversal, Bootstrap Relays & Dynamic Gossip Scouting (Phase 4)
 - [x] Pipeline Parallelism & Model Layer Sharding (Phase 4)
 - [x] Host Installer `install.sh`, `scripts/launch_host_node.sh` daemon launcher, `public-intelligence-node` CLI entry point, sandbox SSE log streamer, and local control APIs (Phase 4.5)
-- [x] Phase 4.8 Async KV-Cache Checkpointing (`KVCacheSnapshot` payload modeling, SHA-256 checksum verification, and `KVCacheManager` task snapshot replication store).
+- [x] Phase 4.9 Apple Silicon Hardware Profiling (`detect_apple_silicon_hardware` sysctl Unified Memory and Metal capability discovery).
 
 ---
 
 ## Current State
 
-Phase 4.8 is fully realized on Node. The Node currently supports automated GPU/VRAM hardware discovery, daemon process management, `GET /api/v1/node/telemetry`, `POST /api/v1/node/control`, Docker sandbox SSE log streaming (`GET /api/v1/sandbox/logs/stream`), CLI execution, local split-inference Layer 0 / LM Head boundary execution, activation-only remote split-stage validation, dynamic Zenoh split stage subscriber processing, FP8 speculative WAN execution, and async KV-cache snapshot checkpointing with 157 passing unit and integration test assertions (156 passed, 1 skipped).
+Phase 4.9 is fully realized on Node. The Node currently supports automated GPU/VRAM hardware discovery, Apple Silicon Metal profiler, daemon process management, `GET /api/v1/node/telemetry`, `POST /api/v1/node/control`, Docker sandbox SSE log streaming (`GET /api/v1/sandbox/logs/stream`), CLI execution, local split-inference Layer 0 / LM Head boundary execution, activation-only remote split-stage validation, dynamic Zenoh split stage subscriber processing, FP8 speculative WAN execution, and async KV-cache snapshot checkpointing with 158 passing unit and integration test assertions (157 passed, 1 skipped).
 
 ---
 
 ## Upcoming Features
 
-- Phase 4.9: Workload-Aware System Routing & Tokenless Fiat Credit Exchange Ledger (v0.55)
 - Autonomous Self-Improving Fabric (Phase 5)
 
 ---
