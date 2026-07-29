@@ -12,7 +12,7 @@ This specification details the sequential architectural evolution of the Public 
 | **v0.35 (Realized)** | **Phase 4.5** | **Web Visual Control Plane, Host Telemetry Dashboard, Requester Chat Playground, OpenAI REST Gateway (`/v1/chat/completions`), and One-Click Host Installer (`install.sh`)**. | Visual Control Plane (WebUI/Next.js), real-time global telemetry gauges, prompt playground, OpenAI API gateway, and host node launcher harness. |
 | **v0.40 (Realized)** | **Phase 4.6** | **Asymmetric Split-Inference & Local Boundary Isolation** M1/M2 boundary contracts: Layer 0 Embedding & LM Head retained locally; remote hidden stages executed over Zenoh activation channels with 504 timeout & 502 validation error guards. | Client edge boundary isolation, activation-only split-stage validation, zero prompt/token leakage tests, production remote activation-response collection over Zenoh tensor topics. |
 | **v0.45 (Realized)** | **Phase 4.7** | **Speculative WAN Pipeline Engine & FP8 Activation Compression** (Local 8B draft speculation $K=5$, 75% RTT reduction, FP8 E4M3 quantization with dynamic scaling factor). | Multi-token candidate block verification over WAN, FP8 `FP8Quantizer` dynamic max-abs scaling (50%-75% bandwidth reduction). |
-| **v0.50 (Planned)** | **Phase 4.8** | **Async KV-Cache Checkpointing & Dynamic State Rerouting** (Background KV replication over Zenoh gossip, seamless restitching on node drop). | Non-blocking `KVCacheSnapshot` gossip streaming, zero-recomputation pipeline rerouting upon stale worker eviction ($\Delta t > 15.05\text{s}$). |
+| **v0.50 (Realized)** | **Phase 4.8** | **Async KV-Cache Checkpointing & Dynamic State Rerouting** (Background KV replication over Zenoh gossip, seamless restitching on node drop). | Non-blocking `KVCacheSnapshot` gossip streaming, zero-recomputation pipeline rerouting (`SchedulingEngine.restitch_pipeline_on_eviction`) upon stale worker eviction ($\Delta t > 15.05\text{s}$). |
 | **v0.55 (Planned)** | **Phase 4.9** | **Workload-Aware System Routing (`/v1/chat/completions` vs `/v1/batch`), Apple Silicon Onboarding & Fiat Credit Exchange Ledger**. | Interactive single-node / LAN routing vs multi-node WAN batch processing (`POST /v1/batch`), Apple Silicon Metal Unified Memory profiling, tokenless fiat credit exchange ledger. |
 | **v1.0 (Full Vision)** | **Phase 5** | Fully autonomous self-improving fabric (agents analyze GitHub issues, run WAN tests, and merge verified PRs). | LangGraph multi-agent orchestrator, n8n webhook event automation, self-correcting agent loops. |
 
@@ -55,9 +55,9 @@ This specification details the sequential architectural evolution of the Public 
 
 ---
 
-### Phase 4.8: Async KV-Cache Checkpointing & Dynamic State Rerouting (v0.50 — Planned)
-- **Background KV-Cache Replication:** Non-blocking KV-cache state snapshots (`KVCacheSnapshot`) streamed over Zenoh gossip channels (`public-intelligence/net/tasks/<task_id>/kv_snapshots`) to neighbor pipeline nodes.
-- **Dynamic Pipeline Re-stitching:** When worker eviction occurs ($\Delta t > 15.05\text{s}$), the scheduler automatically re-routes execution payloads to a replacement node holding identical weights, resuming computation from the restored KV checkpoint without restarting prompt evaluation.
+### Phase 4.8: Async KV-Cache Checkpointing & Dynamic State Rerouting (v0.50 — Realized)
+- **Background KV-Cache Replication (Realized):** Non-blocking KV-cache state snapshots (`KVCacheSnapshot`) streamed over Zenoh gossip channels (`public-intelligence/net/tasks/<task_id>/kv_snapshots`) to neighbor pipeline nodes via `KVCacheManager` with SHA-256 checksum verification.
+- **Dynamic Pipeline Re-stitching (Realized):** When worker eviction occurs ($\Delta t > 15.05\text{s}$), the scheduler automatically re-routes execution payloads (`SchedulingEngine.restitch_pipeline_on_eviction`) to a replacement node holding identical weights, resuming computation from the restored KV checkpoint without restarting prompt evaluation.
 
 ---
 
