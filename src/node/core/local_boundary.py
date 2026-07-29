@@ -250,9 +250,7 @@ class LocalBoundaryEngine:
             sequence_id=0,
         )
 
-    def generate_speculative_candidates(
-        self, prompt: str, k: int = 5, task_id: str = ""
-    ) -> Any:
+    def generate_speculative_candidates(self, prompt: str, k: int = 5, task_id: str = "") -> Any:
         """Generate candidate token block (K=5) locally on the edge boundary engine.
 
         Args:

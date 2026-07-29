@@ -3,7 +3,6 @@
 import struct
 
 
-
 class FP8Quantizer:
     """FP8 E4M3 quantization helper class for tensor activation compression."""
 
