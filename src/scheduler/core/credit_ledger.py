@@ -2,7 +2,6 @@
 
 import logging
 import time
-from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -13,8 +12,12 @@ class CreditAccount(BaseModel):
     """Account entry tracking earned and consumed credits."""
 
     account_id: str = Field(description="Tenant or Node identifier")
-    earned_credits: float = Field(default=0.0, ge=0.0, description="Total credits earned from hosting compute")
-    consumed_credits: float = Field(default=0.0, ge=0.0, description="Total credits consumed for inference")
+    earned_credits: float = Field(
+        default=0.0, ge=0.0, description="Total credits earned from hosting compute"
+    )
+    consumed_credits: float = Field(
+        default=0.0, ge=0.0, description="Total credits consumed for inference"
+    )
     updated_at: float = Field(default_factory=time.time, description="Last update epoch timestamp")
 
     @property
@@ -58,6 +61,8 @@ class CreditLedger:
         Returns:
             Updated CreditAccount.
         """
+        vram_gb = max(0.0, float(vram_gb))
+        duration_seconds = max(0.0, float(duration_seconds))
         hours = duration_seconds / 3600.0
         earned = vram_gb * hours * self.CREDITS_PER_GB_VRAM_HOUR
         account = self.get_or_create_account(node_id)

@@ -24,7 +24,7 @@ class BatchItemRequest(BaseModel):
 class BatchRequest(BaseModel):
     """Payload for POST /v1/batch endpoint."""
 
-    requests: list[BatchItemRequest] = Field(min_items=1, description="List of batch requests")
+    requests: list[BatchItemRequest] = Field(min_length=1, description="List of batch requests")
     priority: str = Field(default="batch", description="Processing priority level")
 
 
@@ -61,7 +61,10 @@ async def submit_batch_job(payload: BatchRequest) -> BatchResponse:
             BatchItemResult(
                 custom_id=item.custom_id,
                 status_code=200,
-                response_text=f"[Batch Response for '{item.prompt[:30]}...'] Completed asynchronously via WAN pipeline.",
+                response_text=(
+                    f"[Batch Response for '{item.prompt[:30]}...'] "
+                    "Completed asynchronously via WAN pipeline."
+                ),
             )
         )
 

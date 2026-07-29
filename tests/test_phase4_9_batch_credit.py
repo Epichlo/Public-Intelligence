@@ -1,9 +1,8 @@
 """Unit and integration tests for Phase 4.9 Asynchronous Batch Processing and Credit Ledger."""
 
-import pytest
 from fastapi.testclient import TestClient
 
-from scheduler.core.credit_ledger import CreditAccount, CreditLedger
+from scheduler.core.credit_ledger import CreditLedger
 from scheduler.main import create_app
 
 
