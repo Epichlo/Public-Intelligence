@@ -75,7 +75,12 @@ class ZenohRouter:
         logger.info("zenoh_router_starting", key_expr="public-intelligence/net/*/heartbeat")
 
         # Open a Zenoh session with configured settings
-        self.session = zenoh.open(self.config)
+        try:
+            self.session = zenoh.open(self.config)
+        except zenoh.ZError as err:
+            logger.warning("zenoh_router_open_failed: %s", err)
+            self.session = None
+            return
 
         # Subscribe to heartbeat path.
         # Zenoh python subscriber takes a callback.

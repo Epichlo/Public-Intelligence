@@ -1,6 +1,8 @@
 """Pipeline scheduling models for model layer sharding."""
 
+import hashlib
 import json
+import time
 from enum import Enum
 from math import prod
 from typing import Any, Self
@@ -304,3 +306,22 @@ class VerificationResult(BaseModel):
     verified_activations: TensorPayload | None = Field(
         default=None, description="Verified output activation payload"
     )
+
+
+class KVCacheSnapshot(BaseModel):
+    """KV-cache snapshot for background gossip replication and pipeline restitching."""
+
+    task_id: str = Field(description="Unique task identifier")
+    sequence_id: int = Field(ge=0, description="Token sequence position index")
+    node_id: str = Field(description="Source compute node identifier")
+    start_layer: int = Field(ge=0, description="Starting model layer index")
+    end_layer: int = Field(ge=0, description="Ending model layer index")
+    cache_bytes: bytes = Field(description="Raw binary KV cache tensor data")
+    checksum: str = Field(description="SHA-256 hash of cache_bytes")
+    timestamp: float = Field(default_factory=time.time, description="Creation epoch timestamp")
+
+    def verify_checksum(self) -> None:
+        """Verify that cache_bytes matches SHA-256 checksum."""
+        actual = hashlib.sha256(self.cache_bytes).hexdigest()
+        if actual != self.checksum:
+            raise ValueError(f"Checksum mismatch: expected {self.checksum}, got {actual}")

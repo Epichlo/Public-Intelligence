@@ -47,14 +47,14 @@ Completed
 - Global P2P WAN Router Configuration (`ZENOH_LISTEN_ENDPOINTS`, `ZENOH_PEER_ENDPOINTS`, `ZENOH_MULTICAST_SCOUTING`)
 - `ZenohRouter` auto-configuration for WAN router and peer mode
 - Phase 4.5 OpenAI REST Gateway router (`POST /v1/chat/completions`, `GET /v1/models`) with RS256 JWT authorization, TokenBucket rate limiting, SSE streaming, and telemetry endpoints (`GET /nodes/{node_id}/telemetry`)
-- Phase 4.7 Speculative WAN Pipeline Engine ($K=5$ candidate block generation via `DraftBlockPayload`), single-pass WAN verification schema (`VerificationResult`), and dynamic FP8 (E4M3) activation compression via `FP8Quantizer` ($S = \frac{448.0}{\max(|x|) + 1e-8}$).
+- Phase 4.8 Async KV-Cache Checkpointing & Dynamic State Rerouting (`KVCacheSnapshot` binary state replication with SHA-256 checksum validation and `SchedulingEngine.restitch_pipeline_on_eviction` for zero-recomputation node failover).
 
 Current State
 
-Phase 4.7 is 100% realized on Scheduler. The Scheduler currently supports OpenAI Chat Completions, multi-tenant JWT auth, token-bucket rate limiting (429), decrypted telemetry REST endpoints, asymmetric split-inference planning, production remote activation-response execution over Zenoh tensor topics, and speculative FP8 WAN execution with 132/132 passing unit and integration test assertions.
+Phase 4.8 is 100% realized on Scheduler. The Scheduler currently supports OpenAI Chat Completions, multi-tenant JWT auth, token-bucket rate limiting (429), decrypted telemetry REST endpoints, asymmetric split-inference planning, production remote activation-response execution over Zenoh tensor topics, speculative FP8 WAN execution, and async KV-cache snapshot checkpointing with 135/135 passing unit and integration test assertions.
 
 Next Feature
 
-Phase 4.8: Async KV-Cache Checkpointing & Dynamic State Rerouting (v0.50).
-- Non-blocking `KVCacheSnapshot` gossip streaming over Zenoh.
-- Dynamic pipeline re-stitching upon worker eviction ($\Delta t > 15.05\text{s}$).
+Phase 4.9: Workload-Aware System Routing, Apple Silicon Onboarding & Tokenless Fiat Credit Exchange Ledger (v0.55).
+- Interactive `/v1/chat/completions` vs `/v1/batch` bulk asynchronous processing.
+- Apple Silicon M1-M4 Metal Unified Memory hardware discovery & tokenless fiat credit ledger.

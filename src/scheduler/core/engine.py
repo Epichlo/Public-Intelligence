@@ -5,7 +5,13 @@ import uuid
 from typing import TYPE_CHECKING, Any
 
 from scheduler.core.strategy import SchedulingStrategy
-from scheduler.models.pipeline import LayerRange, PipelineStage, StageType, TaskProposal
+from scheduler.models.pipeline import (
+    KVCacheSnapshot,
+    LayerRange,
+    PipelineStage,
+    StageType,
+    TaskProposal,
+)
 from scheduler.registry.node_registry import NodeRegistry
 
 if TYPE_CHECKING:
@@ -412,3 +418,50 @@ class SchedulingEngine:
                 raise ValueError("Invalid split-inference remote hidden stage")
 
         return stages
+
+    async def restitch_pipeline_on_eviction(
+        self,
+        task_id: str,
+        failed_node_id: str,
+        kv_snapshot: KVCacheSnapshot,
+        pipeline_stages: list[PipelineStage],
+    ) -> list[PipelineStage]:
+        """Restitch pipeline stages when a compute node is evicted, restoring from KVCacheSnapshot.
+
+        Args:
+            task_id: Unique pipeline task identifier.
+            failed_node_id: Identifier of the evicted compute node.
+            kv_snapshot: Validated KVCacheSnapshot to restore computation state from.
+            pipeline_stages: Existing pipeline stages configuration.
+
+        Returns:
+            Updated list of PipelineStage objects with replacement node assigned.
+        """
+        kv_snapshot.verify_checksum()
+
+        active_nodes = await self.registry.list()
+        available_nodes = [n for n in active_nodes if n.node_id != failed_node_id]
+
+        if not available_nodes:
+            raise ValueError(f"No replacement compute nodes available to restitch task {task_id}")
+
+        replacement = available_nodes[0]
+        restitched_stages: list[PipelineStage] = []
+
+        for stage in pipeline_stages:
+            if stage.node_id == failed_node_id:
+                new_stage = PipelineStage(
+                    stage_index=stage.stage_index,
+                    total_stages=stage.total_stages,
+                    layer_range=stage.layer_range,
+                    node_id=replacement.node_id,
+                    model_id=stage.model_id,
+                    is_local_boundary=stage.is_local_boundary,
+                    stage_type=stage.stage_type,
+                    is_split_inference=stage.is_split_inference,
+                )
+                restitched_stages.append(new_stage)
+            else:
+                restitched_stages.append(stage)
+
+        return restitched_stages
