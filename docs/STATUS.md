@@ -47,14 +47,14 @@ Completed
 - Global P2P WAN Router Configuration (`ZENOH_LISTEN_ENDPOINTS`, `ZENOH_PEER_ENDPOINTS`, `ZENOH_MULTICAST_SCOUTING`)
 - `ZenohRouter` auto-configuration for WAN router and peer mode
 - Phase 4.5 OpenAI REST Gateway router (`POST /v1/chat/completions`, `GET /v1/models`) with RS256 JWT authorization, TokenBucket rate limiting, SSE streaming, and telemetry endpoints (`GET /nodes/{node_id}/telemetry`)
+- Phase 4.6 asymmetric split-inference scheduler topology, OpenAI gateway split path, local boundary engine, activation-only `TensorPayload` validation, production remote activation response collection over Zenoh tensor topics, HTTP 504 Gateway Timeout, and HTTP 502 Bad Gateway validation error semantics.
 
 Current State
 
-Phase 4.5 Visual Control Plane & OpenAI REST Gateway are realized. The Scheduler currently supports standard OpenAI Chat Completions (JSON and SSE token streaming), multi-tenant JWT auth, token-bucket rate limiting (429), and decrypted telemetry REST endpoints with 111/111 passing unit and integration test assertions.
+Phase 4.6 is 100% realized on Scheduler. The Scheduler currently supports standard OpenAI Chat Completions (JSON and SSE token streaming), multi-tenant JWT auth, token-bucket rate limiting (429), decrypted telemetry REST endpoints, asymmetric split-inference planning, and production remote activation-response execution over Zenoh tensor topics with 129/129 passing unit and integration test assertions.
 
 Next Feature
 
-Phase 4.6: Asymmetric Split-Inference & Local Boundary Isolation (v0.40 — Next Priority).
-- Local boundary isolation retaining Layer 0 (Embedding) and LM Head locally on client gateway.
-- Offloading intermediate hidden activation vectors (Layers 1..N-1) across Zenoh P2P channels.
-- Zero prompt reconstruction risk on untrusted host nodes.
+Phase 4.7: Speculative WAN Pipeline Engine & FP8 Activation Compression (v0.45).
+- Local 8B draft speculation block candidate generation ($K=5$).
+- FP8 (E4M3) activation tensor compression over `BackpressuredStreamRouter`.

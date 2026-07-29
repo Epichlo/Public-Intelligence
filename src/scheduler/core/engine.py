@@ -5,7 +5,7 @@ import uuid
 from typing import TYPE_CHECKING, Any
 
 from scheduler.core.strategy import SchedulingStrategy
-from scheduler.models.pipeline import LayerRange, PipelineStage
+from scheduler.models.pipeline import LayerRange, PipelineStage, StageType, TaskProposal
 from scheduler.registry.node_registry import NodeRegistry
 
 if TYPE_CHECKING:
@@ -214,3 +214,201 @@ class SchedulingEngine:
         tx_hash = hashlib.sha256(tx_raw.encode("utf-8")).hexdigest()
 
         return tx_hash, stages
+
+    async def schedule_split_inference_pipeline(
+        self,
+        task: dict[str, Any] | TaskProposal | Any,
+        total_layers: int = 32,
+    ) -> list[PipelineStage]:
+        """Schedule a 3-tier asymmetric split-inference chain across local/remote nodes.
+
+        Stage 0 (Client Local Embedding): stage_index=0, layer_range=LayerRange(0, 0),
+            node_id="client_local", is_local_boundary=True, stage_type=StageType.CLIENT_EMBEDDING,
+            is_split_inference=True.
+        Stages 1..K-1 (Remote Host Pipeline): Partition layers 1..total_layers-1 across eligible
+            nodes based on VRAM, is_local_boundary=False,
+            stage_type=StageType.REMOTE_HIDDEN, is_split_inference=True.
+        Stage K (Client Local LM Head): stage_index=K, layer_range=LayerRange(total_layers,
+            total_layers), node_id="client_local", is_local_boundary=True,
+            stage_type=StageType.CLIENT_LM_HEAD, is_split_inference=True.
+
+        Args:
+            task: Task dictionary or TaskProposal object detailing model requirements.
+            total_layers: Total number of transformer model layers.
+
+        Returns:
+            A list of PipelineStage objects representing the split-inference chain.
+
+        Raises:
+            ValueError: If total_layers < 2, no active nodes exist, or cluster VRAM is low.
+        """
+        if isinstance(task, dict):
+            task_dict = task
+        elif hasattr(task, "model_dump"):
+            task_dict = task.model_dump()
+        elif hasattr(task, "dict"):
+            task_dict = task.dict()
+        else:
+            task_dict = getattr(task, "__dict__", {})
+
+        model_id = str(task_dict.get("model_id") or task_dict.get("model") or "")
+        t_layers_val = task_dict.get("total_layers", total_layers)
+        t_layers = int(t_layers_val) if t_layers_val is not None else total_layers
+
+        if t_layers < 2:
+            raise ValueError("total_layers must be at least 2 for split inference")
+
+        # Retrieve live eligible compute nodes for remote intermediate stages
+        live_nodes = await self.registry.list()
+        if not live_nodes:
+            raise ValueError("No active nodes available in registry.")
+
+        requirements = dict(task_dict.get("requirements", {}))
+        if model_id and "model" not in requirements and "model_name" not in requirements:
+            requirements["model"] = model_id
+
+        eligible_nodes = self.strategy.filter_nodes(requirements, live_nodes)
+        if not eligible_nodes:
+            raise ValueError("No active nodes satisfy the split-inference task requirements.")
+
+        ranked_tuples = self.strategy.score_nodes(task_dict, eligible_nodes)
+        ranked_nodes = [n for n, _ in ranked_tuples] if ranked_tuples else eligible_nodes
+
+        # Intermediate layers to partition on remote hosts: layers 1 to t_layers - 1
+        num_remote_layers = t_layers - 1
+        vram_per_layer_val = task_dict.get("vram_per_layer_gb") or task_dict.get("layer_vram_gb")
+        if vram_per_layer_val is None and "vram_required_gb" in task_dict:
+            vram_per_layer_val = float(task_dict["vram_required_gb"]) / float(t_layers)
+        vram_per_layer: float = (
+            float(vram_per_layer_val) if vram_per_layer_val is not None else 0.5
+        )
+
+        node_capacities: list[tuple[Node, int]] = []
+        total_cluster_capacity = 0
+        for node in ranked_nodes:
+            heartbeat = self.registry._heartbeats.get(node.node_id)
+            avail_vram = (
+                getattr(heartbeat, "vram_available_gb", node.gpu.vram_available_gb)
+                if heartbeat is not None
+                else node.gpu.vram_available_gb
+            )
+            cap = int(avail_vram // vram_per_layer) if vram_per_layer > 0 else num_remote_layers
+            if cap > 0:
+                node_capacities.append((node, cap))
+                total_cluster_capacity += cap
+
+        if total_cluster_capacity < num_remote_layers:
+            raise ValueError(
+                f"Insufficient VRAM in cluster for intermediate layers: "
+                f"req {num_remote_layers}, avail {total_cluster_capacity}."
+            )
+
+        # Partition intermediate layers across eligible nodes
+        remote_allocations: list[tuple[Node, int]] = []
+        remaining = num_remote_layers
+        for node, cap in node_capacities:
+            if remaining <= 0:
+                break
+            assigned = min(remaining, cap)
+            remote_allocations.append((node, assigned))
+            remaining -= assigned
+
+        if remaining > 0:
+            raise ValueError(
+                "Insufficient VRAM across cluster to schedule intermediate split layers."
+            )
+
+        num_remote_stages = len(remote_allocations)
+        total_stages = (
+            num_remote_stages + 2
+        )  # Stage 0 (Local Embedding) + Remote Hidden Stages + Stage K (Local LM Head)
+
+        stages: list[PipelineStage] = []
+
+        # 1. Stage 0: Client Local Embedding
+        stage_0 = PipelineStage(
+            stage_index=0,
+            total_stages=total_stages,
+            layer_range=LayerRange(start_layer=0, end_layer=0),
+            node_id="client_local",
+            model_id=model_id,
+            is_local_boundary=True,
+            stage_type=StageType.CLIENT_EMBEDDING,
+            is_split_inference=True,
+        )
+        stages.append(stage_0)
+
+        # 2. Stages 1..K-1: Remote Host Pipeline
+        current_remote_layer = 1
+        for idx, (node, layer_count) in enumerate(remote_allocations):
+            start_l = current_remote_layer
+            end_l = current_remote_layer + layer_count - 1
+            current_remote_layer = end_l + 1
+
+            r_stage = PipelineStage(
+                stage_index=idx + 1,
+                total_stages=total_stages,
+                layer_range=LayerRange(start_layer=start_l, end_layer=end_l),
+                node_id=node.node_id,
+                model_id=model_id,
+                is_local_boundary=False,
+                stage_type=StageType.REMOTE_HIDDEN,
+                is_split_inference=True,
+            )
+            stages.append(r_stage)
+
+            if node.node_id not in self.registry._telemetry:
+                self.registry._telemetry[node.node_id] = {}
+            cur_q = self.registry._telemetry[node.node_id].get("queue_depth", 0)
+            self.registry._telemetry[node.node_id]["queue_depth"] = cur_q + 1
+            await self.registry.increment_dampener(node.node_id)
+
+        # 3. Stage K: Client Local LM Head
+        stage_k = PipelineStage(
+            stage_index=total_stages - 1,
+            total_stages=total_stages,
+            layer_range=LayerRange(start_layer=t_layers, end_layer=t_layers),
+            node_id="client_local",
+            model_id=model_id,
+            is_local_boundary=True,
+            stage_type=StageType.CLIENT_LM_HEAD,
+            is_split_inference=True,
+        )
+        stages.append(stage_k)
+
+        # Validation: verify local boundary placement and layer continuity.
+        if (
+            not stages[0].is_local_boundary
+            or stages[0].stage_type not in (StageType.CLIENT_EMBEDDING, "client_embedding")
+            or stages[0].node_id != "client_local"
+            or stages[0].layer_range.start_layer != 0
+            or stages[0].layer_range.end_layer != 0
+        ):
+            raise ValueError("Invalid split-inference client embedding boundary stage")
+
+        if (
+            not stages[-1].is_local_boundary
+            or stages[-1].stage_type not in (StageType.CLIENT_LM_HEAD, "client_lm_head")
+            or stages[-1].node_id != "client_local"
+            or stages[-1].layer_range.start_layer != t_layers
+            or stages[-1].layer_range.end_layer != t_layers
+        ):
+            raise ValueError("Invalid split-inference client LM head boundary stage")
+
+        if stages[1].layer_range.start_layer != 1:
+            raise ValueError("Split-inference remote stages must start at layer 1")
+        for i in range(1, len(stages) - 2):
+            if stages[i].layer_range.end_layer + 1 != stages[i + 1].layer_range.start_layer:
+                raise ValueError("Split-inference remote stage layer ranges must be contiguous")
+        if stages[-2].layer_range.end_layer != t_layers - 1:
+            raise ValueError("Split-inference remote stages must end before the LM head layer")
+
+        for r_s in stages[1:-1]:
+            if (
+                r_s.is_local_boundary
+                or r_s.stage_type not in (StageType.REMOTE_HIDDEN, "remote_hidden")
+                or not r_s.is_split_inference
+            ):
+                raise ValueError("Invalid split-inference remote hidden stage")
+
+        return stages

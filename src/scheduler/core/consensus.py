@@ -119,6 +119,7 @@ class RaftConsensusEngine:
 
         Blocks until the change has achieved majority consensus quorum and committed.
         """
+        event_to_wait: asyncio.Event | None = None
         async with self._lock:
             if not self._is_active:
                 raise RuntimeError("Consensus engine is not active")
@@ -135,6 +136,8 @@ class RaftConsensusEngine:
                 event = asyncio.Event()
                 self._commit_events[proposal_index] = event
                 await self._send_heartbeats()
+                if self.peers:
+                    event_to_wait = event
             else:
                 leader = self.leader_id
                 if leader is not None:
@@ -148,10 +151,10 @@ class RaftConsensusEngine:
                             "data": data,
                         },
                     )
-                    # Follower wait loop for entry replication/commitment
+                    start_log_len = len(self.log)
                     start_time = time.time()
-                    while time.time() - start_time < 5.0:
-                        for i in range(self.commit_index + 1):
+                    while time.time() - start_time < 1.5:
+                        for i in range(start_log_len, self.commit_index + 1):
                             if i < len(self.log):
                                 logged = self.log[i]
                                 if logged.get("action") == action and logged.get("data") == data:
@@ -161,7 +164,7 @@ class RaftConsensusEngine:
                 else:
                     raise RuntimeError("No leader found in consensus cluster")
 
-        if self.state == "LEADER":
+        if event_to_wait is not None:
             required_quorum = (len(self.peers) + 1) // 2 + 1
             if required_quorum <= 1:
                 # Commit immediately if single node
@@ -169,7 +172,7 @@ class RaftConsensusEngine:
                 return
 
             try:
-                await asyncio.wait_for(event.wait(), timeout=5.0)
+                await asyncio.wait_for(event_to_wait.wait(), timeout=3.0)
             except TimeoutError:
                 raise TimeoutError("Proposal replication timed out") from None
             finally:

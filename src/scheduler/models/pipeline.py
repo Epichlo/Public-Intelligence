@@ -1,6 +1,8 @@
 """Pipeline scheduling models for model layer sharding."""
 
 import json
+from enum import Enum
+from math import prod
 from typing import Any, Self
 
 from pydantic import BaseModel, Field, model_validator
@@ -25,6 +27,30 @@ class LayerRange(BaseModel):
         return self.end_layer - self.start_layer + 1
 
 
+class StageType(str, Enum):  # noqa: UP042
+    """Stage type classification for pipeline sharding and local boundary isolation."""
+
+    CLIENT_EMBEDDING = "client_embedding"
+    REMOTE_HIDDEN = "remote_hidden"
+    CLIENT_LM_HEAD = "client_lm_head"
+    COMPUTE = "compute"
+
+
+class TaskProposal(BaseModel):
+    """Task proposal container for split-inference and pipeline scheduling requests."""
+
+    task_id: str = Field(default="", description="Unique task identifier")
+    model_id: str = Field(default="", description="Target model identifier")
+    model: str = Field(default="", description="Alias for model identifier")
+    total_layers: int = Field(default=32, gt=0, description="Total transformer layer count")
+    requirements: dict[str, Any] = Field(default_factory=dict, description="Hardware requirements")
+    vram_per_layer_gb: float | None = Field(default=None, description="VRAM per layer in GB")
+    num_stages: int | None = Field(default=None, description="Requested total stage count")
+    split_inference: bool = Field(
+        default=True, description="Whether split-inference path is enabled"
+    )
+
+
 class PipelineStage(BaseModel):
     """Represents a single stage in a pipeline parallel model execution chain."""
 
@@ -36,8 +62,9 @@ class PipelineStage(BaseModel):
     is_local_boundary: bool = Field(
         default=False, description="Whether stage runs locally on client boundary"
     )
-    stage_type: str = Field(
-        default="compute", description="Stage type: local_embedding, compute, or local_lm_head"
+    stage_type: StageType | str = Field(
+        default=StageType.COMPUTE,
+        description="Stage type: client_embedding, remote_hidden, client_lm_head, or compute",
     )
     is_split_inference: bool = Field(
         default=False, description="Whether stage participates in split inference"
@@ -88,6 +115,39 @@ class TensorPayload(BaseModel):
         default=None,
         description="Optional shared memory block name for co-located IPC",
     )
+
+    def validate_split_activation_boundary(self) -> None:
+        """Reject payloads that violate the split-inference activation-only boundary."""
+        if not self.is_split_inference:
+            raise ValueError("Split stage payload must set is_split_inference=True")
+
+        allowed_tensor_types = {"activation", "intermediate_activation"}
+        if self.tensor_type not in allowed_tensor_types:
+            raise ValueError("Split stage payload tensor_type must be an activation")
+
+        allowed_dtypes = {"float16", "float32", "float64", "bfloat16"}
+        if self.dtype not in allowed_dtypes:
+            raise ValueError("Split stage payload dtype must be a floating-point tensor type")
+
+        if not self.shape or any(dim <= 0 for dim in self.shape):
+            raise ValueError("Split stage payload shape must contain positive dimensions")
+
+        if isinstance(self.data, dict):
+            raise ValueError("Split stage payload data must not contain structured prompt fields")
+
+        if isinstance(self.data, bytes):
+            if not self.data:
+                raise ValueError("Split stage payload bytes cannot be empty")
+            if self.dtype in {"float32", "float64"} and len(self.data) % 4 != 0:
+                raise ValueError("Split stage payload bytes must align to float elements")
+            return
+
+        if not self.data:
+            raise ValueError("Split stage payload data cannot be empty")
+
+        expected_elements = prod(self.shape)
+        if expected_elements != len(self.data):
+            raise ValueError("Split stage payload data length must match tensor shape")
 
     def to_framed_bytes(self) -> bytes:
         """Construct binary frame: b'PITP' + 4-byte len + JSON + raw bytes."""
@@ -170,10 +230,16 @@ class PipelineConfig(BaseModel):
             raise ValueError("First pipeline stage must start at layer 0")
 
         last_stage = self.stages[-1]
-        if last_stage.layer_range.end_layer != self.total_layers - 1:
+        is_split = (
+            last_stage.is_split_inference
+            or last_stage.is_local_boundary
+            or last_stage.stage_type in (StageType.CLIENT_LM_HEAD, "client_lm_head")
+        )
+        expected_end = self.total_layers if is_split else self.total_layers - 1
+        if last_stage.layer_range.end_layer != expected_end:
             raise ValueError(
                 f"Last pipeline stage end layer ({last_stage.layer_range.end_layer}) "
-                f"must match total_layers - 1 ({self.total_layers - 1})"
+                f"must match expected end layer ({expected_end})"
             )
 
         for i in range(len(self.stages) - 1):

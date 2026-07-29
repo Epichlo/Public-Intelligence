@@ -79,6 +79,13 @@ class Settings(BaseSettings):
         default=True,
         description="Enable/disable local LAN multicast scouting.",
     )
+    split_inference_timeout_seconds: float = Field(
+        default=5.0,
+        validation_alias=AliasChoices(
+            "SCHEDULER_SPLIT_INFERENCE_TIMEOUT", "SPLIT_INFERENCE_TIMEOUT"
+        ),
+        description="Timeout in seconds for remote split-stage activation responses.",
+    )
 
     @field_validator(
         "zenoh_listen_endpoints",

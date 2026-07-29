@@ -295,7 +295,7 @@ class BackpressuredStreamRouter:
         for topic, sub in list(self._tensor_ack_subs.items()):
             try:
                 if hasattr(sub, "undeclare"):
-                    sub.undeclare()  # type: ignore[no-untyped-call]
+                    sub.undeclare()
             except Exception as e:
                 logger.debug("Failed to undeclare tensor ACK subscriber for %s: %s", topic, e)
         self._tensor_ack_subs.clear()

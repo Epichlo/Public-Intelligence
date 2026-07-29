@@ -29,6 +29,9 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: int | None = Field(
         default=None, description="Maximum number of tokens to generate."
     )
+    split_inference: bool = Field(
+        default=False, description="Enable split inference local boundary mode."
+    )
 
 
 class CompletionUsage(BaseModel):
