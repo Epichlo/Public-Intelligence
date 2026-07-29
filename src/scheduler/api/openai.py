@@ -159,7 +159,9 @@ async def create_chat_completion(
                 ),
             ]
 
-        local_boundary = LocalBoundaryEngine(model_id=req_data.model)
+        local_boundary = LocalBoundaryEngine(
+            model_id=req_data.model, vocab_size=1000, hidden_dim=128
+        )
         prompt_text = messages_to_prompt(req_data.messages)
 
         # Tokenize and compute local Layer 0 embeddings H_0

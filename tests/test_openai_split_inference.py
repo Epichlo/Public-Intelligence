@@ -199,7 +199,8 @@ def test_create_chat_completion_split_inference_remote_validation_failure(
                         target_stage_index=2,
                         is_split_inference=True,
                         tensor_type="prompt_text",
-                        data=["leaked prompt"],
+                        data=[1.0, 2.0],
+                        shape=[1, 2],
                     )
                     self.payload = invalid.to_framed_bytes()
 
