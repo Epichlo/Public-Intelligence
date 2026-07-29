@@ -156,26 +156,26 @@ def test_create_chat_completion_split_inference_remote_timeout(valid_token: str)
         def undeclare(self) -> None:
             pass
 
-    client = TestClient(app)
-    app.state.stream_router = DummyStreamRouter()
-    app.state.zenoh_session = DummyZenohSession()
-    orig_timeout = getattr(get_settings(), "split_inference_timeout_seconds", 5.0)
-    get_settings().split_inference_timeout_seconds = 0.02
+    with TestClient(app) as client:
+        app.state.stream_router = DummyStreamRouter()
+        app.state.zenoh_session = DummyZenohSession()
+        orig_timeout = getattr(get_settings(), "split_inference_timeout_seconds", 5.0)
+        get_settings().split_inference_timeout_seconds = 0.02
 
-    try:
-        headers = {"Authorization": f"Bearer {valid_token}"}
-        payload = {
-            "model": "llama3",
-            "messages": [{"role": "user", "content": "Timeout split test"}],
-            "split_inference": True,
-        }
-        response = client.post("/v1/chat/completions", json=payload, headers=headers)
-        assert response.status_code == 504
-        assert "Gateway Timeout" in response.json()["detail"]
-    finally:
-        get_settings().split_inference_timeout_seconds = orig_timeout
-        app.state.stream_router = None
-        app.state.zenoh_session = None
+        try:
+            headers = {"Authorization": f"Bearer {valid_token}"}
+            payload = {
+                "model": "llama3",
+                "messages": [{"role": "user", "content": "Timeout split test"}],
+                "split_inference": True,
+            }
+            response = client.post("/v1/chat/completions", json=payload, headers=headers)
+            assert response.status_code == 504
+            assert "Gateway Timeout" in response.json()["detail"]
+        finally:
+            get_settings().split_inference_timeout_seconds = orig_timeout
+            app.state.stream_router = None
+            app.state.zenoh_session = None
 
 
 def test_create_chat_completion_split_inference_remote_validation_failure(
@@ -210,23 +210,23 @@ def test_create_chat_completion_split_inference_remote_validation_failure(
         def undeclare(self) -> None:
             pass
 
-    client = TestClient(app)
-    app.state.stream_router = DummyStreamRouter()
-    app.state.zenoh_session = DummyZenohSession()
-    orig_timeout = getattr(get_settings(), "split_inference_timeout_seconds", 5.0)
-    get_settings().split_inference_timeout_seconds = 1.0
+    with TestClient(app) as client:
+        app.state.stream_router = DummyStreamRouter()
+        app.state.zenoh_session = DummyZenohSession()
+        orig_timeout = getattr(get_settings(), "split_inference_timeout_seconds", 5.0)
+        get_settings().split_inference_timeout_seconds = 1.0
 
-    try:
-        headers = {"Authorization": f"Bearer {valid_token}"}
-        payload = {
-            "model": "llama3",
-            "messages": [{"role": "user", "content": "Validation failure test"}],
-            "split_inference": True,
-        }
-        response = client.post("/v1/chat/completions", json=payload, headers=headers)
-        assert response.status_code == 502
-        assert "Bad Gateway" in response.json()["detail"]
-    finally:
-        get_settings().split_inference_timeout_seconds = orig_timeout
-        app.state.stream_router = None
-        app.state.zenoh_session = None
+        try:
+            headers = {"Authorization": f"Bearer {valid_token}"}
+            payload = {
+                "model": "llama3",
+                "messages": [{"role": "user", "content": "Validation failure test"}],
+                "split_inference": True,
+            }
+            response = client.post("/v1/chat/completions", json=payload, headers=headers)
+            assert response.status_code == 502
+            assert "Bad Gateway" in response.json()["detail"]
+        finally:
+            get_settings().split_inference_timeout_seconds = orig_timeout
+            app.state.stream_router = None
+            app.state.zenoh_session = None
