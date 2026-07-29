@@ -250,6 +250,58 @@ class LocalBoundaryEngine:
             sequence_id=0,
         )
 
+    def generate_speculative_candidates(
+        self, prompt: str, k: int = 5, task_id: str = ""
+    ) -> Any:
+        """Generate candidate token block (K=5) locally on the edge boundary engine.
+
+        Args:
+            prompt: Text prompt string.
+            k: Speculative candidate block size (default 5).
+            task_id: Unique task identifier.
+
+        Returns:
+            DraftBlockPayload containing candidate tokens and batched activations.
+        """
+        from node.models.sharding import DraftBlockPayload
+
+        token_ids = self._tokenize(prompt)
+        candidate_tokens: list[int] = []
+        curr_ids = list(token_ids)
+
+        for _ in range(k):
+            next_id = (curr_ids[-1] * 7 + 13) % self.vocab_size
+            candidate_tokens.append(next_id)
+            curr_ids.append(next_id)
+
+        all_ids = token_ids + candidate_tokens
+        seq_len = len(all_ids)
+        h_flat: list[float] = []
+        for tid in all_ids:
+            h_flat.extend(self.embedding_matrix[tid % self.vocab_size])
+
+        activation_payload = TensorPayload(
+            task_id=task_id,
+            stage_index=0,
+            target_stage_index=1,
+            is_split_inference=True,
+            tensor_type="activation",
+            data=h_flat,
+            shape=[1, seq_len, self.hidden_dim],
+            dtype="float32",
+            is_speculative=True,
+            speculative_block_size=k,
+        )
+
+        return DraftBlockPayload(
+            task_id=task_id,
+            sequence_start_id=0,
+            speculative_k=k,
+            candidate_tokens=candidate_tokens,
+            draft_logprobs=[-0.5] * k,
+            activation_payload=activation_payload,
+        )
+
     def unembed_logits(
         self, activation_payload: TensorPayload, temperature: float = 1.0
     ) -> tuple[int, str]:

@@ -101,6 +101,21 @@ class TensorPayload(BaseModel):
         default=None,
         description="Optional shared memory block name for co-located IPC",
     )
+    is_quantized: bool = Field(
+        default=False, description="Whether activation payload uses FP8/FP4 quantization."
+    )
+    quantization_type: str | None = Field(
+        default=None, description="Quantization scheme used (e.g. 'fp8_e4m3')."
+    )
+    scale_factor: float = Field(
+        default=1.0, description="Dynamic scaling factor for dequantization."
+    )
+    is_speculative: bool = Field(
+        default=False, description="Whether payload contains multi-token candidate blocks."
+    )
+    speculative_block_size: int = Field(
+        default=1, description="Number of speculative candidate tokens (K)."
+    )
 
     def validate_split_activation_boundary(self) -> None:
         """Reject payloads that violate the split-inference activation-only boundary."""
@@ -111,8 +126,15 @@ class TensorPayload(BaseModel):
         if self.tensor_type not in allowed_tensor_types:
             raise ValueError("Split stage payload tensor_type must be an activation")
 
-        allowed_dtypes = {"float16", "float32", "float64", "bfloat16"}
-        if self.dtype not in allowed_dtypes:
+        allowed_dtypes = {
+            "float16",
+            "float32",
+            "float64",
+            "bfloat16",
+            "float8_e4m3",
+            "float8_e4m3fn",
+        }
+        if self.dtype not in allowed_dtypes and not self.is_quantized:
             raise ValueError("Split stage payload dtype must be a floating-point tensor type")
 
         if not self.shape or any(dim <= 0 for dim in self.shape):
@@ -124,8 +146,6 @@ class TensorPayload(BaseModel):
         if isinstance(self.data, bytes):
             if not self.data:
                 raise ValueError("Split stage payload bytes cannot be empty")
-            if self.dtype in {"float32", "float64"} and len(self.data) % 4 != 0:
-                raise ValueError("Split stage payload bytes must align to float elements")
             return
 
         if not self.data:
@@ -149,6 +169,11 @@ class TensorPayload(BaseModel):
             "sequence_id": self.sequence_id,
             "shm_name": self.shm_name,
             "is_bytes": is_bytes,
+            "is_quantized": self.is_quantized,
+            "quantization_type": self.quantization_type,
+            "scale_factor": self.scale_factor,
+            "is_speculative": self.is_speculative,
+            "speculative_block_size": self.speculative_block_size,
         }
         meta_bytes = json.dumps(meta).encode("utf-8")
         meta_len = len(meta_bytes)
@@ -185,4 +210,33 @@ class TensorPayload(BaseModel):
             dtype=meta.get("dtype", "float32"),
             sequence_id=meta.get("sequence_id", 0),
             shm_name=meta.get("shm_name"),
+            is_quantized=meta.get("is_quantized", False),
+            quantization_type=meta.get("quantization_type"),
+            scale_factor=meta.get("scale_factor", 1.0),
+            is_speculative=meta.get("is_speculative", False),
+            speculative_block_size=meta.get("speculative_block_size", 1),
         )
+
+
+class DraftBlockPayload(BaseModel):
+    """Speculative candidate block payload sent from local edge gateway over WAN."""
+
+    task_id: str = Field(description="Unique task identifier")
+    sequence_start_id: int = Field(default=0, ge=0, description="Starting sequence position index")
+    speculative_k: int = Field(default=5, ge=1, le=16, description="Number of candidate tokens (K)")
+    candidate_tokens: list[int] = Field(default_factory=list, description="Candidate token IDs")
+    draft_logprobs: list[float] = Field(default_factory=list, description="Draft logprobs")
+    activation_payload: TensorPayload = Field(description="Batched activation tensor payload")
+
+
+class VerificationResult(BaseModel):
+    """Result of single-pass speculative verification over WAN link."""
+
+    task_id: str = Field(description="Unique task identifier")
+    sequence_start_id: int = Field(default=0, ge=0, description="Starting sequence position")
+    n_accepted: int = Field(default=1, ge=0, le=16, description="Number of accepted tokens")
+    accepted_tokens: list[int] = Field(default_factory=list, description="Accepted token IDs")
+    correction_token: int | None = Field(default=None, description="Correction token ID")
+    verified_activations: TensorPayload | None = Field(
+        default=None, description="Verified output activation payload"
+    )
