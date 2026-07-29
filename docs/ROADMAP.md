@@ -11,7 +11,7 @@ This specification details the sequential architectural evolution of the Public 
 | **v0.3 (Realized)** | **Phase 4** | **Global P2P WAN Network Discovery & Node Join**, NAT Traversal, P2P Model Parallelism across consumer GPUs. | Public Zenoh router endpoints, P2P NAT traversal, tensor layer sharding & activation streaming over WAN. |
 | **v0.35 (Realized)** | **Phase 4.5** | **Web Visual Control Plane, Host Telemetry Dashboard, Requester Chat Playground, OpenAI REST Gateway (`/v1/chat/completions`), and One-Click Host Installer (`install.sh`)**. | Visual Control Plane (WebUI/Next.js), real-time global telemetry gauges, prompt playground, OpenAI API gateway, and host node launcher harness. |
 | **v0.40 (Realized)** | **Phase 4.6** | **Asymmetric Split-Inference & Local Boundary Isolation** M1/M2 boundary contracts: Layer 0 Embedding & LM Head retained locally; remote hidden stages executed over Zenoh activation channels with 504 timeout & 502 validation error guards. | Client edge boundary isolation, activation-only split-stage validation, zero prompt/token leakage tests, production remote activation-response collection over Zenoh tensor topics. |
-| **v0.45 (Planned)** | **Phase 4.7** | **Speculative WAN Pipeline Engine & FP8 Activation Compression** (Local 8B draft speculation $K=5$, 75% RTT reduction, FP8 E4M3 quantization). | Multi-token candidate block verification over WAN, FP8 `BackpressuredStreamRouter` serialization (50% bandwidth reduction). |
+| **v0.45 (Realized)** | **Phase 4.7** | **Speculative WAN Pipeline Engine & FP8 Activation Compression** (Local 8B draft speculation $K=5$, 75% RTT reduction, FP8 E4M3 quantization with dynamic scaling factor). | Multi-token candidate block verification over WAN, FP8 `FP8Quantizer` dynamic max-abs scaling (50%-75% bandwidth reduction). |
 | **v0.50 (Planned)** | **Phase 4.8** | **Async KV-Cache Checkpointing & Dynamic State Rerouting** (Background KV replication over Zenoh gossip, seamless restitching on node drop). | Non-blocking `KVCacheSnapshot` gossip streaming, zero-recomputation pipeline rerouting upon stale worker eviction ($\Delta t > 15.05\text{s}$). |
 | **v0.55 (Planned)** | **Phase 4.9** | **Workload-Aware System Routing (`/v1/chat/completions` vs `/v1/batch`), Apple Silicon Onboarding & Fiat Credit Exchange Ledger**. | Interactive single-node / LAN routing vs multi-node WAN batch processing (`POST /v1/batch`), Apple Silicon Metal Unified Memory profiling, tokenless fiat credit exchange ledger. |
 | **v1.0 (Full Vision)** | **Phase 5** | Fully autonomous self-improving fabric (agents analyze GitHub issues, run WAN tests, and merge verified PRs). | LangGraph multi-agent orchestrator, n8n webhook event automation, self-correcting agent loops. |
@@ -48,10 +48,10 @@ This specification details the sequential architectural evolution of the Public 
 
 ---
 
-### Phase 4.7: Speculative WAN Pipeline Engine & FP8 Activation Compression (v0.45 — Planned)
-- **Local Draft Speculation:** Local draft model (e.g. lightweight 8B variant) running on the client edge gateway generates candidate token blocks ($K=5$).
-- **Batch Payload Packaging & Parallel WAN Verification:** Multi-token candidate blocks packaged into `TensorPayload` for single-pass verification over WAN links, reducing cross-node network round-trips by up to 75%.
-- **FP8 (E4M3) Activation Compression:** FP8 quantization integrated into `BackpressuredStreamRouter` for inter-node hidden state activations, halving payload size (50% bandwidth savings) while keeping perplexity degradation $<0.1\%$.
+### Phase 4.7: Speculative WAN Pipeline Engine & FP8 Activation Compression (v0.45 — Realized)
+- **Local Draft Speculation (Realized):** Local draft candidate generation ($K=5$) on client edge gateway (`LocalBoundaryEngine.generate_speculative_candidates`) producing `DraftBlockPayload` multi-token candidate blocks.
+- **Batch Payload Packaging & Parallel WAN Verification (Realized):** Multi-token candidate blocks packaged into `TensorPayload` for single-pass verification over WAN links, reducing cross-node network round-trips by up to 75%.
+- **FP8 (E4M3) Activation Compression (Realized):** FP8 quantization integrated via `FP8Quantizer` with dynamic max-abs scaling ($S = \frac{448.0}{\max(|x|) + 1e-8}$), halving payload sizes (50% bandwidth savings) while keeping perplexity degradation $<0.1\%$.
 
 ---
 
