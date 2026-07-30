@@ -92,8 +92,9 @@ TELEMETRY_SECRET_KEY=pi_telemetry_secure_default_secret_key
 "@
     Set-Content -Path $EnvFile -Value $EnvContent -Encoding UTF8
     Write-Host "[OK] Environment configured: $EnvFile" -ForegroundColor Green
-} elseif ($env:SCHEDULER_URL) {
+} else {
     (Get-Content $EnvFile) -replace "NODE_SCHEDULER_URL=.*", "NODE_SCHEDULER_URL=$SchedulerUrl" | Set-Content $EnvFile
+    Write-Host "[OK] Updated NODE_SCHEDULER_URL in $EnvFile to $SchedulerUrl" -ForegroundColor Green
 }
 
 # Virtual Environment
@@ -114,10 +115,19 @@ Write-Host "====================================================================
 Write-Host "               Installation Complete! Host Node is Ready.                    " -ForegroundColor Green
 Write-Host "==============================================================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "Starting Host Node Daemon in background..." -ForegroundColor Yellow
-$StartCmd = "& '$VenvPython' -m node.main --host 0.0.0.0 --port 8080"
-Start-Process -FilePath $VenvPython -ArgumentList "-m node.main --host 0.0.0.0 --port 8080" -WorkingDirectory $NodeDir -WindowStyle Hidden
 
-Write-Host "[OK] Host Node daemon launched successfully!" -ForegroundColor Green
-Write-Host "To stop or control your node manually, run:" -ForegroundColor Yellow
+# Launch detached background daemon using VBScript wrapper
+Write-Host "Launching Host Node Daemon in persistent background..." -ForegroundColor Yellow
+$VbsPath = Join-Path $NodeDir "start_node.vbs"
+$VbsContent = @"
+Set WshShell = CreateObject("WScript.Shell")
+WshShell.Run """" & "$VenvPython" & """ -m node.main --host 0.0.0.0 --port 8080", 0, False
+"@
+Set-Content -Path $VbsPath -Value $VbsContent -Encoding UTF8
+Start-Process -FilePath "wscript.exe" -ArgumentList "`"$VbsPath`"" -WorkingDirectory $NodeDir
+
+Write-Host "[OK] Host Node daemon launched successfully in persistent background!" -ForegroundColor Green
+Write-Host "[INFO] The node will continue running even if you close PowerShell." -ForegroundColor Blue
+Write-Host ""
+Write-Host "To manually check or restart your node, run:" -ForegroundColor Yellow
 Write-Host "   & '$VenvPython' -m node.main --host 0.0.0.0 --port 8080" -ForegroundColor Cyan
