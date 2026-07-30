@@ -74,11 +74,16 @@ class RaftConsensusEngine:
                 return
 
             self._loop = asyncio.get_running_loop()
-            self.session = zenoh.open(self.config)
-            self.publisher = self.session.declare_publisher("public-intelligence/net/consensus/*")
-            self.subscriber = self.session.declare_subscriber(
-                "public-intelligence/net/consensus/*", self._on_message
-            )
+            try:
+                self.session = zenoh.open(self.config)
+                self.publisher = self.session.declare_publisher("public-intelligence/net/consensus/*")
+                self.subscriber = self.session.declare_subscriber(
+                    "public-intelligence/net/consensus/*", self._on_message
+                )
+            except Exception as e:
+                logger.warning("consensus_zenoh_session_warning", error=str(e))
+                self._is_active = False
+                return
 
             self._is_active = True
             self.last_heartbeat_time = time.time()
