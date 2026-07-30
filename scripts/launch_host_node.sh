@@ -102,6 +102,7 @@ start_node() {
         export PYTHONPATH="${NODE_DIR}/src:${PYTHONPATH:-}"
         nohup $EXEC_CMD >> "$LOG_FILE" 2>&1 &
         echo $! > "$PID_FILE"
+        disown $! 2>/dev/null || true
     )
 
     sleep 1
