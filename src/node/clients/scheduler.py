@@ -1,11 +1,14 @@
 """Scheduler client implementation."""
 
+import logging
 from typing import Any
 
 import httpx
 
 from node.core.configuration import Settings
 from node.models import Heartbeat, NodeInfo
+
+logger = logging.getLogger(__name__)
 
 
 class SchedulerError(Exception):
@@ -95,7 +98,13 @@ class SchedulerClient:
             "vram_total_gb": 16.0,
             "vram_available_gb": 16.0,
         }
-        await self._send_request("POST", "/nodes/register", payload)
+        try:
+            await self._send_request("POST", "/nodes/register", payload)
+        except SchedulerError as e:
+            if "409" in str(e):
+                logger.info("Node already registered with Scheduler.")
+            else:
+                raise
 
     async def heartbeat(self, heartbeat: Heartbeat) -> None:
         """Send a periodic heartbeat update to the Scheduler.

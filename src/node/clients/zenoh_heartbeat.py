@@ -68,11 +68,10 @@ class ZenohHeartbeatClient:
                 self._key_expr,
             )
         except Exception as e:
-            logger.error("Failed to initialize Zenoh session: %s", e)
+            logger.warning("Zenoh WAN connection deferred: %s", e)
             self.session = None
             self.publisher = None
             self.liveliness_token = None
-            raise
 
     def is_connected(self) -> bool:
         """Return whether the Zenoh session is active and connected.
