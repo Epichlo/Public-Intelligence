@@ -54,7 +54,10 @@ if ($MyInvocation.MyCommand.Path -and (Test-Path -Path $MyInvocation.MyCommand.P
 $NodeDir = $ScriptDir
 if (-not (Test-Path (Join-Path $NodeDir "pyproject.toml"))) {
     $WorkDir = Join-Path $env:USERPROFILE "PublicIntelligenceNode"
-    if (-not (Test-Path (Join-Path $WorkDir "pyproject.toml"))) {
+    if (Test-Path (Join-Path $WorkDir ".git")) {
+        Write-Host "[INFO] Updating existing Node package from GitHub..." -ForegroundColor Blue
+        git -C $WorkDir pull origin main --quiet
+    } elseif (-not (Test-Path (Join-Path $WorkDir "pyproject.toml"))) {
         Write-Host "[INFO] Downloading Public Intelligence Node package from GitHub..." -ForegroundColor Blue
         if (Get-Command "git" -ErrorAction SilentlyContinue) {
             git clone --depth 1 https://github.com/Epichlo/Node-PublicIntelligence.git $WorkDir --quiet
