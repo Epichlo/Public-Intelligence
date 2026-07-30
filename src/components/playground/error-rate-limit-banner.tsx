@@ -50,7 +50,9 @@ export function ErrorRateLimitBanner({ error, onDismiss }: ErrorRateLimitBannerP
                 ? "HTTP 503: Compute Node Unavailable"
                 : `Error (${error.statusCode || "Network"})`}
             </h4>
-            <p className="mt-1 text-xs leading-relaxed opacity-90">{error.message}</p>
+            <p className="mt-1 text-xs leading-relaxed opacity-90">
+              {typeof error.message === "string" ? error.message : JSON.stringify(error.message)}
+            </p>
 
             {/* Actionable Advice */}
             <div className="mt-2 text-[11px] font-mono opacity-80 border-t border-current/20 pt-2">

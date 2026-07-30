@@ -129,14 +129,29 @@ export default function PlaygroundPage() {
         let errMsg = errText;
         try {
           const parsed = JSON.parse(errText);
-          errMsg = parsed.detail || parsed.error || errText;
+          const rawDetail = parsed.detail ?? parsed.error ?? errText;
+          if (typeof rawDetail === "string") {
+            errMsg = rawDetail;
+          } else if (Array.isArray(rawDetail)) {
+            errMsg = rawDetail
+              .map((item: any) =>
+                typeof item === "string"
+                  ? item
+                  : item?.msg
+                  ? `${item.loc ? item.loc.join(".") + ": " : ""}${item.msg}`
+                  : JSON.stringify(item)
+              )
+              .join("; ");
+          } else if (typeof rawDetail === "object" && rawDetail !== null) {
+            errMsg = (rawDetail as any).message || (rawDetail as any).msg || JSON.stringify(rawDetail);
+          }
         } catch {
           // ignore
         }
 
         setErrorState({
           statusCode: response.status,
-          message: errMsg || `Request failed with status ${response.status}`,
+          message: typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg),
         });
 
         // Remove empty assistant placeholder on error

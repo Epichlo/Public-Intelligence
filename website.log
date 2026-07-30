@@ -1,0 +1,144 @@
+
+> website@0.1.0 dev
+> next dev -p 3000
+
+▲ Next.js 16.2.10 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://10.22.69.163:3000
+✓ Ready in 116ms
+⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of /Users/atharvdeshpande/package-lock.json as the root directory.
+ To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.
+ Detected additional lockfiles: 
+   * /Users/atharvdeshpande/Desktop/Projects/Epichlo/Public-Intelligence/website/package-lock.json
+
+
+ HEAD / 200 in 1371ms (next.js: 1218ms, application-code: 153ms)
+ HEAD / 200 in 23ms (next.js: 1518µs, application-code: 21ms)
+ GET / 200 in 62ms (next.js: 3ms, application-code: 58ms)
+ GET /playground 200 in 200ms (next.js: 188ms, application-code: 12ms)
+ GET /api/models 200 in 128ms (next.js: 116ms, application-code: 12ms)
+ GET /api/models 200 in 4ms (next.js: 616µs, application-code: 3ms)
+ POST /api/chat/completions 422 in 97ms (next.js: 91ms, application-code: 6ms)
+[browser] Uncaught Error: Objects are not valid as a React child (found: object with keys {type, loc, msg, input}). If you meant to render a collection of children, use an array instead.
+    at PlaygroundPage (src/app/playground/page.tsx:268:9)
+  266 |
+  267 |         {/* Error / Rate Limit Alert Banner */}
+> 268 |         <ErrorRateLimitBanner error={errorState} onDismiss={() => setErrorState(null)} />
+      |         ^
+  269 |
+  270 |         {/* Main Playground Split Grid */}
+  271 |         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+ GET /playground? 200 in 54ms (next.js: 2ms, application-code: 51ms)
+ GET /api/models 200 in 6ms (next.js: 1171µs, application-code: 4ms)
+ GET /playground? 200 in 45ms (next.js: 4ms, application-code: 41ms)
+ GET /api/models 200 in 6ms (next.js: 1343µs, application-code: 5ms)
+ GET /playground? 200 in 40ms (next.js: 3ms, application-code: 37ms)
+ GET /api/models 200 in 5ms (next.js: 1331µs, application-code: 4ms)
+ GET / 200 in 37ms (next.js: 3ms, application-code: 35ms)
+ GET /dashboard 200 in 187ms (next.js: 176ms, application-code: 11ms)
+ GET /api/node/telemetry 200 in 71ms (next.js: 52ms, application-code: 19ms)
+ GET /api/node/telemetry 200 in 72ms (next.js: 56ms, application-code: 16ms)
+ GET /api/node/telemetry 200 in 17ms (next.js: 4ms, application-code: 13ms)
+ GET /api/node/telemetry 200 in 13ms (next.js: 3ms, application-code: 10ms)
+ GET /api/node/telemetry 200 in 15ms (next.js: 4ms, application-code: 11ms)
+ GET /api/node/telemetry 200 in 11ms (next.js: 3ms, application-code: 8ms)
+ GET /api/node/telemetry 200 in 13ms (next.js: 3ms, application-code: 10ms)
+ GET /api/node/telemetry 200 in 10ms (next.js: 2ms, application-code: 8ms)
+ GET /api/node/telemetry 200 in 16ms (next.js: 5ms, application-code: 11ms)
+ GET /api/node/telemetry 200 in 11ms (next.js: 3ms, application-code: 8ms)
+ GET /api/node/telemetry 200 in 11ms (next.js: 3ms, application-code: 8ms)
+ GET /api/node/telemetry 200 in 10ms (next.js: 2ms, application-code: 7ms)
+ GET /api/node/telemetry 200 in 8ms (next.js: 2ms, application-code: 6ms)
+ GET /api/node/telemetry 200 in 12ms (next.js: 3ms, application-code: 10ms)
+ GET /contribute 200 in 196ms (next.js: 180ms, application-code: 17ms)
+ GET /api/sandbox/logs/stream 200 in 32.4s (next.js: 64ms, application-code: 32.3s)
+ GET /dashboard 200 in 19ms (next.js: 3ms, application-code: 15ms)
+ GET /api/node/telemetry 200 in 15ms (next.js: 1782µs, application-code: 14ms)
+ GET /api/node/telemetry 200 in 16ms (next.js: 5ms, application-code: 10ms)
+ GET /api/node/telemetry 200 in 19ms (next.js: 3ms, application-code: 16ms)
+ GET /api/node/telemetry 200 in 13ms (next.js: 2ms, application-code: 11ms)
+ GET /api/node/telemetry 200 in 9ms (next.js: 1697µs, application-code: 7ms)
+ GET /api/node/telemetry 200 in 10ms (next.js: 2ms, application-code: 7ms)
+ GET /api/node/telemetry 200 in 13ms (next.js: 5ms, application-code: 8ms)
+ GET /api/node/telemetry 200 in 10ms (next.js: 2ms, application-code: 8ms)
+ GET /api/node/telemetry 200 in 11ms (next.js: 3ms, application-code: 8ms)
+ GET /api/node/telemetry 200 in 8ms (next.js: 2ms, application-code: 6ms)
+ GET /api/node/telemetry 200 in 11ms (next.js: 2ms, application-code: 8ms)
+ GET /api/node/telemetry 200 in 10ms (next.js: 2ms, application-code: 7ms)
+ GET /api/node/telemetry 200 in 10ms (next.js: 2ms, application-code: 8ms)
+ GET /api/node/telemetry 200 in 10ms (next.js: 3ms, application-code: 7ms)
+ GET /api/node/telemetry 200 in 9ms (next.js: 2ms, application-code: 7ms)
+ GET /api/node/telemetry 200 in 6ms (next.js: 1270µs, application-code: 5ms)
+ GET /api/node/telemetry 200 in 10ms (next.js: 3ms, application-code: 6ms)
+ GET /api/node/telemetry 200 in 9ms (next.js: 2ms, application-code: 7ms)
+ GET /api/node/telemetry 200 in 11ms (next.js: 2ms, application-code: 8ms)
+ GET /api/node/telemetry 200 in 11ms (next.js: 2ms, application-code: 9ms)
+ GET /api/node/telemetry 200 in 10ms (next.js: 2ms, application-code: 8ms)
+ GET /api/node/telemetry 200 in 9ms (next.js: 2ms, application-code: 7ms)
+ GET /api/node/telemetry 200 in 4ms (next.js: 922µs, application-code: 3ms)
+ GET /api/node/telemetry 200 in 9ms (next.js: 3ms, application-code: 7ms)
+ GET /api/node/telemetry 200 in 10ms (next.js: 2ms, application-code: 8ms)
+ GET /api/node/telemetry 200 in 12ms (next.js: 3ms, application-code: 9ms)
+ GET /api/node/telemetry 200 in 18ms (next.js: 3ms, application-code: 15ms)
+ GET /api/node/telemetry 200 in 12ms (next.js: 3ms, application-code: 9ms)
+ GET /playground 200 in 26ms (next.js: 2ms, application-code: 23ms)
+ GET /api/sandbox/logs/stream 200 in 65s (next.js: 4ms, application-code: 65s)
+ GET /api/models 200 in 10ms (next.js: 2ms, application-code: 8ms)
+ GET /api/models 200 in 5ms (next.js: 848µs, application-code: 4ms)
+ POST /api/chat/completions 422 in 13ms (next.js: 3ms, application-code: 10ms)
+[browser] Uncaught Error: Objects are not valid as a React child (found: object with keys {type, loc, msg, input}). If you meant to render a collection of children, use an array instead.
+    at PlaygroundPage (src/app/playground/page.tsx:268:9)
+  266 |
+  267 |         {/* Error / Rate Limit Alert Banner */}
+> 268 |         <ErrorRateLimitBanner error={errorState} onDismiss={() => setErrorState(null)} />
+      |         ^
+  269 |
+  270 |         {/* Main Playground Split Grid */}
+  271 |         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+✓ Compiled in 37ms
+[browser] ./Desktop/Projects/Epichlo/Public-Intelligence/website/src/app/playground/page.tsx:249:7
+Expected a semicolon
+  247 |         });
+  248 |       }
+> 249 |     } finally {
+      |       ^^^^^^^
+  250 |       setIsGenerating(false);
+  251 |       abortControllerRef.current = null;
+  252 |     }
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./Desktop/Projects/Epichlo/Public-Intelligence/website/src/app/playground/page.tsx [Client Component Browser]
+    ./Desktop/Projects/Epichlo/Public-Intelligence/website/src/app/playground/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./Desktop/Projects/Epichlo/Public-Intelligence/website/src/app/playground/page.tsx [Client Component SSR]
+    ./Desktop/Projects/Epichlo/Public-Intelligence/website/src/app/playground/page.tsx [Server Component] 
+[browser] ./Desktop/Projects/Epichlo/Public-Intelligence/website/src/app/playground/page.tsx:249:7
+Expected a semicolon
+  247 |         });
+  248 |       }
+> 249 |     } finally {
+      |       ^^^^^^^
+  250 |       setIsGenerating(false);
+  251 |       abortControllerRef.current = null;
+  252 |     }
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./Desktop/Projects/Epichlo/Public-Intelligence/website/src/app/playground/page.tsx [Client Component Browser]
+    ./Desktop/Projects/Epichlo/Public-Intelligence/website/src/app/playground/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./Desktop/Projects/Epichlo/Public-Intelligence/website/src/app/playground/page.tsx [Client Component SSR]
+    ./Desktop/Projects/Epichlo/Public-Intelligence/website/src/app/playground/page.tsx [Server Component] 
+✓ Compiled in 17ms
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ GET /playground 200 in 23ms (next.js: 2ms, application-code: 21ms)
+ GET /api/models 200 in 5ms (next.js: 1132µs, application-code: 4ms)
