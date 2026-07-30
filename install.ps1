@@ -92,7 +92,7 @@ TELEMETRY_SECRET_KEY=pi_telemetry_secure_default_secret_key
 "@
     Set-Content -Path $EnvFile -Value $EnvContent -Encoding UTF8
     Write-Host "[OK] Environment configured: $EnvFile" -ForegroundColor Green
-} else if ($env:SCHEDULER_URL) {
+} elseif ($env:SCHEDULER_URL) {
     (Get-Content $EnvFile) -replace "NODE_SCHEDULER_URL=.*", "NODE_SCHEDULER_URL=$SchedulerUrl" | Set-Content $EnvFile
 }
 
