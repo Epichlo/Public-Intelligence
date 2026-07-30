@@ -79,7 +79,7 @@ if (-not (Test-Path (Join-Path $NodeDir "pyproject.toml"))) {
 }
 
 # Environment Setup
-$SchedulerUrl = if ($env:SCHEDULER_URL) { $env:SCHEDULER_URL } else { "http://localhost:8000" }
+$SchedulerUrl = if ($env:SCHEDULER_URL) { $env:SCHEDULER_URL } else { "https://scheduler-publicintelligence.onrender.com" }
 $EnvFile = Join-Path $NodeDir ".env"
 if (-not (Test-Path $EnvFile)) {
     Write-Host "[INFO] Creating Node/.env configuration..." -ForegroundColor Blue

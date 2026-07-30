@@ -258,7 +258,7 @@ configure_environment() {
         return 0
     fi
 
-    local SCHEDULER_URL_VAL="${SCHEDULER_URL:-http://localhost:8000}"
+    local SCHEDULER_URL_VAL="${SCHEDULER_URL:-https://scheduler-publicintelligence.onrender.com}"
 
     if [[ ! -f "$ENV_FILE" ]] || [[ "$FORCE" == "true" ]]; then
         cat <<EOF > "$ENV_FILE"
