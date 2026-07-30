@@ -16,6 +16,8 @@ export async function POST(request: Request) {
       headers["Authorization"] = authHeader;
     } else if (process.env.SCHEDULER_NETWORK_AUTH_TOKEN) {
       headers["Authorization"] = `Bearer ${process.env.SCHEDULER_NETWORK_AUTH_TOKEN}`;
+    } else {
+      headers["Authorization"] = "Bearer dev_token";
     }
 
     const upstreamRes = await fetch(upstreamUrl, {
