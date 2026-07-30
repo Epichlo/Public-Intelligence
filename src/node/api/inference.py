@@ -87,25 +87,12 @@ async def infer(
 
                     async for chunk in generator:
                         chunk_bytes = chunk.encode("utf-8")
-                        if is_local:
-                            if router is not None:
-                                token_bytes = await router.send_chunk(
-                                    chunk_bytes,
-                                    is_local=True,
-                                )
-                                token = token_bytes.decode("utf-8")
-                            else:
-                                shm_name = SharedMemoryIPC.write_data(chunk_bytes)
-                                token = f"shm://{shm_name}"
-                            created_shms.append(token.split("shm://")[-1])
-                            yield f"{token}\n"
-                        else:
-                            if router is not None:
-                                await router.send_chunk(
-                                    chunk_bytes,
-                                    is_local=False,
-                                )
-                            yield chunk
+                        if router is not None:
+                            await router.send_chunk(
+                                chunk_bytes,
+                                is_local=is_local,
+                            )
+                        yield chunk
                 finally:
                     if router is not None:
                         router.stop()
