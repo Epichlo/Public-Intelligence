@@ -45,14 +45,36 @@ if (-not $PythonCmd) {
 $PyVersion = & $PythonCmd --version
 Write-Host "[OK] $PyVersion verified." -ForegroundColor Green
 
-# Environment Setup
+# Target Working Directory Resolution
 $ScriptDir = Get-Location
 if ($MyInvocation.MyCommand.Path -and (Test-Path -Path $MyInvocation.MyCommand.Path -PathType Leaf)) {
     $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 }
 
 $NodeDir = $ScriptDir
+if (-not (Test-Path (Join-Path $NodeDir "pyproject.toml"))) {
+    $WorkDir = Join-Path $env:USERPROFILE "PublicIntelligenceNode"
+    if (-not (Test-Path (Join-Path $WorkDir "pyproject.toml"))) {
+        Write-Host "[INFO] Downloading Public Intelligence Node package from GitHub..." -ForegroundColor Blue
+        if (Get-Command "git" -ErrorAction SilentlyContinue) {
+            git clone --depth 1 https://github.com/Epichlo/Node-PublicIntelligence.git $WorkDir --quiet
+        } else {
+            $ZipPath = Join-Path $env:TEMP "node_main.zip"
+            Invoke-WebRequest -Uri "https://github.com/Epichlo/Node-PublicIntelligence/archive/refs/heads/main.zip" -OutFile $ZipPath
+            Expand-Archive -Path $ZipPath -DestinationPath $env:TEMP -Force
+            $Extracted = Join-Path $env:TEMP "Node-PublicIntelligence-main"
+            if (Test-Path $Extracted) {
+                if (-not (Test-Path $WorkDir)) { New-Item -ItemType Directory -Path $WorkDir | Out-Null }
+                Copy-Item -Path "$Extracted\*" -Destination $WorkDir -Recurse -Force
+                Remove-Item -Path $Extracted -Recurse -Force
+            }
+            if (Test-Path $ZipPath) { Remove-Item -Path $ZipPath -Force }
+        }
+    }
+    $NodeDir = $WorkDir
+}
 
+# Environment Setup
 $EnvFile = Join-Path $NodeDir ".env"
 if (-not (Test-Path $EnvFile)) {
     Write-Host "[INFO] Creating Node/.env configuration..." -ForegroundColor Blue
@@ -89,5 +111,10 @@ Write-Host "====================================================================
 Write-Host "               Installation Complete! Host Node is Ready.                    " -ForegroundColor Green
 Write-Host "==============================================================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "To start your Host Node daemon on Windows, run:" -ForegroundColor Yellow
+Write-Host "Starting Host Node Daemon in background..." -ForegroundColor Yellow
+$StartCmd = "& '$VenvPython' -m node.main --host 0.0.0.0 --port 8080"
+Start-Process -FilePath $VenvPython -ArgumentList "-m node.main --host 0.0.0.0 --port 8080" -WorkingDirectory $NodeDir -WindowStyle Hidden
+
+Write-Host "[OK] Host Node daemon launched successfully!" -ForegroundColor Green
+Write-Host "To stop or control your node manually, run:" -ForegroundColor Yellow
 Write-Host "   & '$VenvPython' -m node.main --host 0.0.0.0 --port 8080" -ForegroundColor Cyan
