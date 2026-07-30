@@ -46,8 +46,10 @@ $PyVersion = & $PythonCmd --version
 Write-Host "[OK] $PyVersion verified." -ForegroundColor Green
 
 # Environment Setup
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
-if (-not $ScriptDir) { $ScriptDir = Get-Location }
+$ScriptDir = Get-Location
+if ($MyInvocation.MyCommand.Path -and (Test-Path -Path $MyInvocation.MyCommand.Path -PathType Leaf)) {
+    $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+}
 
 $NodeDir = $ScriptDir
 
