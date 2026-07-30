@@ -72,7 +72,11 @@ class Runtime:
 
         try:
             # 1. Discover hosted models
-            models = await self.ollama_client.list_models()
+            try:
+                models = await self.ollama_client.list_models()
+            except Exception as e:
+                logger.warning("ollama_discovery_warning", error=str(e))
+                models = []
 
             # 2. Build NodeInfo
             node_info = NodeInfo(
