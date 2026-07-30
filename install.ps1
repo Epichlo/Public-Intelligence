@@ -27,22 +27,45 @@ Write-Host "[OK]   - Host System RAM   : $RAM_GB GB" -ForegroundColor Green
 Write-Host "[OK]   - GPU Vendor / Model: $GPU_Name" -ForegroundColor Green
 Write-Host ""
 
-# Verify Python
+# Verify & Auto-Install Python
 Write-Host "[INFO] Verifying system prerequisites..." -ForegroundColor Blue
 $PythonCmd = $null
-if (Get-Command "python" -ErrorAction SilentlyContinue) {
+
+function Test-PythonCandidate ($cmd) {
+    try {
+        $res = (& $cmd --version 2>&1).ToString()
+        if ($res -like "Python 3*") { return $true }
+    } catch {}
+    return $false
+}
+
+if (Test-PythonCandidate "python") {
     $PythonCmd = "python"
-} elseif (Get-Command "py" -ErrorAction SilentlyContinue) {
+} elseif (Test-PythonCandidate "py") {
     $PythonCmd = "py"
 }
 
 if (-not $PythonCmd) {
-    Write-Host "[ERROR] Python 3.10+ is required but not found in PATH." -ForegroundColor Red
-    Write-Host "[ERROR] Please install Python 3.10+ from https://www.python.org/downloads/ and check 'Add Python to PATH'." -ForegroundColor Red
+    Write-Host "[INFO] Python 3 not found on system. Installing Python 3.12 automatically via winget..." -ForegroundColor Yellow
+    if (Get-Command "winget" -ErrorAction SilentlyContinue) {
+        try {
+            winget install -e --id Python.Python.3.12 --silent --accept-package-agreements --accept-source-agreements
+            $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+            if (Test-PythonCandidate "python") { $PythonCmd = "python" }
+            elseif (Test-PythonCandidate "py") { $PythonCmd = "py" }
+        } catch {
+            Write-Host "[WARN] Automatic winget installation failed." -ForegroundColor Yellow
+        }
+    }
+}
+
+if (-not $PythonCmd) {
+    Write-Host "[ERROR] Python 3.10+ is required but could not be auto-installed." -ForegroundColor Red
+    Write-Host "[ERROR] Please download & install Python 3.12 from https://www.python.org/downloads/ and check 'Add Python to PATH'." -ForegroundColor Red
     exit 1
 }
 
-$PyVersion = & $PythonCmd --version
+$PyVersion = (& $PythonCmd --version 2>&1).ToString()
 Write-Host "[OK] $PyVersion verified." -ForegroundColor Green
 
 # Target Working Directory Resolution
