@@ -1,0 +1,79 @@
+name: Public Intelligence Multi-OS CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test-matrix:
+    name: Build & Test (${{ matrix.os }} - Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: Install System & Build Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Install Node & Scheduler Dependencies (POSIX)
+        if: runner.os != 'Windows'
+        run: |
+          python -m pip install --upgrade pip setuptools wheel pytest pytest-asyncio ruff mypy bandit
+          pip install -e ./Node[dev]
+          pip install -e ./Scheduler[dev]
+
+      - name: Install Node & Scheduler Dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          python -m pip install --upgrade pip setuptools wheel pytest pytest-asyncio ruff mypy bandit
+          pip install -e ./Node[dev]
+          pip install -e ./Scheduler[dev]
+
+      - name: Run PyTest Suite (Node)
+        run: |
+          pytest ./Node/tests
+
+      - name: Run PyTest Suite (Scheduler)
+        run: |
+          pytest ./Scheduler/tests
+
+      - name: Run Ruff Code Quality Checks
+        run: |
+          ruff check ./Node ./Scheduler
+          ruff format --check ./Node ./Scheduler
+
+      - name: Run Security Analysis (Bandit)
+        run: |
+          bandit -r ./Node/src ./Scheduler/src -x tests
+
+      - name: Test POSIX Installer Script (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          chmod +x install.sh scripts/launch_host_node.sh
+          ./install.sh --dry-run
+
+      - name: Test Windows PowerShell Installer (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $env:SCHEDULER_URL = "http://localhost:8000"
+          powershell -ExecutionPolicy Bypass -File .\install.ps1
