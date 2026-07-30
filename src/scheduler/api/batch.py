@@ -68,16 +68,16 @@ async def submit_batch_job(payload: BatchRequest) -> BatchResponse:
             )
         )
 
-    batch_obj = {
-        "batch_id": batch_id,
-        "status": "completed",
-        "total_items": len(payload.requests),
-        "completed_items": len(payload.requests),
-        "results": results,
-    }
-    _BATCH_TASKS[batch_id] = batch_obj
+    response = BatchResponse(
+        batch_id=batch_id,
+        status="completed",
+        total_items=len(payload.requests),
+        completed_items=len(payload.requests),
+        results=results,
+    )
+    _BATCH_TASKS[batch_id] = response.model_dump()
 
-    return BatchResponse(**batch_obj)
+    return response
 
 
 @router.get(
