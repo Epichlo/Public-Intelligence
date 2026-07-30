@@ -57,9 +57,10 @@ if (-not (Test-Path (Join-Path $NodeDir "pyproject.toml"))) {
     if (Test-Path (Join-Path $WorkDir ".git")) {
         Write-Host "[INFO] Updating existing Node package from GitHub..." -ForegroundColor Blue
         git -C $WorkDir pull origin main --quiet
-    } elseif (-not (Test-Path (Join-Path $WorkDir "pyproject.toml"))) {
+    } else {
         Write-Host "[INFO] Downloading Public Intelligence Node package from GitHub..." -ForegroundColor Blue
         if (Get-Command "git" -ErrorAction SilentlyContinue) {
+            if (Test-Path $WorkDir) { Remove-Item -Path $WorkDir -Recurse -Force }
             git clone --depth 1 https://github.com/Epichlo/Node-PublicIntelligence.git $WorkDir --quiet
         } else {
             $ZipPath = Join-Path $env:TEMP "node_main.zip"
