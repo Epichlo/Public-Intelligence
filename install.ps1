@@ -75,6 +75,7 @@ if (-not (Test-Path (Join-Path $NodeDir "pyproject.toml"))) {
 }
 
 # Environment Setup
+$SchedulerUrl = if ($env:SCHEDULER_URL) { $env:SCHEDULER_URL } else { "http://localhost:8000" }
 $EnvFile = Join-Path $NodeDir ".env"
 if (-not (Test-Path $EnvFile)) {
     Write-Host "[INFO] Creating Node/.env configuration..." -ForegroundColor Blue
@@ -82,7 +83,7 @@ if (-not (Test-Path $EnvFile)) {
 NODE_ID=node-win-$($env:COMPUTERNAME.ToLower())
 NODE_HOST=0.0.0.0
 NODE_PORT=8080
-NODE_SCHEDULER_URL=http://localhost:8000
+NODE_SCHEDULER_URL=$SchedulerUrl
 NODE_OLLAMA_HOST=http://localhost:11434
 NODE_BOOTSTRAP_ROUTERS=["tcp/bootstrap.public-intelligence.net:7447"]
 NODE_ZENOH_GOSSIP_SCOUTING=true
@@ -91,6 +92,8 @@ TELEMETRY_SECRET_KEY=pi_telemetry_secure_default_secret_key
 "@
     Set-Content -Path $EnvFile -Value $EnvContent -Encoding UTF8
     Write-Host "[OK] Environment configured: $EnvFile" -ForegroundColor Green
+} else if ($env:SCHEDULER_URL) {
+    (Get-Content $EnvFile) -replace "NODE_SCHEDULER_URL=.*", "NODE_SCHEDULER_URL=$SchedulerUrl" | Set-Content $EnvFile
 }
 
 # Virtual Environment
