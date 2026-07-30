@@ -105,6 +105,8 @@ if (-not (Test-Path $VenvDir)) {
 }
 
 $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
+$VenvPythonw = Join-Path $VenvDir "Scripts\pythonw.exe"
+if (-not (Test-Path $VenvPythonw)) { $VenvPythonw = $VenvPython }
 $VenvPip = Join-Path $VenvDir "Scripts\pip.exe"
 
 Write-Host "[INFO] Installing Node dependencies..." -ForegroundColor Blue
@@ -116,15 +118,9 @@ Write-Host "               Installation Complete! Host Node is Ready.           
 Write-Host "==============================================================================" -ForegroundColor Green
 Write-Host ""
 
-# Launch detached background daemon using VBScript wrapper
+# Launch detached background daemon using native Windows pythonw.exe
 Write-Host "Launching Host Node Daemon in persistent background..." -ForegroundColor Yellow
-$VbsPath = Join-Path $NodeDir "start_node.vbs"
-$VbsContent = @"
-Set WshShell = CreateObject("WScript.Shell")
-WshShell.Run """" & "$VenvPython" & """ -m node.main --host 0.0.0.0 --port 8080", 0, False
-"@
-Set-Content -Path $VbsPath -Value $VbsContent -Encoding UTF8
-Start-Process -FilePath "wscript.exe" -ArgumentList "`"$VbsPath`"" -WorkingDirectory $NodeDir
+Start-Process -FilePath $VenvPythonw -ArgumentList "-m node.main --host 0.0.0.0 --port 8080" -WorkingDirectory $NodeDir -WindowStyle Hidden
 
 Write-Host "[OK] Host Node daemon launched successfully in persistent background!" -ForegroundColor Green
 Write-Host "[INFO] The node will continue running even if you close PowerShell." -ForegroundColor Blue
