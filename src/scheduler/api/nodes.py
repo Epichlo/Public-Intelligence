@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 
 from scheduler.api.auth import verify_auth_token
 from scheduler.models.node import Node
@@ -29,8 +29,24 @@ RegistryDep = Annotated[NodeRegistry, Depends(get_registry)]
 async def register_node(
     node: Node,
     registry: RegistryDep,
+    x_network_auth_token: Annotated[str | None, Header(alias="X-Network-Auth-Token")] = None,
 ) -> Node:
-    """Register a compute node with the scheduler."""
+    """Register a compute node with the scheduler.
+
+    The credential the node presents here is retained so the Scheduler can
+    authenticate to that node's control API when dispatching work to it. The
+    node's `/infer` fails closed, so without this the Scheduler cannot reach it.
+
+    It is stored outside the `Node` model and so is never echoed back in this
+    response or listed by `GET /nodes`.
+
+    The credential is recorded before registration is attempted, so a node whose
+    token has rotated refreshes it even when the record already exists and the
+    call returns 409. Recording it only on success left the Scheduler holding a
+    stale token and silently 401ing every dispatch to that node.
+    """
+    registry.set_node_token(node.node_id, x_network_auth_token)
+
     try:
         await registry.register(node)
     except ValueError:
@@ -38,6 +54,7 @@ async def register_node(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Node already registered: {node.node_id}",
         ) from None
+
     return node
 
 

@@ -93,9 +93,14 @@ async def proxy_inference(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
     url = f"http://{node.ip_address}:{settings.node_api_port}/infer"
+    # Prefer the credential this node presented at registration; a fleet-wide
+    # token remains as a fallback for deployments configured that way. Nodes
+    # provisioned by install.sh each hold their own, so the fleet-wide value
+    # alone would be rejected by their fail-closed /infer.
+    node_token = registry.get_node_token(node.node_id) or settings.network_auth_token
     headers: dict[str, str] = {}
-    if settings.network_auth_token:
-        headers["X-Network-Auth-Token"] = settings.network_auth_token
+    if node_token:
+        headers["X-Network-Auth-Token"] = node_token
 
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:

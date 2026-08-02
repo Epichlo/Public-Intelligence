@@ -420,11 +420,21 @@ async def create_chat_completion(
         "stream": req_data.stream,
     }
 
+    # The node's /infer requires a credential and fails closed. Use the token
+    # that node presented when it registered, falling back to a fleet-wide token
+    # for deployments configured that way (see scheduler/api/schedule.py).
+    node_token = registry.get_node_token(target_node_id) or settings.network_auth_token
+    node_headers: dict[str, str] = {}
+    if node_token:
+        node_headers["X-Network-Auth-Token"] = node_token
+    else:
+        logger.warning("node_infer_no_credential", node_id=target_node_id)
+
     # Handle Non-Streaming (stream=False)
     if not req_data.stream:
         async with httpx.AsyncClient(timeout=60.0) as client:
             try:
-                resp = await client.post(node_url, json=infer_payload)
+                resp = await client.post(node_url, json=infer_payload, headers=node_headers)
             except httpx.RequestError as e:
                 logger.error("node_infer_request_failed", url=node_url, error=str(e))
                 raise HTTPException(
@@ -484,7 +494,9 @@ async def create_chat_completion(
         # 2) Connect to Node and stream deltas
         async with httpx.AsyncClient(timeout=60.0) as client:
             try:
-                async with client.stream("POST", node_url, json=infer_payload) as response:
+                async with client.stream(
+                    "POST", node_url, json=infer_payload, headers=node_headers
+                ) as response:
                     if response.status_code != 200:
                         error_text = await response.aread()
                         err_chunk = ChatCompletionChunk(

@@ -26,7 +26,39 @@ class NodeRegistry:
         self._heartbeats: dict[str, Heartbeat] = {}
         self._dampeners: dict[str, float] = {}
         self._telemetry: dict[str, Any] = {}
+        # Per-node control-API credentials, captured at registration. Held here
+        # rather than on the Node model so they cannot be serialised into an API
+        # response -- GET /nodes would otherwise hand out every node's secret.
+        self._node_tokens: dict[str, str] = {}
         self.consensus_engine: Any = None
+
+    # These two are deliberately synchronous and do not take `self._lock`, unlike
+    # every other accessor on this class. The lock exists to keep compound
+    # read-modify-write sequences from interleaving at `await` points; a single
+    # dict get or set contains no await point and cannot be interleaved on the
+    # event loop. Acquiring the lock here would add an await to the hot path of
+    # every proxied request, and would deadlock if either method were ever called
+    # from inside an already-locked section (`local_unregister_node` and `clear`
+    # mutate `_node_tokens` directly for exactly that reason).
+    #
+    # If either method ever grows a compound operation or an await, it must take
+    # the lock and its callers must move off the locked paths.
+
+    def set_node_token(self, node_id: str, token: str | None) -> None:
+        """Remember the credential a node presented, for use when calling it back.
+
+        Args:
+            node_id: Node the credential belongs to.
+            token: The credential. A falsy value clears any stored token.
+        """
+        if token:
+            self._node_tokens[node_id] = token
+        else:
+            self._node_tokens.pop(node_id, None)
+
+    def get_node_token(self, node_id: str) -> str | None:
+        """Return the stored credential for a node, or None if unknown."""
+        return self._node_tokens.get(node_id)
 
     async def register(self, node: Node) -> None:
         """Register a new node.
@@ -71,6 +103,7 @@ class NodeRegistry:
             self._heartbeats.pop(node_id, None)
             self._dampeners.pop(node_id, None)
             self._telemetry.pop(node_id, None)
+            self._node_tokens.pop(node_id, None)
 
     async def get(self, node_id: str) -> Node | None:
         """Look up a node by ID.
@@ -132,6 +165,7 @@ class NodeRegistry:
             self._heartbeats.clear()
             self._dampeners.clear()
             self._telemetry.clear()
+            self._node_tokens.clear()
 
     async def count(self) -> int:
         """Return the number of registered nodes.
@@ -217,3 +251,4 @@ class NodeRegistry:
             self._heartbeats.pop(node_id, None)
             self._dampeners.pop(node_id, None)
             self._telemetry.pop(node_id, None)
+            self._node_tokens.pop(node_id, None)
