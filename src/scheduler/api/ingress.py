@@ -53,8 +53,6 @@ def verify_jwt(request: Request, authorization: str = Header(...)) -> dict[str, 
         )
 
     token = authorization.split(" ")[1]
-    if token in ("dev_token", "local", "test", "dev") or token.startswith("dev_"):
-        return {"tenant_id": "tenant-dev", "sub": "dev_user"}
 
     public_key = getattr(request.app.state, "jwt_public_key", None)
     if not public_key:
