@@ -4,16 +4,16 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-02 13:14 UTC
+**Generated:** 2026-08-02 13:39 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 155 | 0 | 0 | 11.39s |
-| Node | PASS | 157 | 0 | 1 | 2.85s |
-| Root E2E | PASS | 13 | 0 | 0 | 0.32s |
+| Scheduler | PASS | 155 | 0 | 0 | 10.91s |
+| Node | PASS | 157 | 0 | 1 | 2.95s |
+| Root E2E | PASS | 13 | 0 | 0 | 0.29s |
 | **Total** | **PASSING** | **325** | **0** | **1** | |
 
 Reproduce:
@@ -26,20 +26,17 @@ Node/.venv/bin/python -m pytest tests -q   # Root E2E
 
 ## Git
 
-- **Last commit:** `958fe78` chore(workflow): add lean verification workflow, specs, and submodule config
-- **Author / date:** Atharv Deshpande — 2026-08-02 18:25:46 +0530
+- **Last commit:** `9f2c264` fix(security): remove dev_token auth bypass across Scheduler and website
+- **Author / date:** Atharv Deshpande — 2026-08-02 18:49:18 +0530
 - **Branch:** main
-- **Total commits:** 44
+- **Total commits:** 45
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence.git (fetch)
-- **Working tree:** 6 uncommitted change(s)
+- **Working tree:** 3 uncommitted change(s)
 
 ```
-  M STATUS.md
+  M Node
    M Scheduler
-   M scripts/generate_status.py
-   M website
-  ?? scripts/mint_token.py
-  ?? specs/remove-dev-token-bypass.md
+  ?? specs/fix-ci-failures.md
 ```
 
 ## Submodules
@@ -47,13 +44,13 @@ Node/.venv/bin/python -m pytest tests -q   # Root E2E
 | Path | Pinned | Subject |
 | --- | --- | --- |
 | Node | `5a7349c5` | feat(installer): add Python 3 verification and automatic win |
-| Scheduler | `6a9999d8` | fix(consensus): gracefully handle Zenoh session open warning |
-| website | `7a4c0263` | trigger vercel deployment update |
+| Scheduler | `13bf0ad6` | fix(security): remove dev_* bearer token authentication bypa |
+| website | `dd7dee7a` | fix(security): stop sending a default dev_token on unauthent |
 
 ## CI
 
 - **Status:** FAIL
-- **Reason:** latest run did not succeed: [{"conclusion":"failure","headSha":"958fe78b6f45074c3ff29d981bbc8955d83b5f80"}]
+- **Reason:** latest run did not succeed: [{"conclusion":"failure","headSha":"9f2c264975e64f37a7c37f4f6ef576168219ba29"}]
 
 ---
 
