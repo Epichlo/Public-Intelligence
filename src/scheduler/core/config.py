@@ -39,7 +39,11 @@ class Settings(BaseSettings):
     environment: Environment = Environment.DEVELOPMENT
     debug: bool = False
     log_level: str = "info"
-    host: str = "0.0.0.0"
+    # nosec B104 - binding all interfaces is required, not accidental: Render (and
+    # Scheduler/Dockerfile's `uvicorn --host 0.0.0.0`) routes external traffic into
+    # the container, where loopback would be unreachable and health checks would
+    # fail. Operators who want a specific interface override it via SCHEDULER_HOST.
+    host: str = "0.0.0.0"  # nosec B104
     port: int = 8000
     network_auth_token: str | None = Field(
         default=None,

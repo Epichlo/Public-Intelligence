@@ -1,6 +1,7 @@
 """Integration tests for the Raft-based consensus state replication."""
 
 import asyncio
+from unittest.mock import AsyncMock
 
 import pytest
 import zenoh
@@ -136,3 +137,40 @@ async def test_consensus_leader_election_and_replication(
         await c1.stop()
         await c2.stop()
         await c3.stop()
+
+
+@pytest.mark.asyncio
+async def test_single_node_proposal_is_applied_to_registry(test_node: Node) -> None:
+    """A no-peer cluster must apply its own proposals -- it is its own majority.
+
+    Regression guard. `propose` only set `event_to_wait` when peers existed, while
+    the immediate-commit branch required `required_quorum <= 1`, which is only true
+    when peers is empty. The two conditions were mutually exclusive, so the apply
+    call was unreachable: entries were appended to the log and never applied, and
+    both `register` and `unregister_node` route through this path.
+
+    This stranded every state change on a single-instance deployment while the
+    caller saw success. It surfaced only on Windows CI, where the consensus engine
+    could bind an already-listening port and so became active where POSIX fell
+    back to direct local mutation -- the platform merely selected the branch.
+    """
+    registry = NodeRegistry()
+    engine = RaftConsensusEngine("scheduler-single", registry)
+
+    # Simulate a live single-instance deployment: active, elected, and peerless.
+    engine._is_active = True
+    engine.peers = set()
+    engine._send_heartbeats = AsyncMock()
+    registry.consensus_engine = engine
+
+    await registry.register(test_node)
+    assert await registry.exists(test_node.node_id) is True, (
+        "register() was proposed but never applied to the registry"
+    )
+    assert engine.commit_index == 0, "commit index did not advance past the append"
+
+    await registry.unregister_node(test_node.node_id)
+    assert await registry.exists(test_node.node_id) is False, (
+        "unregister_node() was proposed but never applied to the registry"
+    )
+    assert engine.commit_index == 1, "commit index did not advance past the append"

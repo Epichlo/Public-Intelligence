@@ -127,6 +127,7 @@ class RaftConsensusEngine:
         Blocks until the change has achieved majority consensus quorum and committed.
         """
         event_to_wait: asyncio.Event | None = None
+        proposal_index: int | None = None
         async with self._lock:
             if not self._is_active:
                 raise RuntimeError("Consensus engine is not active")
@@ -171,19 +172,29 @@ class RaftConsensusEngine:
                 else:
                     raise RuntimeError("No leader found in consensus cluster")
 
-        if event_to_wait is not None:
-            required_quorum = (len(self.peers) + 1) // 2 + 1
-            if required_quorum <= 1:
-                # Commit immediately if single node
-                await self._apply_log_entries(proposal_index)
-                return
+        if proposal_index is None:
+            # Non-leader paths return or raise inside the lock above.
+            return
 
+        if event_to_wait is None:
+            # Single-node cluster: this node is its own majority, so the entry is
+            # committed the moment it is appended. It must be applied here --
+            # nothing else will. `event_to_wait` is only set when peers exist, so
+            # a quorum wait would block on an AppendEntries response that no peer
+            # will ever send, leaving the entry in the log but never applied to
+            # the registry (registrations and evictions silently lost).
             try:
-                await asyncio.wait_for(event_to_wait.wait(), timeout=3.0)
-            except TimeoutError:
-                raise TimeoutError("Proposal replication timed out") from None
+                await self._apply_log_entries(proposal_index)
             finally:
                 self._commit_events.pop(proposal_index, None)
+            return
+
+        try:
+            await asyncio.wait_for(event_to_wait.wait(), timeout=3.0)
+        except TimeoutError:
+            raise TimeoutError("Proposal replication timed out") from None
+        finally:
+            self._commit_events.pop(proposal_index, None)
 
     async def _broadcast(self, msg: dict[str, Any]) -> None:
         if self.session is not None:
