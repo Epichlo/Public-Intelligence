@@ -1,0 +1,11 @@
+[submodule "Node"]
+	path = Node
+	url = https://github.com/Epichlo/Node-PublicIntelligence.git
+
+[submodule "Scheduler"]
+	path = Scheduler
+	url = https://github.com/Epichlo/Scheduler-PublicIntelligence.git
+
+[submodule "website"]
+	path = website
+	url = https://github.com/Epichlo/website-PublicIntelligence.git
