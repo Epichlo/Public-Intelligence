@@ -12,12 +12,23 @@ export async function POST(request: Request) {
       "Content-Type": "application/json",
     };
 
+    // Never synthesise credentials. A request that arrives without an
+    // Authorization header is unauthenticated and must be rejected here rather
+    // than forwarded under a fallback identity.
     if (authHeader) {
       headers["Authorization"] = authHeader;
     } else if (process.env.SCHEDULER_NETWORK_AUTH_TOKEN) {
+      // Server-side operator credential: must itself be a valid RS256 JWT.
       headers["Authorization"] = `Bearer ${process.env.SCHEDULER_NETWORK_AUTH_TOKEN}`;
     } else {
-      headers["Authorization"] = "Bearer dev_token";
+      return NextResponse.json(
+        {
+          detail:
+            "Missing Authorization header. Supply a Bearer RS256 JWT in the " +
+            "playground's token field, or configure SCHEDULER_NETWORK_AUTH_TOKEN.",
+        },
+        { status: 401 }
+      );
     }
 
     const upstreamRes = await fetch(upstreamUrl, {
