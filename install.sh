@@ -244,6 +244,15 @@ configure_environment() {
     local NODE_ID_VAL="node-host-${HOSTNAME_RAW}"
     local TELEMETRY_KEY_VAL="pi_telemetry_secure_default_secret_key"
 
+    # Per-install credential for the node's control API. The node binds 0.0.0.0,
+    # so without this every machine on the LAN could stop the node or spend its
+    # GPU. The API fails closed: no token means it serves nothing.
+    local AUTH_TOKEN_VAL
+    AUTH_TOKEN_VAL=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' 2>/dev/null || echo "")
+    if [[ -z "$AUTH_TOKEN_VAL" ]]; then
+        AUTH_TOKEN_VAL=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
+    fi
+
     if [[ "$DRY_RUN" == "true" ]]; then
         log_dry_run "Would configure ${ENV_FILE} with:"
         log_dry_run "  NODE_ID=${NODE_ID_VAL}"
@@ -255,6 +264,7 @@ configure_environment() {
         log_dry_run "  NODE_ZENOH_GOSSIP_SCOUTING=true"
         log_dry_run "  NODE_ZENOH_MULTICAST_SCOUTING=true"
         log_dry_run "  TELEMETRY_SECRET_KEY=${TELEMETRY_KEY_VAL}"
+        log_dry_run "  NODE_NETWORK_AUTH_TOKEN=<64-char random hex, generated per install>"
         return 0
     fi
 
@@ -273,8 +283,11 @@ NODE_BOOTSTRAP_ROUTERS=["tcp/bootstrap.public-intelligence.net:7447"]
 NODE_ZENOH_GOSSIP_SCOUTING=true
 NODE_ZENOH_MULTICAST_SCOUTING=true
 TELEMETRY_SECRET_KEY=${TELEMETRY_KEY_VAL}
+NODE_NETWORK_AUTH_TOKEN=${AUTH_TOKEN_VAL}
 EOF
+        chmod 600 "$ENV_FILE" 2>/dev/null || true
         log_success "Created ${ENV_FILE} with P2P WAN endpoints."
+        log_success "Generated NODE_NETWORK_AUTH_TOKEN for the local control API."
     else
         if grep -q "^NODE_SCHEDULER_URL=" "$ENV_FILE"; then
             sed -i.bak "s|^NODE_SCHEDULER_URL=.*|NODE_SCHEDULER_URL=${SCHEDULER_URL_VAL}|" "$ENV_FILE" && rm -f "${ENV_FILE}.bak"
@@ -282,7 +295,19 @@ EOF
             echo "NODE_SCHEDULER_URL=${SCHEDULER_URL_VAL}" >> "$ENV_FILE"
         fi
         log_success "Updated NODE_SCHEDULER_URL=${SCHEDULER_URL_VAL} in ${ENV_FILE}."
+
+        # Upgrade path: installs predating the control-API credential have no
+        # token, and the API fails closed, so add one rather than leave the node
+        # unreachable after upgrade.
+        if ! grep -q "^NODE_NETWORK_AUTH_TOKEN=" "$ENV_FILE"; then
+            echo "NODE_NETWORK_AUTH_TOKEN=${AUTH_TOKEN_VAL}" >> "$ENV_FILE"
+            chmod 600 "$ENV_FILE" 2>/dev/null || true
+            log_success "Added NODE_NETWORK_AUTH_TOKEN to ${ENV_FILE} (control API now requires it)."
+        fi
     fi
+
+    log_info "Control API credential is in ${ENV_FILE} as NODE_NETWORK_AUTH_TOKEN."
+    log_info "Send it as the 'X-Network-Auth-Token' header, or set NODE_AUTH_TOKEN for the dashboard."
 }
 
 # ------------------------------------------------------------------------------

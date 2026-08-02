@@ -4,17 +4,17 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-02 16:11 UTC
+**Generated:** 2026-08-02 17:09 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 156 | 0 | 0 | 11.57s |
-| Node | PASS | 157 | 0 | 1 | 2.95s |
-| Root E2E | PASS | 13 | 0 | 0 | 0.30s |
-| **Total** | **PASSING** | **326** | **0** | **1** | |
+| Scheduler | PASS | 156 | 0 | 0 | 11.60s |
+| Node | PASS | 183 | 0 | 1 | 2.77s |
+| Root E2E | PASS | 13 | 0 | 0 | 0.28s |
+| **Total** | **PASSING** | **352** | **0** | **1** | |
 
 Reproduce:
 
@@ -26,33 +26,35 @@ Node/.venv/bin/python -m pytest tests -q   # Root E2E
 
 ## Git
 
-- **Last commit:** `bd47f3e` fix(ci): resolve first-run CI failures across Node and Scheduler
-- **Author / date:** Atharv Deshpande — 2026-08-02 19:13:44 +0530
+- **Last commit:** `8d082c3` fix(ci): apply single-node consensus proposals; gate Bandit at medium+
+- **Author / date:** Atharv Deshpande — 2026-08-02 21:46:10 +0530
 - **Branch:** main
-- **Total commits:** 46
+- **Total commits:** 47
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence.git (fetch)
-- **Working tree:** 5 uncommitted change(s)
+- **Working tree:** 7 uncommitted change(s)
 
 ```
-  M .github/workflows/ci.yml
-   M Node
-   M Scheduler
-   M src/shared/storage/local.py
-  ?? specs/fix-consensus-apply-and-bandit.md
+  M Node
+   M install.ps1
+   M install.sh
+   M tests/__pycache__/test_phase4_5_e2e.cpython-314-pytest-9.1.1.pyc
+   M tests/test_phase4_5_e2e.py
+   M website
+  ?? specs/node-control-api-auth.md
 ```
 
 ## Submodules
 
 | Path | Pinned | Subject |
 | --- | --- | --- |
-| Node | `899ac805` | fix: correct LRU eviction and Windows shared-memory lifetime |
-| Scheduler | `e338bd36` | fix: wrap over-length line and correct Windows shared-memory |
+| Node | `f56c3503` | fix: resolve Bandit medium findings without changing bind be |
+| Scheduler | `53539578` | fix(consensus): apply proposals on a single-node cluster |
 | website | `dd7dee7a` | fix(security): stop sending a default dev_token on unauthent |
 
 ## CI
 
-- **Status:** FAIL
-- **Reason:** latest run did not succeed: [{"conclusion":"failure","headSha":"bd47f3e8efc1af1bbf04df40f235e74afb3a578c"}]
+- **Status:** PASS
+- **Reason:** latest run concluded success
 
 ---
 

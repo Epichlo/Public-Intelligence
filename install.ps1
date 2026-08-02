@@ -104,6 +104,14 @@ if (-not (Test-Path (Join-Path $NodeDir "pyproject.toml"))) {
 # Environment Setup
 $SchedulerUrl = if ($env:SCHEDULER_URL) { $env:SCHEDULER_URL } else { "https://scheduler-publicintelligence.onrender.com" }
 $EnvFile = Join-Path $NodeDir ".env"
+
+# Per-install credential for the node's control API. The node binds 0.0.0.0, so
+# without this any machine on the LAN could stop the node or spend its GPU. The
+# API fails closed: no token means it serves nothing.
+$AuthTokenBytes = New-Object 'System.Byte[]' 32
+[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($AuthTokenBytes)
+$AuthToken = ($AuthTokenBytes | ForEach-Object { $_.ToString("x2") }) -join ''
+
 if (-not (Test-Path $EnvFile)) {
     Write-Host "[INFO] Creating Node/.env configuration..." -ForegroundColor Blue
     $EnvContent = @"
@@ -116,13 +124,25 @@ NODE_BOOTSTRAP_ROUTERS=["tcp/bootstrap.public-intelligence.net:7447"]
 NODE_ZENOH_GOSSIP_SCOUTING=true
 NODE_ZENOH_MULTICAST_SCOUTING=true
 TELEMETRY_SECRET_KEY=pi_telemetry_secure_default_secret_key
+NODE_NETWORK_AUTH_TOKEN=$AuthToken
 "@
     Set-Content -Path $EnvFile -Value $EnvContent -Encoding UTF8
     Write-Host "[OK] Environment configured: $EnvFile" -ForegroundColor Green
+    Write-Host "[OK] Generated NODE_NETWORK_AUTH_TOKEN for the local control API." -ForegroundColor Green
 } else {
     (Get-Content $EnvFile) -replace "NODE_SCHEDULER_URL=.*", "NODE_SCHEDULER_URL=$SchedulerUrl" | Set-Content $EnvFile
     Write-Host "[OK] Updated NODE_SCHEDULER_URL in $EnvFile to $SchedulerUrl" -ForegroundColor Green
+
+    # Upgrade path: installs predating the control-API credential have no token,
+    # and the API fails closed, so add one rather than leave the node unreachable.
+    if (-not (Select-String -Path $EnvFile -Pattern '^NODE_NETWORK_AUTH_TOKEN=' -Quiet)) {
+        Add-Content -Path $EnvFile -Value "NODE_NETWORK_AUTH_TOKEN=$AuthToken"
+        Write-Host "[OK] Added NODE_NETWORK_AUTH_TOKEN to $EnvFile (control API now requires it)." -ForegroundColor Green
+    }
 }
+
+Write-Host "[INFO] Control API credential is in $EnvFile as NODE_NETWORK_AUTH_TOKEN." -ForegroundColor Blue
+Write-Host "[INFO] Send it as the 'X-Network-Auth-Token' header, or set NODE_AUTH_TOKEN for the dashboard." -ForegroundColor Blue
 
 # Virtual Environment
 $VenvDir = Join-Path $NodeDir ".venv"

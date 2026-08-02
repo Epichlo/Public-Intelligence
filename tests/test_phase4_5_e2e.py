@@ -9,7 +9,7 @@ Requirements-Driven Dual-Track Testing:
 
 from datetime import UTC, datetime, timedelta
 import time
-from typing import AsyncGenerator, Any
+from typing import AsyncGenerator, Any, Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from cryptography.hazmat.primitives import serialization
@@ -26,6 +26,8 @@ from scheduler.main import app as scheduler_app
 from scheduler.models.node import GPUInfo, Node as SchedulerNode
 
 # Node imports
+from node.core.configuration import Settings as NodeSettings
+from node.core.configuration import get_settings as node_get_settings
 from node.core.runtime import sandbox_log_buffer
 from node.main import app as node_app
 
@@ -102,9 +104,18 @@ def scheduler_client(rsa_key_pair: tuple[rsa.RSAPrivateKey, str]) -> TestClient:
     return TestClient(scheduler_app)
 
 
+NODE_AUTH_TOKEN = "e2e-node-auth-token"
+
+
 @pytest.fixture
-def node_client() -> TestClient:
-    """Provide TestClient for Node local control and telemetry API."""
+def node_client() -> Generator[TestClient, None, None]:
+    """Provide TestClient for Node local control and telemetry API.
+
+    The Node's control and inference routes require `X-Network-Auth-Token`. This
+    fixture configures a real token and sends it on every request rather than
+    overriding the dependency, so the end-to-end path exercises authentication
+    for real instead of stubbing it out.
+    """
     mock_rt = MagicMock()
     mock_rt.is_running = False
     mock_rt.settings = MagicMock()
@@ -123,7 +134,14 @@ def node_client() -> TestClient:
 
     node_app.state.runtime = mock_rt
     sandbox_log_buffer.clear()
-    return TestClient(node_app)
+
+    node_app.dependency_overrides[node_get_settings] = lambda: NodeSettings(
+        network_auth_token=NODE_AUTH_TOKEN
+    )
+    try:
+        yield TestClient(node_app, headers={"X-Network-Auth-Token": NODE_AUTH_TOKEN})
+    finally:
+        node_app.dependency_overrides.pop(node_get_settings, None)
 
 
 # -----------------------------------------------------------------------------
