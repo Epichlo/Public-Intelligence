@@ -4,17 +4,17 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-02 17:09 UTC
+**Generated:** 2026-08-02 18:34 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 156 | 0 | 0 | 11.60s |
-| Node | PASS | 183 | 0 | 1 | 2.77s |
-| Root E2E | PASS | 13 | 0 | 0 | 0.28s |
-| **Total** | **PASSING** | **352** | **0** | **1** | |
+| Scheduler | PASS | 163 | 0 | 0 | 10.71s |
+| Node | PASS | 183 | 0 | 1 | 2.79s |
+| Root E2E | PASS | 13 | 0 | 0 | 0.30s |
+| **Total** | **PASSING** | **359** | **0** | **1** | |
 
 Reproduce:
 
@@ -26,30 +26,29 @@ Node/.venv/bin/python -m pytest tests -q   # Root E2E
 
 ## Git
 
-- **Last commit:** `8d082c3` fix(ci): apply single-node consensus proposals; gate Bandit at medium+
-- **Author / date:** Atharv Deshpande — 2026-08-02 21:46:10 +0530
+- **Last commit:** `5d3cf82` fix(security): authenticate the Node control API; provision the credential
+- **Author / date:** Atharv Deshpande — 2026-08-02 22:46:41 +0530
 - **Branch:** main
-- **Total commits:** 47
+- **Total commits:** 48
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence.git (fetch)
-- **Working tree:** 7 uncommitted change(s)
+- **Working tree:** 6 uncommitted change(s)
 
 ```
-  M Node
-   M install.ps1
-   M install.sh
+  M CLAUDE.md
+   M STATUS.md
+   M Scheduler
    M tests/__pycache__/test_phase4_5_e2e.cpython-314-pytest-9.1.1.pyc
-   M tests/test_phase4_5_e2e.py
-   M website
-  ?? specs/node-control-api-auth.md
+  ?? ROADMAP.md
+  ?? specs/scheduler-node-auth.md
 ```
 
 ## Submodules
 
 | Path | Pinned | Subject |
 | --- | --- | --- |
-| Node | `f56c3503` | fix: resolve Bandit medium findings without changing bind be |
+| Node | `a9f6e837` | fix(security): require authentication on the control and inf |
 | Scheduler | `53539578` | fix(consensus): apply proposals on a single-node cluster |
-| website | `dd7dee7a` | fix(security): stop sending a default dev_token on unauthent |
+| website | `40a94020` | fix(dashboard): forward the node's auth credential from the  |
 
 ## CI
 

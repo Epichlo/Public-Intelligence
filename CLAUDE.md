@@ -1,5 +1,7 @@
 Before marking any task done, run through VERIFY.md as a separate step. Do not self-certify completion in the same pass that wrote the code. If anything in VERIFY.md can't be checked, say so explicitly instead of assuming it passed.
 
+Read ROADMAP.md for v1 scope and feature order. When told "next feature," take the next not-started item, spec it, then build it.
+
 # Public Intelligence
 
 Distributed compute control plane. Three components, pinned as git submodules from
