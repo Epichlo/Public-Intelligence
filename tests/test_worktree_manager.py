@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import sys
 
 import pytest
 
@@ -77,8 +78,20 @@ async def _is_docker_available() -> bool:
 
 
 @pytest.mark.anyio
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="sandbox runs the Linux image python:3.11-slim; the Windows CI runner's "
+    "Docker daemon is in Windows-container mode and cannot pull it",
+)
 async def test_execute_in_sandbox_integration() -> None:
-    """Verify that execute_in_sandbox runs a command inside Docker sandbox."""
+    """Verify that execute_in_sandbox runs a command inside Docker sandbox.
+
+    Skipped on Windows: `_is_docker_available` below only proves the daemon
+    responds, not that it can run Linux images. On a Windows-container daemon the
+    pull fails with "no matching manifest for windows/amd64", so the guard passes
+    and the test then fails with exit 125. The sandbox targets Linux containers by
+    design -- this is a test-environment limit, not a defect in WorktreeManager.
+    """
     if not await _is_docker_available():
         pytest.skip("Docker is not available in the test environment")
 

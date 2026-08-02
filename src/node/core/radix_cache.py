@@ -1,6 +1,6 @@
 """In-memory Radix Trie Cache with LRU eviction for prompt prefix acceleration."""
 
-import time
+from collections import OrderedDict
 
 
 class RadixTrieNode:
@@ -29,7 +29,13 @@ class RadixTrieCache:
         """
         self.capacity = capacity
         self.root = RadixTrieNode([])
-        self.prompts: dict[str, float] = {}  # prompt string -> last accessed timestamp
+        # Recency is encoded by position, not by a timestamp: least-recently-used
+        # first, most-recently-used last. A clock cannot be used here -- coarse
+        # timer granularity (~15.6ms on Windows) makes rapid successive accesses
+        # collide on identical values, and ties then resolve by insertion order
+        # rather than recency, evicting the wrong entry. time.time() is also a
+        # wall clock and can step backwards under NTP correction.
+        self.prompts: OrderedDict[str, None] = OrderedDict()
 
     async def lookup_prefix(self, prompt: str) -> tuple[str, str]:
         """Search the cache for the longest matching prefix of the prompt.
@@ -44,12 +50,12 @@ class RadixTrieCache:
         prefix_str = "".join(prefix_tokens)
         suffix_str = "".join(suffix_tokens)
 
-        # Update last accessed times of matching cached prompt paths
+        # Mark matching cached prompt paths as most recently used. Moving each to
+        # the end preserves their relative order while making them newest.
         if prefix_str:
-            now = time.time()
             for p in list(self.prompts.keys()):
                 if p.startswith(prefix_str):
-                    self.prompts[p] = now
+                    self.prompts.move_to_end(p)
 
         return prefix_str, suffix_str
 
@@ -61,12 +67,13 @@ class RadixTrieCache:
         Args:
             prompt: The prompt string to insert.
         """
-        self.prompts[prompt] = time.time()
+        self.prompts[prompt] = None
+        self.prompts.move_to_end(prompt)
 
         if len(self.prompts) > self.capacity:
-            # Bounded LRU eviction: pop the least recently used path
-            oldest_prompt = min(self.prompts, key=self.prompts.get)  # type: ignore[arg-type]
-            self.prompts.pop(oldest_prompt, None)
+            # Bounded LRU eviction: pop the least recently used path. popitem
+            # (last=False) takes the front of the ordering in O(1) and cannot tie.
+            self.prompts.popitem(last=False)
             # Rebuild the trie to flush out the dead path
             self._rebuild_trie()
         else:

@@ -1,7 +1,22 @@
 """Unit and integration tests for install.sh script and launch_host_node.sh launcher."""
 
 import subprocess
+import sys
 from pathlib import Path
+
+import pytest
+
+# These tests execute install.sh and launch_host_node.sh directly. Windows cannot
+# exec a shell script -- subprocess raises OSError [WinError 193] "%1 is not a
+# valid Win32 application" -- and it is not meant to: Windows hosts are installed
+# via install.ps1, which is exercised separately by the CI installer step.
+#
+# This is a genuinely POSIX-only surface, not an unimplemented feature. If these
+# ever need Windows coverage, the target is install.ps1, not these scripts.
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX installer scripts; Windows hosts use install.ps1",
+)
 
 
 def test_install_script_help() -> None:
