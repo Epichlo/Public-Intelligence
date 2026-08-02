@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import threading
 import uuid
 from collections.abc import Awaitable, Callable
 from multiprocessing import shared_memory
@@ -15,12 +16,30 @@ from scheduler.models.pipeline import TensorPayload
 logger = logging.getLogger(__name__)
 
 
+# Shared memory blocks created by this process, held open until cleanup().
+#
+# POSIX keeps a segment alive in /dev/shm until it is explicitly unlinked, so the
+# creating handle can be closed immediately. Windows refcounts the underlying
+# mapping and destroys it as soon as the *last* handle closes -- so releasing the
+# creating handle inside write_data() destroyed the block before any reader could
+# attach it. Retaining the handle until cleanup() gives both platforms the same
+# lifetime: the block lives until explicitly released.
+#
+# Blocks whose cleanup() is never called stay resident for the life of the
+# process; callers own that release, as they did before.
+_OPEN_BLOCKS: dict[str, shared_memory.SharedMemory] = {}
+_OPEN_BLOCKS_LOCK = threading.Lock()
+
+
 class SharedMemoryIPC:
     """Zero-copy Shared Memory bridge for local co-located process communication."""
 
     @staticmethod
     def write_data(data: bytes) -> str:
         """Create a shared memory block and write bytes data to it.
+
+        The creating handle is retained until `cleanup` so the block survives on
+        Windows, where closing every handle destroys the mapping.
 
         Args:
             data: Binary payload to write.
@@ -33,8 +52,13 @@ class SharedMemoryIPC:
         try:
             shm.buf[:4] = len(data).to_bytes(4, "big")  # type: ignore[index]
             shm.buf[4 : 4 + len(data)] = data  # type: ignore[index]
-        finally:
+        except Exception:
             shm.close()
+            shm.unlink()
+            raise
+
+        with _OPEN_BLOCKS_LOCK:
+            _OPEN_BLOCKS[name] = shm
         return name
 
     @staticmethod
@@ -57,13 +81,22 @@ class SharedMemoryIPC:
 
     @staticmethod
     def cleanup(name: str) -> None:
-        """Clean up and unlink a shared memory block.
+        """Release and unlink a shared memory block.
+
+        Closes the retained creating handle when this process owns the block. On
+        Windows that final close destroys the mapping; on POSIX `unlink` removes
+        the /dev/shm entry. Blocks created by another process are attached first
+        so they can still be unlinked.
 
         Args:
             name: String name of the shared memory block.
         """
+        with _OPEN_BLOCKS_LOCK:
+            shm = _OPEN_BLOCKS.pop(name, None)
+
         try:
-            shm = shared_memory.SharedMemory(name=name)
+            if shm is None:
+                shm = shared_memory.SharedMemory(name=name)
             shm.close()
             shm.unlink()
         except Exception as e:

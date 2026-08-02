@@ -76,7 +76,9 @@ class RaftConsensusEngine:
             self._loop = asyncio.get_running_loop()
             try:
                 self.session = zenoh.open(self.config)
-                self.publisher = self.session.declare_publisher("public-intelligence/net/consensus/*")
+                self.publisher = self.session.declare_publisher(
+                    "public-intelligence/net/consensus/*"
+                )
                 self.subscriber = self.session.declare_subscriber(
                     "public-intelligence/net/consensus/*", self._on_message
                 )
