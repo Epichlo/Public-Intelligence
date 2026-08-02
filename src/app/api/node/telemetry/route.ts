@@ -1,17 +1,20 @@
 import { NextResponse } from "next/server";
 
+import { nodeAuthHint, nodeHeaders, nodeUrl } from "@/lib/node-api";
+
 export async function GET() {
   try {
-    const nodeUrl = (process.env.NODE_URL ?? "http://localhost:8080").replace(/\/$/, "");
-    const upstreamUrl = `${nodeUrl}/api/v1/node/telemetry`;
+    const upstreamUrl = `${nodeUrl()}/api/v1/node/telemetry`;
 
     const response = await fetch(upstreamUrl, {
+      headers: nodeHeaders(),
       cache: "no-store",
       signal: AbortSignal.timeout(5000),
     });
 
     if (!response.ok) {
-      const errText = await response.text();
+      const hint = nodeAuthHint(response.status);
+      const errText = hint ?? (await response.text());
       return NextResponse.json({ detail: errText }, { status: response.status });
     }
 

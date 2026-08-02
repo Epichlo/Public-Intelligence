@@ -1,16 +1,19 @@
 import { NextResponse } from "next/server";
 
+import { nodeAuthHint, nodeHeaders, nodeUrl } from "@/lib/node-api";
+
 export async function GET() {
   try {
-    const nodeUrl = (process.env.NODE_URL ?? "http://localhost:8080").replace(/\/$/, "");
-    const upstreamUrl = `${nodeUrl}/api/v1/sandbox/logs/stream`;
+    const upstreamUrl = `${nodeUrl()}/api/v1/sandbox/logs/stream`;
 
     const upstreamRes = await fetch(upstreamUrl, {
+      headers: nodeHeaders(),
       cache: "no-store",
     });
 
     if (!upstreamRes.ok || !upstreamRes.body) {
-      const errText = await upstreamRes.text();
+      const hint = nodeAuthHint(upstreamRes.status);
+      const errText = hint ?? (await upstreamRes.text());
       return NextResponse.json(
         { detail: errText || "Sandbox log stream failed" },
         { status: upstreamRes.status }

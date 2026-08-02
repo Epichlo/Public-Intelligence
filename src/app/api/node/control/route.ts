@@ -1,17 +1,23 @@
 import { NextResponse } from "next/server";
 
+import { nodeAuthHint, nodeHeaders, nodeUrl } from "@/lib/node-api";
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const nodeUrl = (process.env.NODE_URL ?? "http://localhost:8080").replace(/\/$/, "");
-    const upstreamUrl = `${nodeUrl}/api/v1/node/control`;
+    const upstreamUrl = `${nodeUrl()}/api/v1/node/control`;
 
     const response = await fetch(upstreamUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: nodeHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(body),
       cache: "no-store",
     });
+
+    const hint = nodeAuthHint(response.status);
+    if (hint) {
+      return NextResponse.json({ detail: hint }, { status: 401 });
+    }
 
     const data = await response.json();
     return NextResponse.json(data, { status: response.status });
