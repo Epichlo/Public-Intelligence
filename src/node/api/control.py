@@ -5,14 +5,18 @@ import json
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from node.api.auth import verify_node_auth
 from node.core.runtime import sandbox_log_buffer
 from node.telemetry.collector import TelemetryCollector
 
-router = APIRouter()
+# Applied at router level, not per route: every endpoint here controls or
+# discloses host state, so a route added later is protected by default rather
+# than by remembering to decorate it.
+router = APIRouter(dependencies=[Depends(verify_node_auth)])
 
 
 class NodeControlRequest(BaseModel):

@@ -7,6 +7,7 @@ from typing import Annotated, Any, cast
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
 
+from node.api.auth import verify_node_auth
 from node.clients import OllamaClient, OllamaError
 from node.core.radix_cache import RadixTrieCache
 from node.models import InferenceRequest, InferenceResponse, ModelInfo
@@ -34,10 +35,14 @@ def get_radix_cache(request: Request) -> RadixTrieCache:
     return cast(RadixTrieCache, cache)
 
 
+# Protected per route rather than router-wide: /health and /health/ready below
+# must stay reachable without credentials for container HEALTHCHECK and liveness
+# probes. /infer spends the host's GPU, so it is not left open.
 @router.post(
     "/infer",
     response_model=InferenceResponse,
     summary="Execute inference against a local model",
+    dependencies=[Depends(verify_node_auth)],
 )
 async def infer(
     request: InferenceRequest,
@@ -136,6 +141,7 @@ async def infer(
     "/models",
     response_model=list[ModelInfo],
     summary="List all hosted models",
+    dependencies=[Depends(verify_node_auth)],
 )
 async def list_models(
     ollama_client: Annotated[OllamaClient, Depends(get_ollama_client)],
