@@ -2,17 +2,23 @@
 
 import hashlib
 import os
+import tempfile
 from typing import Any
 
 from src.shared.storage.base import ArtifactMetadata, ArtifactStore
+
+# Resolved from the OS temp directory rather than a hardcoded "/tmp": that path
+# does not exist on Windows (it resolves to <drive>:\tmp), and a fixed, predictable
+# location under a world-writable directory is a symlink-attack surface.
+DEFAULT_ARTIFACT_DIR = os.path.join(
+    tempfile.gettempdir(), "public_intelligence", "artifacts"
+)
 
 
 class LocalDiskArtifactStore(ArtifactStore):
     """Concrete implementation of ArtifactStore using the local filesystem."""
 
-    def __init__(
-        self, base_directory: str = "/tmp/public_intelligence/artifacts"
-    ) -> None:
+    def __init__(self, base_directory: str = DEFAULT_ARTIFACT_DIR) -> None:
         """Initialize the LocalDiskArtifactStore and ensure the base directory exists safely.
 
         Args:

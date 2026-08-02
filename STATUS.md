@@ -4,17 +4,17 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-02 13:39 UTC
+**Generated:** 2026-08-02 16:11 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 155 | 0 | 0 | 10.91s |
+| Scheduler | PASS | 156 | 0 | 0 | 11.57s |
 | Node | PASS | 157 | 0 | 1 | 2.95s |
-| Root E2E | PASS | 13 | 0 | 0 | 0.29s |
-| **Total** | **PASSING** | **325** | **0** | **1** | |
+| Root E2E | PASS | 13 | 0 | 0 | 0.30s |
+| **Total** | **PASSING** | **326** | **0** | **1** | |
 
 Reproduce:
 
@@ -26,31 +26,33 @@ Node/.venv/bin/python -m pytest tests -q   # Root E2E
 
 ## Git
 
-- **Last commit:** `9f2c264` fix(security): remove dev_token auth bypass across Scheduler and website
-- **Author / date:** Atharv Deshpande — 2026-08-02 18:49:18 +0530
+- **Last commit:** `bd47f3e` fix(ci): resolve first-run CI failures across Node and Scheduler
+- **Author / date:** Atharv Deshpande — 2026-08-02 19:13:44 +0530
 - **Branch:** main
-- **Total commits:** 45
+- **Total commits:** 46
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence.git (fetch)
-- **Working tree:** 3 uncommitted change(s)
+- **Working tree:** 5 uncommitted change(s)
 
 ```
-  M Node
+  M .github/workflows/ci.yml
+   M Node
    M Scheduler
-  ?? specs/fix-ci-failures.md
+   M src/shared/storage/local.py
+  ?? specs/fix-consensus-apply-and-bandit.md
 ```
 
 ## Submodules
 
 | Path | Pinned | Subject |
 | --- | --- | --- |
-| Node | `5a7349c5` | feat(installer): add Python 3 verification and automatic win |
-| Scheduler | `13bf0ad6` | fix(security): remove dev_* bearer token authentication bypa |
+| Node | `899ac805` | fix: correct LRU eviction and Windows shared-memory lifetime |
+| Scheduler | `e338bd36` | fix: wrap over-length line and correct Windows shared-memory |
 | website | `dd7dee7a` | fix(security): stop sending a default dev_token on unauthent |
 
 ## CI
 
 - **Status:** FAIL
-- **Reason:** latest run did not succeed: [{"conclusion":"failure","headSha":"9f2c264975e64f37a7c37f4f6ef576168219ba29"}]
+- **Reason:** latest run did not succeed: [{"conclusion":"failure","headSha":"bd47f3e8efc1af1bbf04df40f235e74afb3a578c"}]
 
 ---
 
