@@ -27,9 +27,13 @@ dev = [
     # `pip install --upgrade ruff mypy bandit`, so a new ruff release could turn
     # main red with no code change, and local (0.16.0) could disagree with CI
     # (0.16.1) about what passes. These versions must match across both packages;
-    # `tests/test_lint_config_parity.py` enforces that.
+    # `tests/test_source_parity.py` enforces that.
     "ruff==0.16.1",
     "mypy==2.3.0",
+    # Stub packages are part of the type gate, not optional extras. Without
+    # this mypy reports import-untyped for psutil, which passed locally only
+    # because the stubs happened to be in the venv and not in CI.
+    "types-psutil==7.2.2.20260518",
     "bandit==1.9.4",
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
@@ -45,7 +49,7 @@ where = ["src"]
 
 # ---------------------------------------------------------------------------
 # SHARED LINT CONFIG -- must stay byte-identical to the matching block in the
-# other package's pyproject.toml. `tests/test_lint_config_parity.py` in the root
+# other package's pyproject.toml. `tests/test_source_parity.py` in the root
 # suite fails if they diverge.
 #
 # Why duplicated: Node and Scheduler are separate git repositories, so a shared
