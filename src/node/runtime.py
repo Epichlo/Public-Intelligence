@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 from node.clients import OllamaClient, SchedulerClient, ZenohHeartbeatClient
 from node.clients.mesh_inference_server import ZenohInferenceServer
 from node.core.configuration import Settings
-from node.core.hardware import detect_gpu, detect_ram_total_gb
+from node.core.hardware import detect_gpu, detect_host_metrics, detect_ram_total_gb
 from node.core.telemetry import TelemetryEmitter
 from node.models import Heartbeat, NodeInfo
 from node.models.gpu_info import cpu_only_gpu
@@ -81,7 +81,10 @@ class Runtime:
             try:
                 models = await self.ollama_client.list_models()
             except Exception as e:
-                logger.warning("ollama_discovery_warning", error=str(e))
+                # %s, not a structlog-style `error=` kwarg: this is a stdlib Logger,
+                # which raises TypeError on unknown kwargs -- so this handler used to
+                # kill startup on the exact path meant to survive Ollama being down.
+                logger.warning("Ollama model discovery failed, advertising none: %s", e)
                 models = []
 
             # 2. Discover real hardware. `detect_gpu` already degrades internally;
@@ -243,7 +246,7 @@ class Runtime:
         """Periodic background loop that sends heartbeats to the Scheduler."""
         while self.is_running:
             try:
-                metrics = self._collect_heartbeat_metrics()
+                metrics = await self._collect_heartbeat_metrics()
                 hb = Heartbeat(
                     node_id=self.settings.node_id,
                     timestamp=datetime.now(timezone.utc),
@@ -297,14 +300,24 @@ class Runtime:
         """Retrieve total system RAM in gigabytes, measured from the host."""
         return detect_ram_total_gb()
 
-    def _collect_heartbeat_metrics(self) -> dict[str, Any]:
-        """Collect current metrics for heartbeat reports (placeholders)."""
+    async def _collect_heartbeat_metrics(self) -> dict[str, Any]:
+        """Measure current utilisation for a heartbeat report.
+
+        These are not cosmetic. The Scheduler filters on `vram_available_gb` and
+        scores nodes on all five, so the constants this used to return meant a node
+        was excluded from every VRAM-gated task and scored identically to every
+        other node. See specs/real-heartbeat-metrics.md.
+
+        `detect_host_metrics` degrades internally rather than raising, so a host that
+        cannot read its own GPU keeps heartbeating instead of being evicted as stale.
+        """
+        metrics = await detect_host_metrics()
         return {
-            "queue_length": 0,
-            "cpu_utilization": 15.0,
-            "ram_available_gb": 8.0,
-            "gpu_utilization": 0.0,
-            "vram_available_gb": 0.0,
+            "queue_length": self.task_queue.qsize(),
+            "cpu_utilization": metrics.cpu_utilization,
+            "ram_available_gb": metrics.ram_available_gb,
+            "gpu_utilization": metrics.gpu_utilization,
+            "vram_available_gb": metrics.vram_available_gb,
         }
 
     def _setup_split_stage_listener(self) -> None:

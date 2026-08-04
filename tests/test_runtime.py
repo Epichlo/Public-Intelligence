@@ -272,3 +272,36 @@ async def test_telemetry_emitter_lifecycle() -> None:
         assert data["vram_usage_bytes"] == 0
 
         sub.undeclare()
+
+
+@pytest.mark.anyio
+async def test_startup_survives_ollama_being_unreachable(
+    settings: Settings,
+    mock_scheduler_client: AsyncMock,
+    mock_zenoh_client: MagicMock,
+) -> None:
+    """A node whose Ollama is down must still register, with no models advertised.
+
+    `start()` wraps model discovery in `except Exception` precisely so this is
+    survivable, but the handler called `logger.warning(msg, error=...)`. stdlib
+    Logger takes no `error` kwarg, so the handler raised TypeError and the node
+    died on exactly the path meant to keep it alive. No test caught it because
+    every mock Ollama client returned successfully.
+    """
+    failing_ollama = AsyncMock()
+    failing_ollama.list_models.side_effect = ConnectionError("ollama is not running")
+    mock_zenoh_client.session = None
+
+    runtime = Runtime(
+        settings=settings,
+        scheduler_client=mock_scheduler_client,
+        ollama_client=failing_ollama,
+        zenoh_client=mock_zenoh_client,
+    )
+
+    await runtime.start()
+    assert runtime.registration_status == "registered"
+    await runtime.stop()
+
+    registered = mock_scheduler_client.register.call_args.args[0]
+    assert registered.available_models == []
