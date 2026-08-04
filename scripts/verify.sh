@@ -66,7 +66,7 @@ printf '\033[1mverify\033[0m  mode=%s  python=%s\n' "$MODE" "$("$NODE_PY" -V 2>&
 
 # --- lint ------------------------------------------------------------------
 # Whole submodules, tests included. Both packages carry a byte-identical
-# [tool.ruff] block; tests/test_lint_config_parity.py fails if they diverge.
+# [tool.ruff] block; tests/test_source_parity.py fails if they diverge.
 run_step "ruff check"        "$NODE_PY" -m ruff check ./Node ./Scheduler
 run_step "ruff format"       "$NODE_PY" -m ruff format --check ./Node ./Scheduler
 
