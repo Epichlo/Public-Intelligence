@@ -77,16 +77,25 @@ The first grep returns two benign hits — `AliasChoices("NODE_NETWORK_AUTH_TOKE
 in `Node/src/node/core/configuration.py:88` and `Scheduler/src/scheduler/core/config.py:46`
 — which declare env var *names*, not values. Everything else it returns is real.
 
-**Known pre-existing hits as of 2026-08-02** — these are real and unfixed. Do not
+**Known pre-existing hits as of 2026-08-03** — these are real and unfixed. Do not
 let them mask a *new* one, and do not report them as clean:
 
 | Location | Issue |
 |---|---|
-| `Scheduler/src/scheduler/api/ingress.py:56` | `Bearer dev_*` authenticates as `tenant-dev` — bypasses RS256 on `/v1/chat/completions` |
-| `website/src/app/api/chat/completions/route.ts:21` | website proxy sends `Bearer dev_token` by default |
-| `Node/src/node/core/telemetry.py:175`, `Scheduler/src/scheduler/core/zenoh_router.py:255` | `TELEMETRY_SECRET_KEY` defaults to a constant published in this repo |
+| `Node/src/node/core/telemetry.py:175`, `Scheduler/src/scheduler/core/zenoh_router.py:280` | `TELEMETRY_SECRET_KEY` defaults to a constant published in this repo (ROADMAP 2.2) |
 | `Scheduler/src/scheduler/api/ingress.py:16` | hardcoded fallback RSA public key |
-| `Scheduler/src/scheduler/main.py:76`, `Node/src/node/main.py:43` | `allow_origins=["*"]` with `allow_credentials=True` |
+| `Scheduler/src/scheduler/main.py:76`, `Node/src/node/main.py:43` | `allow_origins=["*"]` with `allow_credentials=True` (ROADMAP 2.3) |
+
+Two rows previously listed here were **removed on 2026-08-03 because they are fixed**,
+verified by the greps in this step returning no hit for either:
+
+- `ingress.py:56` `Bearer dev_*` → `tenant-dev`, and the website proxy's default
+  `Bearer dev_token`. Both were removed in commit `9f2c264`; `ingress.py` now verifies
+  RS256 with no bypass branch, and the proxy rejects an unauthenticated request rather
+  than synthesising a credential.
+
+The `zenoh_router.py` line number moved from 255 to 280 as that file grew; the issue is
+unchanged.
 
 ## 4. Check for duplicated logic before adding new files
 
@@ -156,22 +165,54 @@ the code — not the file.
 Fill this in. It is the whole point of the file.
 
 ```
-Date:        <YYYY-MM-DD>
-Change:      <one line>
-Spec:        specs/<file>.md  (or: none — explain why acceptable)
+Date:        2026-08-04
+Change:      ROADMAP 1.2 — nodes advertise measured hardware instead of a hardcoded
+             16 GB "unknown" GPU; GET /nodes gains a derived `reachability` field.
+Spec:        specs/real-hardware-advertisement.md
 
-  1. Test suite ......... PASS / FAIL / UNVERIFIED
-  2. Spec match ......... PASS / FAIL / UNVERIFIED
-  3. Secrets & bypasses . PASS / FAIL / UNVERIFIED
-  4. Duplication ........ PASS / FAIL / UNVERIFIED
-  5. Nothing tracked .... PASS / FAIL / UNVERIFIED
-  6. STATUS regenerated . PASS / FAIL / UNVERIFIED
+  1. Test suite ......... PASS
+  2. Spec match ......... PASS-WITH-GAPS
+  3. Secrets & bypasses . PASS
+  4. Duplication ........ PASS (new duplicate, justified in writing)
+  5. Nothing tracked .... PASS
+  6. STATUS regenerated . PASS
 
-VERDICT: PASS / FAIL
+VERDICT: PASS-WITH-GAPS
 
 Reasons:
-- <why. if FAIL, what specifically. if any UNVERIFIED, which and why it
-  could not be checked in this session.>
+- 1. Scheduler 213 passed / Node 231 passed, 1 skipped / root E2E 29 passed, all run
+  in this session. 22 tests are new across 4 files. Each was observed failing first:
+  the Node hardware tests were run against a stub reproducing the old hardcoded values
+  and failed 8/9 on the intended assertions (including `assert 16.0 == 24.0` for RAM);
+  the Scheduler tests failed with a real 422 `"Input should be greater than 0"` before
+  `gt=0` was relaxed, and `KeyError: 'reachability'` before the view model existed.
+- 2. GAP: the NVIDIA branch is unverified on real hardware. This machine has no
+  NVIDIA GPU (`command -v nvidia-smi` → not found), so that path is exercised only
+  against a synthetic collector result. The Apple Silicon branch WAS checked live
+  against `sysctl` (`Apple M5`, 25769803776 bytes → advertised 24.0 GB). The
+  underlying `nvidia-smi` invocation is pre-existing code in `telemetry/collector.py`
+  and was not modified. Everything else in "Done looks like" is ticked with the test
+  or command that proves it.
+- 3. Five hits, all pre-existing and all already listed in step 3 of this file:
+  `TELEMETRY_SECRET_KEY` defaults (telemetry.py:175, zenoh_router.py:280), the
+  fallback RSA public key (ingress.py:16), and `allow_origins=["*"]` with
+  `allow_credentials=True` in both services. Two benign `AliasChoices` hits declare
+  env var names, not values — their line numbers have drifted to
+  configuration.py:92 and config.py:50 (this file still says 88 and 46). The auth-bypass
+  grep returned one hit, prose in `website/src/app/architecture/page.tsx:42`, not code.
+  No new secret, credential, or bypass was introduced.
+- 4. This change adds a FIFTH duplicated pair: `node/models/gpu_info.py::GPUInfo` now
+  mirrors `scheduler/models/node.py::GPUInfo`. Searched first — no existing shared
+  location holds it, and the two are separate services with separate wire contracts.
+  Both files carry a comment saying a change to one requires the same change to the
+  other. `nvidia-smi` parsing was NOT duplicated: `hardware.py` reuses the existing
+  `telemetry/collector.py` parser rather than writing a second one.
+- 5. Only `.env.example` is tracked in Node and Scheduler; both contain non-secret
+  defaults only (ports, URLs, log levels). `.env` is ignored in all four repos.
+- 6. Regenerated by `scripts/generate_status.py`; its counts (213/231/29) match step 1.
+
+Not claimed: CI (no remote, never run — see below), and any behaviour on a second
+physical machine. This change does not affect roadmap 1.5 either way.
 ```
 
 **A verdict of PASS with any line marked UNVERIFIED is not a PASS.** Report it as

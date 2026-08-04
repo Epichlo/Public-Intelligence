@@ -76,14 +76,29 @@ and OpenAI-shaped gateway; RS256 JWT auth on the gateway; authenticated node
 control API; POSIX and Windows installers; dashboard and playground UI; CI green
 on six legs.
 
-**The blocker nobody has hit yet:** every node installed by `install.sh` registers
+**The blocker that defined this roadmap:** every node installed by `install.sh` registers
 `ip_address = 127.0.0.1` (`Node/src/node/runtime.py:252`, `install.sh:277`). The
-Scheduler builds `http://127.0.0.1:8080/infer` and dials itself. **No remote node
-has ever served a request.** Every green test exercises one process talking to
-itself.
+Scheduler built `http://127.0.0.1:8080/infer` and dialled itself. **No remote node
+had ever served a request.** Every green test exercised one process talking to itself.
 
 That single fact is why v1 is defined around delivery and reachability rather than
 around inference performance.
+
+**Where that stands now (1.1 done).** Inference no longer depends on dialling
+`ip_address`: it is routed over the Zenoh session the node dials out and holds, and the
+mesh path is exercised against a real Zenoh router rather than a mock
+(`tests/test_mesh_inference_e2e.py`). Stated precisely, because the distinction matters:
+that router runs in one process on TCP loopback. **A node on a genuinely separate machine,
+behind a real NAT, still has not served a request.** The transport that should make it
+possible is built and tested; the claim that it works on real hardware is not yet earned,
+and 1.5 is what would earn it.
+
+`ip_address` is still `127.0.0.1` — it stopped being load-bearing for dispatch rather than
+becoming correct. **1.2 addressed the misleading part rather than the value:** `GET /nodes`
+now returns a `reachability` field (`mesh` / `http`) derived from the registry's own mesh
+observations, so a reader is no longer left inferring reachability from an address that does
+not support the inference. The field itself is still the HTTP-fallback dial target, which is
+correct for same-host and containerised deployments and is the only thing that path serves.
 
 ---
 
@@ -96,17 +111,17 @@ Each item lists what must exist before it. Status is one of
 
 | # | Feature | Status | Depends on |
 |---|---------|--------|-----------|
-| 0.1 | **Scheduler authenticates to nodes.** `openai.py:427,487` proxy to `/infer` with no headers; the node now requires `X-Network-Auth-Token` and fails closed, so every real request 401s. A regression introduced in this session, hidden because Scheduler tests mock httpx and Node tests bypass auth. Needs a decision: shared `NETWORK_AUTH_TOKEN` across the fleet (what `AliasChoices` in both configs implies) vs. per-node tokens registered with the Scheduler. | **not started** | — |
+| 0.1 | **Scheduler authenticates to nodes.** The node's `/infer` requires `X-Network-Auth-Token` and fails closed; the Scheduler proxied with no headers, so every real request 401d. Resolved as **per-node** tokens, captured from the registration request and stored outside the `Node` model so they cannot be serialised into an API response. A fleet-wide token remains as a fallback. Both proxy call sites fixed — `openai.py` and `schedule.py`. | **done** | — |
 
 ### Stage 1 — Make the core loop work across two machines
 
 | # | Feature | Status | Depends on |
 |---|---------|--------|-----------|
-| 1.1 | **Node reachability.** The Scheduler cannot dial a residential node behind NAT. The Zenoh mesh already solves this for telemetry — nodes dial *out* and hold a session. Route inference requests over the existing Zenoh channels instead of HTTP dial-back, or define an explicit relay. This is the single largest piece of v1. | **not started** | 0.1 |
-| 1.2 | **Real hardware advertisement.** Registration hardcodes `{"name": "unknown", "vram_total_gb": 16.0, "vram_available_gb": 16.0}` (`clients/scheduler.py:96`), so matchmaking filters on fiction. `telemetry/collector.py` already does real nvidia-smi parsing — wire it to registration. | **partial** | 1.1 |
-| 1.3 | **Real heartbeat metrics.** `runtime.py:264-275` returns hardcoded literals (`cpu 15.0`, `vram_available_gb 0.0`) marked "(placeholders)". The scheduler's fitness scoring consumes these, so scoring is currently meaningless. | **partial** | 1.2 |
+| 1.1 | **Node reachability.** Resolved by routing inference over the Zenoh session the node already dials out and holds: the node declares a queryable on `public-intelligence/net/{node_id}/infer`, the Scheduler queries it, replies return over the node's own outbound connection. No inbound port, no relay to operate. Preferred whenever the registry has *observed* that node on the mesh, with HTTP kept as the fallback for same-host and containerised deployments. Authenticated by HMAC proof of possession rather than by sending the node's token, since Zenoh links are plaintext by default. Covered by a real-router end-to-end test, not mocks. See `specs/node-reachability.md`. | **done** | 0.1 |
+| 1.2 | **Real hardware advertisement.** Registration hardcoded `{"name": "unknown", "vram_total_gb": 16.0, "vram_available_gb": 16.0}` for every node, so matchmaking filtered and scored against fiction. Now measured on the host by `node/core/hardware.py`: NVIDIA via `nvidia-smi`, else Apple Silicon unified memory (Metal genuinely allocates from it), else `cpu-only` at 0 GB. `NodeInfo` carries a real `gpu`; `ram_total_gb` comes from psutil. Scheduler `GPUInfo.vram_total_gb` relaxed `gt=0` → `ge=0`, since that invariant held only because every node lied to satisfy it — a CPU-only node is now representable and is filtered out of any task with a VRAM floor. Every probe degrades to `cpu-only` rather than blocking startup. `GET /nodes` also gained `reachability` (`mesh`/`http`), derived from the registry, so a `127.0.0.1` `ip_address` no longer implies dialability. See `specs/real-hardware-advertisement.md`. | **done** | 1.1 |
+| 1.3 | **Real heartbeat metrics.** `runtime.py:300-308` returns hardcoded literals (`cpu 15.0`, `vram_available_gb 0.0`) marked "(placeholders)". The scheduler's fitness scoring consumes these, so scoring is currently meaningless. **1.2 did not fix this** — it corrected the *static* advertisement sent at registration, while `matchmaker.py:44` prefers the heartbeat's `vram_available_gb` when a heartbeat exists. Live VRAM filtering stays wrong until this lands. | **partial** | 1.2 |
 | 1.4 | **Model catalogue is truthful.** A node should advertise what Ollama actually has pulled, and refresh it when that changes. | **partial** | 1.2 |
-| 1.5 | **Cross-machine integration test.** Two processes, real HTTP/Zenoh, no mocks. Nothing today would catch 1.1 breaking again — `docker-compose.test.yml` exists but has never run and its `NODE_ID` env var is wrong (needs `NODE_NODE_ID`). | **not started** | 1.1 |
+| 1.5 | **Cross-machine integration test.** `tests/test_mesh_inference_e2e.py` now drives a real Zenoh router with no transport mocks, so 1.1 silently breaking would fail a test. What it does not cover is two *machines*: it is one process on TCP loopback, so real RTT, packet loss, and an actual NAT are still unexercised — and that is exactly what would substantiate "a remote node served a request". `docker-compose.test.yml` still has never run and its `NODE_ID` env var is wrong (needs `NODE_NODE_ID`). | **partial** | 1.1 |
 | 1.6 | **Node survives a Scheduler outage at boot.** `main.py:29` calls `runtime.start()` in the lifespan, which registers with the Scheduler; `SchedulerError` propagates and uvicorn reports "Application startup failed. Exiting." A host whose node boots while the Scheduler is briefly down (Render cold start, network blip) just gets a dead process. Needs retry with backoff and a degraded start. Found while verifying 0.1. | **not started** | 0.1 |
 
 ### Stage 2 — Survive contact with reality

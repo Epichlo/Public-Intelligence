@@ -4,17 +4,17 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-02 18:34 UTC
+**Generated:** 2026-08-04 10:45 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 163 | 0 | 0 | 10.71s |
-| Node | PASS | 183 | 0 | 1 | 2.79s |
-| Root E2E | PASS | 13 | 0 | 0 | 0.30s |
-| **Total** | **PASSING** | **359** | **0** | **1** | |
+| Scheduler | PASS | 213 | 0 | 0 | 12.89s |
+| Node | PASS | 231 | 0 | 1 | 2.91s |
+| Root E2E | PASS | 29 | 0 | 0 | 21.98s |
+| **Total** | **PASSING** | **473** | **0** | **1** | |
 
 Reproduce:
 
@@ -26,20 +26,24 @@ Node/.venv/bin/python -m pytest tests -q   # Root E2E
 
 ## Git
 
-- **Last commit:** `5d3cf82` fix(security): authenticate the Node control API; provision the credential
-- **Author / date:** Atharv Deshpande — 2026-08-02 22:46:41 +0530
+- **Last commit:** `3f21d9c` feat(roadmap): define v1 honestly; deliver 0.1 scheduler-to-node auth
+- **Author / date:** Atharv Deshpande — 2026-08-03 00:06:52 +0530
 - **Branch:** main
-- **Total commits:** 48
+- **Total commits:** 49
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence.git (fetch)
-- **Working tree:** 6 uncommitted change(s)
+- **Working tree:** 10 uncommitted change(s)
 
 ```
-  M CLAUDE.md
+  M Node
+   M ROADMAP.md
    M STATUS.md
    M Scheduler
+   M VERIFY.md
    M tests/__pycache__/test_phase4_5_e2e.cpython-314-pytest-9.1.1.pyc
-  ?? ROADMAP.md
-  ?? specs/scheduler-node-auth.md
+  ?? specs/node-reachability.md
+  ?? specs/real-hardware-advertisement.md
+  ?? tests/test_mesh_inference_e2e.py
+  ?? tests/test_mesh_protocol_parity.py
 ```
 
 ## Submodules
@@ -47,7 +51,7 @@ Node/.venv/bin/python -m pytest tests -q   # Root E2E
 | Path | Pinned | Subject |
 | --- | --- | --- |
 | Node | `a9f6e837` | fix(security): require authentication on the control and inf |
-| Scheduler | `53539578` | fix(consensus): apply proposals on a single-node cluster |
+| Scheduler | `1aeeca0f` | fix(security): authenticate to nodes with their own register |
 | website | `40a94020` | fix(dashboard): forward the node's auth credential from the  |
 
 ## CI
