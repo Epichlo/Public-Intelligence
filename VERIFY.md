@@ -74,7 +74,7 @@ grep -rn -A3 "allow_origins" Node/src Scheduler/src
 - [ ] Any pre-existing hit is listed below as known, not silently passed over
 
 The first grep returns two benign hits — `AliasChoices("NODE_NETWORK_AUTH_TOKEN", ...)`
-in `Node/src/node/core/configuration.py:88` and `Scheduler/src/scheduler/core/config.py:46`
+in `Node/src/node/core/configuration.py:92` and `Scheduler/src/scheduler/core/config.py:50`
 — which declare env var *names*, not values. Everything else it returns is real.
 
 **Known pre-existing hits as of 2026-08-03** — these are real and unfixed. Do not
@@ -221,19 +221,16 @@ next person can trust the verdict without re-deriving it.
 
 ---
 
-## Repo-level checks that currently cannot pass
+## Repo-level facts
 
-These are environment facts, not per-change failures. They are listed so no one
-mistakes them for verified. Re-check when they change.
+Re-check these rather than trusting the text; all three statements that stood here
+before 2026-08-04 were false by then.
 
-- **No git remote is configured on the root repo** (`git remote -v` is empty).
-  Nothing is backed up or pushed. Submodules have GitHub remotes; the workspace
-  that pins them does not.
-- **`.github/workflows/ci.yml` has never executed.** It needs a remote to run on,
-  and it checks out with `submodules: recursive` while no `.gitmodules` file
-  exists — so `Node/`, `Scheduler/`, and `website/` would come up empty and
-  `pip install -e ./Node` would fail on step one.
-- **CI status cannot be queried** — the `gh` CLI is not installed on this machine.
+- **All four repos have GitHub remotes and are pushed**, all on `main` with upstreams.
+  `.gitmodules` exists and maps `Node`, `Scheduler`, and `website`.
+- **CI runs on push to `main` and has passed.** Query it: `gh run list --limit 5`.
+- **The `gh` CLI is installed.** CI status is queryable, so "CI unverifiable" is not
+  an acceptable answer — run the command.
 
-Until those are fixed, any "CI passed" claim is unverifiable. `generate_status.py`
-reports CI as `UNVERIFIABLE` for exactly this reason.
+A green CI run proves only what the workflow actually executes. Read
+`.github/workflows/ci.yml` before citing a run as evidence for anything beyond it.

@@ -4,16 +4,16 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-04 10:45 UTC
+**Generated:** 2026-08-04 11:01 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 213 | 0 | 0 | 12.89s |
-| Node | PASS | 231 | 0 | 1 | 2.91s |
-| Root E2E | PASS | 29 | 0 | 0 | 21.98s |
+| Scheduler | PASS | 213 | 0 | 0 | 12.23s |
+| Node | PASS | 231 | 0 | 1 | 2.92s |
+| Root E2E | PASS | 29 | 0 | 0 | 22.01s |
 | **Total** | **PASSING** | **473** | **0** | **1** | |
 
 Reproduce:
@@ -26,38 +26,32 @@ Node/.venv/bin/python -m pytest tests -q   # Root E2E
 
 ## Git
 
-- **Last commit:** `3f21d9c` feat(roadmap): define v1 honestly; deliver 0.1 scheduler-to-node auth
-- **Author / date:** Atharv Deshpande — 2026-08-03 00:06:52 +0530
+- **Last commit:** `62db2ac` feat: deliver ROADMAP 1.1 node reachability and 1.2 real hardware
+- **Author / date:** Atharv Deshpande — 2026-08-04 16:23:08 +0530
 - **Branch:** main
-- **Total commits:** 49
+- **Total commits:** 50
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence.git (fetch)
-- **Working tree:** 10 uncommitted change(s)
+- **Working tree:** 4 uncommitted change(s)
 
 ```
-  M Node
-   M ROADMAP.md
-   M STATUS.md
+  M CLAUDE.md
+   M Node
    M Scheduler
    M VERIFY.md
-   M tests/__pycache__/test_phase4_5_e2e.cpython-314-pytest-9.1.1.pyc
-  ?? specs/node-reachability.md
-  ?? specs/real-hardware-advertisement.md
-  ?? tests/test_mesh_inference_e2e.py
-  ?? tests/test_mesh_protocol_parity.py
 ```
 
 ## Submodules
 
 | Path | Pinned | Subject |
 | --- | --- | --- |
-| Node | `a9f6e837` | fix(security): require authentication on the control and inf |
-| Scheduler | `1aeeca0f` | fix(security): authenticate to nodes with their own register |
+| Node | `2b37f20f` | fix(node): make collect_gpu_metrics public; satisfy CI's ruf |
+| Scheduler | `14f949ce` | style(scheduler): apply ruff format to satisfy CI |
 | website | `40a94020` | fix(dashboard): forward the node's auth credential from the  |
 
 ## CI
 
-- **Status:** PASS
-- **Reason:** latest run concluded success
+- **Status:** FAIL
+- **Reason:** latest run did not succeed: [{"conclusion":"failure","headSha":"62db2ac4968a8bc8b0add5ca894d29a2932d1b49"}]
 
 ---
 

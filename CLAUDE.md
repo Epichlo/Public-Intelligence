@@ -31,10 +31,20 @@ Scheduler/.venv/bin/python -m pytest Scheduler/tests -q
 Node/.venv/bin/python      -m pytest Node/tests      -q
 Node/.venv/bin/python      -m pytest tests           -q   # root E2E: needs BOTH packages
 
-# lint / types
-Scheduler/.venv/bin/python -m ruff check Scheduler/src
-Node/.venv/bin/python      -m ruff check Node/src
+# lint -- these are the commands CI runs, over the WHOLE submodule, tests included.
+# Linting only `src` will pass locally and still fail CI; that has happened.
+Node/.venv/bin/python -m ruff check        ./Node ./Scheduler
+Node/.venv/bin/python -m ruff format --check ./Node ./Scheduler
+
+# security gate -- CI fails on MEDIUM and above only
+Node/.venv/bin/python -m bandit -r ./Node/src ./Scheduler/src -x tests -ll
+
+# installer smoke test, also run by CI
+./install.sh --dry-run
 ```
+
+Before pushing, run all of the above plus the three suites. CI runs on
+windows-latest and macos-latest; `gh run list` and `gh run view <id>` show results.
 
 The root suite only runs under `Node/.venv` — it is the only environment where both
 `node` and `scheduler` are importable. There is no root `pyproject.toml` or
@@ -42,18 +52,25 @@ The root suite only runs under `Node/.venv` — it is the only environment where
 
 ## Things that are true about this repo, so you don't rediscover them
 
-**No git remote is configured on the root repo.** `git remote -v` is empty. Nothing
-is pushed or backed up. The submodules have GitHub remotes; the workspace pinning
-them does not.
+**All four repos have GitHub remotes and are pushed.** Root is
+`Epichlo/Public-Intelligence`; the submodules are `Node-PublicIntelligence`,
+`Scheduler-PublicIntelligence`, and `website-PublicIntelligence`, all on `main` with
+upstreams set. `.gitmodules` exists and maps all three. Verify with `git remote -v`
+rather than trusting this line.
 
-**CI has never run.** `.github/workflows/ci.yml` needs a remote, and it checks out
-with `submodules: recursive` while no `.gitmodules` file exists — so the three
-submodule directories would come up empty and `pip install -e ./Node` would fail
-immediately. Do not cite CI as evidence of anything.
+**CI runs and has passed.** `.github/workflows/ci.yml` executes on push to `main`;
+`gh run list` shows successful runs. The `gh` CLI **is** installed. Three claims
+that stood here until 2026-08-04 — no remote, CI never run, no `.gitmodules` — were
+all false by then and caused at least one session to report "CI unverifiable" without
+checking. **Check with `gh run list`, do not repeat this paragraph as evidence.** A
+green CI run still only proves what the workflow actually executes; read it before
+citing it.
 
 **Four core modules are duplicated across Node and Scheduler** — `quantization.py`
 (byte-identical), `local_boundary.py`, `kv_cache.py`, `transport.py` — plus a third
-copy of the artifact store at `src/shared/storage/`. `autonomous_orchestrator.py`
+copy of the artifact store at `src/shared/storage/`. A fifth pair was added on
+2026-08-04: `Node/src/node/models/gpu_info.py::GPUInfo` ↔
+`Scheduler/src/scheduler/models/node.py::GPUInfo`. `autonomous_orchestrator.py`
 has already drifted (`Enum` vs `StrEnum`) because a fix landed on one copy only.
 **Before adding a module, check whether its twin exists.** If you change one of a
 pair, say explicitly whether the twin needs the same change.
