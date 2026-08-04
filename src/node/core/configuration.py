@@ -48,10 +48,14 @@ class Settings(BaseSettings):
     )
 
     # API
-    # nosec B104 - binding all interfaces is required, not accidental: the node
-    # runs inside a container (see docker-compose.yml, NODE_HOST=0.0.0.0) where
-    # loopback would be unreachable through published ports. Operators who want a
-    # specific interface override it via NODE_HOST/HOST.
+    # B104 (bind-all-interfaces) is suppressed on the default below, and that is
+    # deliberate, not accidental: the node runs inside a container (see
+    # docker-compose.yml, NODE_HOST=0.0.0.0) where loopback would be unreachable
+    # through published ports. Operators wanting a specific interface override it
+    # via NODE_HOST/HOST.
+    #
+    # This explanation must not begin with the `nosec` token: bandit parses the
+    # words following it as test IDs and warns on each one.
     host: str = Field(
         default="0.0.0.0",  # nosec B104
         validation_alias=AliasChoices("NODE_HOST", "HOST"),

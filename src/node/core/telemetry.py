@@ -10,7 +10,7 @@ import os
 import subprocess
 import sys
 from contextlib import suppress
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -178,7 +178,7 @@ class TelemetryEmitter:
             try:
                 metrics = {
                     "node_id": self.node_id,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                     "cpu_utilization": get_cpu_utilization(),
                     "ram_usage_bytes": get_ram_usage_bytes(),
                     "gpu_utilization": 0.0,

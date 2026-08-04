@@ -172,7 +172,7 @@ async def stream_sandbox_logs(
                     count += 1
                     if max_events is not None and count >= max_events:
                         break
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     if max_events is not None:
                         break
                     yield ": keep-alive\n\n"

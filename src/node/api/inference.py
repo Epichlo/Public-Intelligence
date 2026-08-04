@@ -23,7 +23,7 @@ def get_ollama_client(request: Request) -> OllamaClient:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="OllamaClient is not initialized in application state.",
         )
-    return cast(OllamaClient, client)
+    return cast("OllamaClient", client)
 
 
 def get_radix_cache(request: Request) -> RadixTrieCache:
@@ -32,7 +32,7 @@ def get_radix_cache(request: Request) -> RadixTrieCache:
     if cache is None:
         cache = RadixTrieCache()
         request.app.state.radix_cache = cache
-    return cast(RadixTrieCache, cache)
+    return cast("RadixTrieCache", cache)
 
 
 # Protected per route rather than router-wide: /health and /health/ready below
@@ -54,7 +54,7 @@ async def infer(
     original_prompt = request.prompt
 
     # Intercept prompt and lookup prefix
-    prefix, suffix = await radix_cache.lookup_prefix(original_prompt)
+    _prefix, suffix = await radix_cache.lookup_prefix(original_prompt)
 
     # Route only the remaining suffix data to the underlying backend serving model
     request.prompt = suffix
@@ -86,7 +86,7 @@ async def infer(
                     router = BackpressuredStreamRouter(session_id, zenoh_session)
                     yield f"session_id: {session_id}\n"
 
-                created_shms = []
+                created_shms: list[str] = []
                 try:
                     from node.core.transport import SharedMemoryIPC
 

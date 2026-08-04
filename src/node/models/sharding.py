@@ -3,12 +3,11 @@
 import hashlib
 import json
 import time
-from enum import Enum
+from enum import StrEnum
 from math import prod
-from typing import Any
+from typing import Any, Self
 
 from pydantic import BaseModel, Field, model_validator
-from typing_extensions import Self
 
 
 class LayerRange(BaseModel):
@@ -30,7 +29,7 @@ class LayerRange(BaseModel):
         return self.end_layer - self.start_layer + 1
 
 
-class StageType(str, Enum):  # noqa: UP042
+class StageType(StrEnum):
     """Stage type classification for pipeline sharding and local boundary isolation."""
 
     CLIENT_EMBEDDING = "client_embedding"

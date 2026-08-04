@@ -67,7 +67,7 @@ async def test_radix_trie_lru_eviction() -> None:
     await cache.insert_prefix("date")
 
     # Verify banana is evicted
-    prefix_p2, suffix_p2 = await cache.lookup_prefix("banana")
+    prefix_p2, _suffix_p2 = await cache.lookup_prefix("banana")
     assert prefix_p2 == ""
 
     # Verify others are still in cache

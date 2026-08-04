@@ -1,6 +1,6 @@
 """Tests for the SchedulerClient."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -48,7 +48,7 @@ def heartbeat_data() -> Heartbeat:
     """Fixture to provide a valid Heartbeat instance."""
     return Heartbeat(
         node_id="node-1",
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         queue_length=0,
         cpu_utilization=10.0,
         ram_available_gb=12.0,

@@ -34,7 +34,7 @@ import re
 import shutil
 import subprocess
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 import psutil
 
@@ -43,8 +43,31 @@ from node.models.gpu_info import CPU_ONLY_GPU_NAME, GPUInfo, cpu_only_gpu
 
 logger = logging.getLogger(__name__)
 
+
+class GpuMetricsSource(Protocol):
+    """What `detect_gpu`/`detect_host_metrics` need from a telemetry collector.
+
+    A Protocol rather than `Any` so mypy checks this boundary and a test double has
+    a stated contract to satisfy. `Any` here switched type checking off at exactly
+    the seam where a mismatch matters -- a double with a misspelled method name
+    would have type-checked fine and silently taken the degradation path.
+
+    `node.telemetry.collector.TelemetryCollector` satisfies this structurally; no
+    explicit subclassing is needed.
+    """
+
+    async def collect_gpu_metrics(self) -> dict[str, Any]:
+        """Return nvidia-smi-derived metrics, or the miss-signal shape.
+
+        The miss-signal is `name == "N/A"` with zero byte counts, which is what a
+        host without nvidia-smi yields.
+        """
+        ...
+
+
 __all__ = [
     "CPU_ONLY_GPU_NAME",
+    "GpuMetricsSource",
     "HostMetrics",
     "detect_gpu",
     "detect_host_metrics",
@@ -114,7 +137,7 @@ def _apple_gpu_utilization() -> float:
     if not ioreg:
         return 0.0
 
-    proc = subprocess.run(  # noqa: S603
+    proc = subprocess.run(
         [ioreg, "-r", "-d", "1", "-w", "0", "-c", "AGXAccelerator"],
         capture_output=True,
         text=True,
@@ -124,7 +147,7 @@ def _apple_gpu_utilization() -> float:
     return _parse_ioreg_utilization(proc.stdout)
 
 
-async def _detect_nvidia(collector: Any | None) -> _GpuProbe | None:
+async def _detect_nvidia(collector: GpuMetricsSource | None) -> _GpuProbe | None:
     """Return an NVIDIA probe, or None when there is no usable card."""
     if collector is None:
         from node.telemetry.collector import TelemetryCollector
@@ -183,7 +206,7 @@ def _detect_apple_silicon() -> _GpuProbe | None:
     return _GpuProbe(info=info, utilization=utilization)
 
 
-async def _probe_gpu(collector: Any | None = None) -> _GpuProbe:
+async def _probe_gpu(collector: GpuMetricsSource | None = None) -> _GpuProbe:
     """Measure the host GPU once. Never raises; degrades to cpu-only at 0 GB.
 
     Single source of truth for both registration (1.2) and heartbeats (1.3), so a
@@ -207,13 +230,12 @@ async def _probe_gpu(collector: Any | None = None) -> _GpuProbe:
     return _GpuProbe(info=cpu_only_gpu(), utilization=0.0)
 
 
-async def detect_gpu(collector: Any | None = None) -> GPUInfo:
+async def detect_gpu(collector: GpuMetricsSource | None = None) -> GPUInfo:
     """Detect the host's usable GPU for advertisement at registration.
 
     Args:
-        collector: Optional object exposing `collect_gpu_metrics()`, used to
-            inject a known nvidia-smi result in tests. Defaults to a real
-            `TelemetryCollector`.
+        collector: Anything satisfying `GpuMetricsSource`, used to inject a known
+            nvidia-smi result in tests. Defaults to a real `TelemetryCollector`.
 
     Returns:
         Real hardware where it could be measured; `cpu-only` at 0 GB otherwise.
@@ -221,7 +243,7 @@ async def detect_gpu(collector: Any | None = None) -> GPUInfo:
     return (await _probe_gpu(collector)).info
 
 
-async def detect_host_metrics(collector: Any | None = None) -> HostMetrics:
+async def detect_host_metrics(collector: GpuMetricsSource | None = None) -> HostMetrics:
     """Measure current host utilisation for a heartbeat.
 
     Note on CPU: `psutil.cpu_percent(interval=None)` returns 0.0 on its first call

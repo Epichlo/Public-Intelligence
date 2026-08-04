@@ -6,7 +6,7 @@ import os
 import socket
 from asyncio import sleep as async_sleep
 from contextlib import suppress
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from node.clients import OllamaClient, SchedulerClient, ZenohHeartbeatClient
@@ -249,7 +249,7 @@ class Runtime:
                 metrics = await self._collect_heartbeat_metrics()
                 hb = Heartbeat(
                     node_id=self.settings.node_id,
-                    timestamp=datetime.now(timezone.utc),
+                    timestamp=datetime.now(UTC),
                     queue_length=metrics["queue_length"],
                     cpu_utilization=metrics["cpu_utilization"],
                     ram_available_gb=metrics["ram_available_gb"],

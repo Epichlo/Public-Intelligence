@@ -156,7 +156,7 @@ async def test_split_inference_pipeline_autoregressive_generation_loop(
         h1 = await mock_backend.execute_split_stage(remote_stage, h0)
 
         # 3. Local Layer N LM Head Sampler
-        token_id, token_text = local_boundary_engine.unembed_logits(h1, temperature=0.0)
+        _token_id, token_text = local_boundary_engine.unembed_logits(h1, temperature=0.0)
 
         generated_tokens.append(token_text)
         curr_prompt += f" {token_text}"

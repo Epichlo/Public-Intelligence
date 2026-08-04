@@ -1,7 +1,7 @@
 """Tests for the ZenohHeartbeatClient."""
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -58,7 +58,7 @@ def test_zenoh_client_publish(settings: Settings) -> None:
     # Try to publish before start
     hb = Heartbeat(
         node_id="test-node-zenoh",
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         queue_length=2,
         cpu_utilization=10.0,
         ram_available_gb=8.0,

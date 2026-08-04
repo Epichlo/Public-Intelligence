@@ -9,7 +9,7 @@ import tempfile
 import threading
 from collections import deque
 from contextlib import suppress
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -24,7 +24,7 @@ class SandboxLogBuffer:
         self._lock = threading.Lock()
 
     def add_log(self, message: str, stream: str = "stdout", branch: str = "") -> None:
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
         entry = {
             "timestamp": timestamp,
             "stream": stream,
@@ -144,7 +144,7 @@ class WorktreeManager:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await proc.communicate()
+        _stdout, stderr = await proc.communicate()
 
         if proc.returncode != 0:
             err_msg = stderr.decode().strip()
@@ -168,7 +168,7 @@ class WorktreeManager:
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
-                stdout_retry, stderr_retry = await proc_retry.communicate()
+                _stdout_retry, stderr_retry = await proc_retry.communicate()
                 if proc_retry.returncode != 0:
                     err_retry = stderr_retry.decode().strip()
                     raise RuntimeError(f"Failed to create git worktree on retry: {err_retry}")
@@ -297,7 +297,7 @@ class WorktreeManager:
         try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60.0)
             returncode = proc.returncode if proc.returncode is not None else 0
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(
                 "Sandboxed execution timed out on branch %s. Killing process...",
                 branch_name,
@@ -320,7 +320,7 @@ class WorktreeManager:
                 stream="stderr",
                 branch=branch_name,
             )
-            raise asyncio.TimeoutError("Sandbox execution exceeded timeout limit.") from None
+            raise TimeoutError("Sandbox execution exceeded timeout limit.") from None
 
         if stdout:
             for line in stdout.decode("utf-8", errors="replace").splitlines():

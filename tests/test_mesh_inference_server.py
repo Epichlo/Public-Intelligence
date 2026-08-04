@@ -46,7 +46,7 @@ class FakeQuery:
 
     # key_expr is unused but kept: this double mirrors Zenoh's Query.reply signature,
     # which the server calls positionally. Dropping it would hide a real argument.
-    def reply(self, key_expr: str, payload: bytes) -> None:  # noqa: ARG002
+    def reply(self, key_expr: str, payload: bytes) -> None:
         self.replies.append(json.loads(payload.decode("utf-8")))
 
     def reply_err(self, payload: bytes) -> None:
@@ -74,7 +74,7 @@ class FakeSession:
         self,
         key_expr: str,
         callback: Any,
-        **kwargs: Any,  # noqa: ARG002
+        **kwargs: Any,
     ) -> FakeQueryable:
         self.key_expr = key_expr
         self.callback = callback

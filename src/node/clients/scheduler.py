@@ -17,6 +17,39 @@ class SchedulerError(Exception):
     pass
 
 
+# These two build the exact bytes that go on the wire to the Scheduler. They are
+# module-level rather than inlined into the request methods so the cross-package
+# contract test (`tests/test_wire_contract.py`) can feed their real output to the
+# Scheduler's real models. A test that rebuilt the payload itself would only prove
+# the test and the Scheduler agree, which is not the thing that breaks.
+
+
+def build_registration_payload(node_info: NodeInfo) -> dict[str, Any]:
+    """Serialise a NodeInfo into the body of `POST /nodes/register`.
+
+    The Scheduler's `Node` model differs from `NodeInfo` in one way: it takes
+    `available_models` as a list of names, not a list of `ModelInfo` objects.
+    """
+    payload = node_info.model_dump(mode="json")
+    payload["available_models"] = [m["name"] for m in payload.get("available_models", [])]
+    # `gpu` rides along from NodeInfo.gpu -- it used to be overwritten here with a
+    # hardcoded 16 GB "unknown" card for every node on the network, which is what
+    # the Scheduler then filtered and scored against. See specs/real-hardware-advertisement.md.
+    return payload
+
+
+def build_heartbeat_payload(heartbeat: Heartbeat) -> dict[str, Any]:
+    """Serialise a Heartbeat into the body of `POST /heartbeat`.
+
+    The Scheduler's `Heartbeat` requires a `status` the Node's model has no field
+    for, so it is injected here. See specs/real-heartbeat-metrics.md -- reporting a
+    real status is a known gap, not something this function decides.
+    """
+    payload = heartbeat.model_dump(mode="json")
+    payload["status"] = "online"
+    return payload
+
+
 class SchedulerClient:
     """Client responsible for all communication with the Scheduler."""
 
@@ -89,12 +122,7 @@ class SchedulerClient:
         Raises:
             SchedulerError: If registration fails.
         """
-        payload = node_info.model_dump(mode="json")
-        # Translate available_models from ModelInfo list to list[str] of names
-        payload["available_models"] = [m["name"] for m in payload.get("available_models", [])]
-        # `gpu` rides along from NodeInfo.gpu -- it used to be overwritten here with a
-        # hardcoded 16 GB "unknown" card for every node on the network, which is what
-        # the Scheduler then filtered and scored against. See specs/real-hardware-advertisement.md.
+        payload = build_registration_payload(node_info)
         try:
             await self._send_request("POST", "/nodes/register", payload)
         except SchedulerError as e:
@@ -112,10 +140,7 @@ class SchedulerClient:
         Raises:
             SchedulerError: If the heartbeat request fails.
         """
-        payload = heartbeat.model_dump(mode="json")
-        # Inject NodeStatus field required by Scheduler
-        payload["status"] = "online"
-        await self._send_request("POST", "/heartbeat", payload)
+        await self._send_request("POST", "/heartbeat", build_heartbeat_payload(heartbeat))
 
     async def unregister(self, node_id: str) -> None:
         """Unregister the Node from the Scheduler.

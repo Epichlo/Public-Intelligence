@@ -2,14 +2,14 @@
 
 import logging
 import time
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
 
-class MissionState(str, Enum):
+class MissionState(StrEnum):
     """Execution states for autonomous self-improving fabric."""
 
     PLANNING = "planning"

@@ -81,7 +81,7 @@ async def test_sandbox_log_buffer_concurrent_subscribers_and_publishers() -> Non
             try:
                 await asyncio.wait_for(q.get(), timeout=0.05)
                 received_counts[idx] += 1
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 break
 
     # Spawn consumers
