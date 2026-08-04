@@ -28,28 +28,28 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # one without saying why in the commit message.
 DUPLICATE_PAIRS: dict[str, tuple[str, str, int]] = {
     "quantization": (
-        "Node/src/node/core/quantization.py",
-        "Scheduler/src/scheduler/core/quantization.py",
+        "packages/node/src/node/core/quantization.py",
+        "packages/scheduler/src/scheduler/core/quantization.py",
         0,
     ),
     "kv_cache": (
-        "Node/src/node/core/kv_cache.py",
-        "Scheduler/src/scheduler/core/kv_cache.py",
+        "packages/node/src/node/core/kv_cache.py",
+        "packages/scheduler/src/scheduler/core/kv_cache.py",
         2,
     ),
     "local_boundary": (
-        "Node/src/node/core/local_boundary.py",
-        "Scheduler/src/scheduler/core/local_boundary.py",
+        "packages/node/src/node/core/local_boundary.py",
+        "packages/scheduler/src/scheduler/core/local_boundary.py",
         2,
     ),
     "autonomous_orchestrator": (
-        "Node/src/node/core/autonomous_orchestrator.py",
-        "Scheduler/src/scheduler/core/autonomous_orchestrator.py",
+        "packages/node/src/node/core/autonomous_orchestrator.py",
+        "packages/scheduler/src/scheduler/core/autonomous_orchestrator.py",
         14,
     ),
     "transport": (
-        "Node/src/node/core/transport.py",
-        "Scheduler/src/scheduler/core/transport.py",
+        "packages/node/src/node/core/transport.py",
+        "packages/scheduler/src/scheduler/core/transport.py",
         22,
     ),
 }
@@ -157,8 +157,8 @@ def test_both_packages_lint_under_identical_rules() -> None:
     answer, which is how three ARG violations were dismissed as out-of-scope and
     reached main.
     """
-    node = _ruff_block(REPO_ROOT / "Node" / "pyproject.toml")
-    sched = _ruff_block(REPO_ROOT / "Scheduler" / "pyproject.toml")
+    node = _ruff_block(REPO_ROOT / "packages" / "node" / "pyproject.toml")
+    sched = _ruff_block(REPO_ROOT / "packages" / "scheduler" / "pyproject.toml")
 
     assert node == sched, (
         "The [tool.ruff] blocks in Node/pyproject.toml and Scheduler/pyproject.toml "
@@ -175,7 +175,7 @@ def test_both_packages_pin_the_same_tool_versions() -> None:
     """
     pins = {}
     for pkg in ("Node", "Scheduler"):
-        data = tomllib.loads((REPO_ROOT / pkg / "pyproject.toml").read_text())
+        data = tomllib.loads((REPO_ROOT / "packages" / pkg.lower() / "pyproject.toml").read_text())
         dev = data["project"]["optional-dependencies"]["dev"]
         pins[pkg] = sorted(d for d in dev if "==" in d)
 

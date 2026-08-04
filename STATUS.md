@@ -4,52 +4,52 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-04 12:20 UTC
+**Generated:** 2026-08-04 13:01 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 218 | 0 | 0 | 12.18s |
-| Node | PASS | 243 | 0 | 1 | 3.10s |
-| Root E2E | PASS | 53 | 0 | 0 | 22.10s |
+| Scheduler | PASS | 218 | 0 | 0 | 13.68s |
+| Node | PASS | 243 | 0 | 1 | 3.15s |
+| Root E2E | PASS | 53 | 0 | 0 | 22.04s |
 | **Total** | **PASSING** | **514** | **0** | **1** | |
 
 Reproduce:
 
 ```bash
-Scheduler/.venv/bin/python -m pytest Scheduler/tests -q   # Scheduler
-Node/.venv/bin/python -m pytest Node/tests -q   # Node
-Node/.venv/bin/python -m pytest tests -q   # Root E2E
+.venv/bin/python -m pytest packages/scheduler/tests -q   # Scheduler
+.venv/bin/python -m pytest packages/node/tests -q   # Node
+.venv/bin/python -m pytest tests -q   # Root E2E
 ```
 
 ## Git
 
-- **Last commit:** `d79a52b` fix: pin types-psutil; correct stale test filename references
-- **Author / date:** Atharv Deshpande — 2026-08-04 17:42:20 +0530
+- **Last commit:** `597f73b` chore: graft website-PublicIntelligence history into packages/website
+- **Author / date:** Atharv Deshpande — 2026-08-04 18:14:25 +0530
 - **Branch:** main
-- **Total commits:** 54
+- **Total commits:** 195
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence.git (fetch)
-- **Working tree:** 2 uncommitted change(s)
+- **Working tree:** 11 uncommitted change(s)
 
 ```
-  M Node
+  M .github/workflows/ci.yml
+   M CLAUDE.md
+   M VERIFY.md
+   M docker-compose.test.yml
+   M packages/node/tests/test_installer_launcher.py
+   M scripts/generate_status.py
+   M scripts/install-hooks.sh
    M scripts/verify.sh
+   M tests/test_mesh_protocol_parity.py
+   M tests/test_source_parity.py
 ```
-
-## Submodules
-
-| Path | Pinned | Subject |
-| --- | --- | --- |
-| Node | `bb9f9437` | fix(node): pin types-psutil so the mypy gate is reproducible |
-| Scheduler | `f1dc3bcc` | fix(scheduler): pin types-psutil so the mypy gate is reprodu |
-| website | `40a94020` | fix(dashboard): forward the node's auth credential from the  |
 
 ## CI
 
-- **Status:** FAIL
-- **Reason:** latest run did not succeed: [{"conclusion":"failure","headSha":"d79a52b31e6e3fe5b89bd8e9e67ff5b6580d6200"}]
+- **Status:** PASS
+- **Reason:** latest run concluded success
 
 
 ## Repo facts
@@ -59,13 +59,9 @@ _Measured, not asserted. Re-run to refresh._
 | Repo | Remote | Branch | Tracking |
 | --- | --- | --- | --- |
 | root | `https://github.com/Epichlo/Public-Intelligence.git` | main | origin/main |
-| Node | `https://github.com/Epichlo/Node-PublicIntelligence.git` | main | origin/main |
-| Scheduler | `https://github.com/Epichlo/Scheduler-PublicIntelligence.git` | main | origin/main |
-| website | `https://github.com/Epichlo/website-PublicIntelligence.git` | main | origin/main |
 
-- **`.gitmodules`:** present, maps Node, Scheduler, website
-- **Node venv interpreter:** Python 3.14.6
-- **Scheduler venv interpreter:** Python 3.14.6
+- **`.gitmodules`:** **MISSING** — a fresh clone gets empty submodule directories and `pip install -e ./Node` fails immediately.
+- **root venv interpreter:** Python 3.14.6
 - **ruff:** ruff 0.16.1 (pinned in both pyproject `[dev]` extras)
 
 **Duplicated modules** (differing significant lines; imports and comments excluded).

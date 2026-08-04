@@ -4,7 +4,9 @@ CLAUDE.md lists four modules already duplicated across Node and Scheduler, and r
 `autonomous_orchestrator.py` drifted because a fix landed on one copy only. `mesh_protocol.py`
 is a fifth duplicate -- unavoidable, because the request envelope has to be identical in both
 packages and there is no shared installable package to hold it (`src/shared/` is an unimported
-third copy of the artifact store, not a dependency of either service).
+third copy of the artifact store, not a dependency of either service; the monorepo
+migration makes `packages/shared/` possible, which is the follow-up that removes
+this duplication entirely).
 
 The difference is that this pair is guarded. This module is in the root suite because that is
 the only interpreter where both `node` and `scheduler` import, so it is the only place the two
@@ -20,8 +22,8 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-NODE_COPY = REPO_ROOT / "Node" / "src" / "node" / "core" / "mesh_protocol.py"
-SCHEDULER_COPY = REPO_ROOT / "Scheduler" / "src" / "scheduler" / "core" / "mesh_protocol.py"
+NODE_COPY = REPO_ROOT / "packages" / "node" / "src" / "node" / "core" / "mesh_protocol.py"
+SCHEDULER_COPY = REPO_ROOT / "packages" / "scheduler" / "src" / "scheduler" / "core" / "mesh_protocol.py"
 
 NODE_ID = "node-parity"
 TOKEN = "parity-token"

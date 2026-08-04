@@ -27,12 +27,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 STATUS_FILE = ROOT / "STATUS.md"
 
-# (label, interpreter, test path). The root suite is the only one importing both
-# `node` and `scheduler`, so it must run under Node's venv -- see VERIFY.md step 1.
+# (label, interpreter, test path). One venv now runs all three; before the
+# monorepo migration each package had its own and only Node's could import both.
 SUITES: list[tuple[str, Path, Path]] = [
-    ("Scheduler", ROOT / "Scheduler/.venv/bin/python", ROOT / "Scheduler/tests"),
-    ("Node", ROOT / "Node/.venv/bin/python", ROOT / "Node/tests"),
-    ("Root E2E", ROOT / "Node/.venv/bin/python", ROOT / "tests"),
+    ("Scheduler", ROOT / ".venv/bin/python", ROOT / "packages/scheduler/tests"),
+    ("Node", ROOT / ".venv/bin/python", ROOT / "packages/node/tests"),
+    ("Root E2E", ROOT / ".venv/bin/python", ROOT / "tests"),
 ]
 
 TEST_TIMEOUT_SECONDS = 900
@@ -402,9 +402,7 @@ def repo_facts_section() -> list[str]:
     lines += ["| Repo | Remote | Branch | Tracking |", "| --- | --- | --- | --- |"]
     for name, path in [
         ("root", ROOT),
-        ("Node", ROOT / "Node"),
-        ("Scheduler", ROOT / "Scheduler"),
-        ("website", ROOT / "website"),
+        
     ]:
         if not (path / ".git").exists():
             lines.append(f"| {name} | (not a git repo) | - | - |")
@@ -432,8 +430,8 @@ def repo_facts_section() -> list[str]:
         )
 
     # --- interpreters and pinned tools ---
-    node_py = ROOT / "Node/.venv/bin/python"
-    for label, py in [("Node", node_py), ("Scheduler", ROOT / "Scheduler/.venv/bin/python")]:
+    node_py = ROOT / ".venv/bin/python"
+    for label, py in [("root", node_py)]:
         if py.exists():
             _, ver = run([str(py), "-V"])
             lines.append(f"- **{label} venv interpreter:** {ver.strip()}")
@@ -443,16 +441,16 @@ def repo_facts_section() -> list[str]:
 
     # --- duplicate-module drift ---
     pairs = [
-        ("quantization", "Node/src/node/core/quantization.py",
-         "Scheduler/src/scheduler/core/quantization.py"),
-        ("kv_cache", "Node/src/node/core/kv_cache.py",
-         "Scheduler/src/scheduler/core/kv_cache.py"),
-        ("local_boundary", "Node/src/node/core/local_boundary.py",
-         "Scheduler/src/scheduler/core/local_boundary.py"),
-        ("autonomous_orchestrator", "Node/src/node/core/autonomous_orchestrator.py",
-         "Scheduler/src/scheduler/core/autonomous_orchestrator.py"),
-        ("transport", "Node/src/node/core/transport.py",
-         "Scheduler/src/scheduler/core/transport.py"),
+        ("quantization", "packages/node/src/node/core/quantization.py",
+         "packages/scheduler/src/scheduler/core/quantization.py"),
+        ("kv_cache", "packages/node/src/node/core/kv_cache.py",
+         "packages/scheduler/src/scheduler/core/kv_cache.py"),
+        ("local_boundary", "packages/node/src/node/core/local_boundary.py",
+         "packages/scheduler/src/scheduler/core/local_boundary.py"),
+        ("autonomous_orchestrator", "packages/node/src/node/core/autonomous_orchestrator.py",
+         "packages/scheduler/src/scheduler/core/autonomous_orchestrator.py"),
+        ("transport", "packages/node/src/node/core/transport.py",
+         "packages/scheduler/src/scheduler/core/transport.py"),
     ]
     drift_rows = []
     for name, left, right in pairs:

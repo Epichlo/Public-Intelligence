@@ -4,14 +4,15 @@ Read ROADMAP.md for v1 scope and feature order. When told "next feature," take t
 
 # Public Intelligence
 
-Distributed compute control plane. Three components, pinned as git submodules from
-the `Public-Intelligence-Revolution` GitHub org:
+Distributed compute control plane. **One repository** — the three components used
+to be git submodules and were merged into `packages/` on 2026-08-04. The old repos
+still exist on GitHub, each tagged `pre-monorepo-2026-08-04`.
 
-- `Scheduler/` — FastAPI control plane. Node registry, matchmaking, OpenAI-compatible
+- `packages/scheduler/` — FastAPI control plane. Node registry, matchmaking, OpenAI-compatible
   gateway (`/v1/chat/completions`, `/v1/models`, `/v1/batch`), Zenoh P2P router.
-- `Node/` — FastAPI host agent. Local control API, telemetry, Docker sandbox runtime,
+- `packages/node/` — FastAPI host agent. Local control API, telemetry, Docker sandbox runtime,
   Ollama-backed inference.
-- `website/` — Next.js 16 / React 19 dashboard and playground. Proxies to Scheduler.
+- `packages/website/` — Next.js 16 / React 19 dashboard and playground. Proxies to Scheduler.
 
 ## Workflow
 
@@ -25,17 +26,19 @@ the `Public-Intelligence-Revolution` GitHub org:
 
 ## Running things
 
-```bash
-# tests -- three suites, three interpreters
-Scheduler/.venv/bin/python -m pytest Scheduler/tests -q
-Node/.venv/bin/python      -m pytest Node/tests      -q
-Node/.venv/bin/python      -m pytest tests           -q   # root E2E: needs BOTH packages
+One venv, one interpreter, everything. Set it up once per clone:
 
-**Do not run linters, mypy, or bandit individually. Run the gate:**
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -e "packages/node[dev]" -e "packages/scheduler[dev]"
+./scripts/install-hooks.sh
+```
+
+**Do not run linters, mypy, pytest, or bandit individually. Run the gate:**
 
 ```bash
 ./scripts/verify.sh           # everything CI runs, in one command
-./scripts/verify.sh --quick   # skips root E2E + installer, for a tight loop
+./scripts/verify.sh --quick   # skips cross-package tests + installer, tight loop
 ```
 
 `.github/workflows/ci.yml` invokes that same script and nothing else, so there is
@@ -47,13 +50,14 @@ Run `./scripts/install-hooks.sh` once per clone to get a pre-push hook that runs
 the gate before any push. It writes `.verify-receipt.json`; if that file's commit
 is not `HEAD`, whatever it says is about code that no longer exists.
 
-The root suite only runs under `Node/.venv` — it is the only environment where both
-`node` and `scheduler` are importable. There is no root `pyproject.toml` or
-`conftest.py`.
+`tests/` at the repo root holds the cross-package tests — the node/scheduler wire
+contract and the duplicate-module ratchets. They assert relationships *between* the
+packages, which is why they are not inside either one. Before the monorepo migration
+they could only run under `Node/.venv`; now one root `.venv` runs everything.
 
 ## Things that are true about this repo, so you don't rediscover them
 
-**Facts about remotes, CI, submodules, interpreter/tool versions, and how far the
+**Facts about remotes, CI, interpreter/tool versions, and how far the
 duplicated modules have drifted are GENERATED — read the "Repo facts" section of
 `STATUS.md`, and regenerate it rather than trusting any prose about them.**
 
@@ -67,8 +71,9 @@ live in `STATUS.md`.
 **Several core modules are duplicated across Node and Scheduler** — `quantization.py`,
 `local_boundary.py`, `kv_cache.py`, `transport.py`, `mesh_protocol.py`, and the
 `GPUInfo` pair — plus a third copy of the artifact store at `src/shared/storage/`.
-They exist because the two services are separate git repositories with no shared
-installable package. **Before adding a module, check whether its twin exists.** If
+They exist because the two services *were* separate git repositories with no shared
+installable package. The monorepo migration removes that constraint; collapsing them
+into `packages/shared/` is the immediate follow-up. **Before adding a module, check whether its twin exists.** If
 you change one of a pair, change both.
 
 This is now enforced, not just requested: `tests/test_source_parity.py` records a
@@ -77,7 +82,7 @@ drift budget per pair and fails if one drifts further, and
 Scheduler's real models. Current drift is in `STATUS.md`. When you converge a pair,
 lower its budget so the ratchet holds.
 
-**The distributed inference path is not implemented.** `Node/src/node/runtime.py`
+**The distributed inference path is not implemented.** `packages/node/src/node/runtime.py`
 never assigns `self.inference_backend` anything but `EchoBackend`. `LocalBoundaryEngine`
 uses a 155-word vocabulary and seeded random matrices. The working inference path is
 the non-split one that proxies to Ollama. Don't describe split inference as working.

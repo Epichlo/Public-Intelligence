@@ -19,18 +19,16 @@ Rules that override everything else below:
 
 ## 1. Run the test suite
 
-Run all three. They need different interpreters — the root suite is the only one
-that imports both `node` and `scheduler`, so it only works under `Node/.venv`.
+One command runs every suite and every other gate. It is what CI invokes, so a
+green run here is the same green CI will produce.
 
 ```bash
-Scheduler/.venv/bin/python -m pytest Scheduler/tests -q   # Scheduler suite
-Node/.venv/bin/python      -m pytest Node/tests      -q   # Node suite
-Node/.venv/bin/python      -m pytest tests           -q   # root E2E suite
+./scripts/verify.sh   # runs all three suites plus every other gate
 ```
 
 Paste the real tail of each run, including the counts line.
 
-- [ ] All three suites run to completion
+- [ ] The gate runs to completion and prints PASS
 - [ ] Pass/fail counts recorded below, copied from actual output
 - [ ] Any new test added by this change is named here, and was **observed failing
       before the fix and passing after** — an assertion that never failed proves nothing
@@ -58,15 +56,15 @@ typo fix. Write the spec, then come back.
 # cases below: if this grep comes back clean, the pattern is broken, not the code.
 grep -rniE "(secret|token|password|passwd|api[_-]?key|private[_-]?key)[a-z0-9_]*[\"']?\s*[,:=]\s*[\"'][^\"'{}\$]{8,}[\"']|BEGIN (RSA )?(PUBLIC|PRIVATE) KEY" \
   --include="*.py" --include="*.ts" --include="*.tsx" \
-  Node/src Scheduler/src src website/src
+  packages/node/src packages/scheduler/src src packages/website/src
 
 # auth bypasses / dev backdoors on an authenticated path
 grep -rnE "dev_token|bypass|skip[_-]?auth|allow[_-]?all|== *[\"']dev[\"']|startswith\(\"dev" \
   --include="*.py" --include="*.ts" --include="*.tsx" \
-  Node/src Scheduler/src src website/src
+  packages/node/src packages/scheduler/src src packages/website/src
 
 # CORS wildcard combined with credentials
-grep -rn -A3 "allow_origins" Node/src Scheduler/src
+grep -rn -A3 "allow_origins" packages/node/src packages/scheduler/src
 ```
 
 - [ ] No new hardcoded secret, key, or credential
@@ -74,7 +72,7 @@ grep -rn -A3 "allow_origins" Node/src Scheduler/src
 - [ ] Any pre-existing hit is listed below as known, not silently passed over
 
 The first grep returns two benign hits — `AliasChoices("NODE_NETWORK_AUTH_TOKEN", ...)`
-in `Node/src/node/core/configuration.py:92` and `Scheduler/src/scheduler/core/config.py:50`
+in `packages/node/src/node/core/configuration.py:92` and `packages/scheduler/src/scheduler/core/config.py:50`
 — which declare env var *names*, not values. Everything else it returns is real.
 
 **Known pre-existing hits as of 2026-08-03** — these are real and unfixed. Do not
@@ -82,9 +80,9 @@ let them mask a *new* one, and do not report them as clean:
 
 | Location | Issue |
 |---|---|
-| `Node/src/node/core/telemetry.py:175`, `Scheduler/src/scheduler/core/zenoh_router.py:280` | `TELEMETRY_SECRET_KEY` defaults to a constant published in this repo (ROADMAP 2.2) |
-| `Scheduler/src/scheduler/api/ingress.py:16` | hardcoded fallback RSA public key |
-| `Scheduler/src/scheduler/main.py:76`, `Node/src/node/main.py:43` | `allow_origins=["*"]` with `allow_credentials=True` (ROADMAP 2.3) |
+| `packages/node/src/node/core/telemetry.py:175`, `packages/scheduler/src/scheduler/core/zenoh_router.py:280` | `TELEMETRY_SECRET_KEY` defaults to a constant published in this repo (ROADMAP 2.2) |
+| `packages/scheduler/src/scheduler/api/ingress.py:16` | hardcoded fallback RSA public key |
+| `packages/scheduler/src/scheduler/main.py:76`, `packages/node/src/node/main.py:43` | `allow_origins=["*"]` with `allow_credentials=True` (ROADMAP 2.3) |
 
 Two rows previously listed here were **removed on 2026-08-03 because they are fixed**,
 verified by the greps in this step returning no hit for either:
@@ -99,15 +97,16 @@ unchanged.
 
 ## 4. Check for duplicated logic before adding new files
 
-This repo already carries four cross-repo copy-paste duplicates. Adding a fifth is
-the single easiest way to make it worse.
+This repo carries six duplicated module pairs, a legacy of the pre-monorepo split.
+`packages/shared/` is now possible; until they are collapsed into it,
+`tests/test_source_parity.py` ratchets their drift.
 
 ```bash
 # does something with this name already exist?
-find Node/src Scheduler/src src -name "*<keyword>*"
+find packages/node/src packages/scheduler/src src -name "*<keyword>*"
 
 # does a module with this purpose already exist under a different name?
-grep -rn "class <NewClassName>\|def <new_function_name>" Node/src Scheduler/src src
+grep -rn "class <NewClassName>\|def <new_function_name>" packages/node/src packages/scheduler/src src
 ```
 
 - [ ] Searched for an existing implementation before writing a new one
@@ -119,31 +118,23 @@ needs the same change:
 
 | Pair | Status |
 |---|---|
-| `Node/src/node/core/quantization.py` ↔ `Scheduler/src/scheduler/core/quantization.py` | byte-identical |
-| `Node/src/node/core/local_boundary.py` ↔ `Scheduler/.../local_boundary.py` | 378 lines, differs only in imports |
-| `Node/src/node/core/kv_cache.py` ↔ `Scheduler/.../kv_cache.py` | near-identical |
-| `Node/src/node/core/transport.py` ↔ `Scheduler/.../transport.py` | ~508 lines, formatting drift |
-| `Node/src/node/core/autonomous_orchestrator.py` ↔ `Scheduler/.../autonomous_orchestrator.py` | **already diverged** (`Enum` vs `StrEnum`) |
-| `src/shared/storage/` ↔ `Node/src/shared/storage/` | third copy of the artifact store |
+| `packages/node/src/node/core/quantization.py` ↔ `packages/scheduler/src/scheduler/core/quantization.py` | byte-identical |
+| `packages/node/src/node/core/local_boundary.py` ↔ `packages/scheduler/.../local_boundary.py` | 378 lines, differs only in imports |
+| `packages/node/src/node/core/kv_cache.py` ↔ `packages/scheduler/.../kv_cache.py` | near-identical |
+| `packages/node/src/node/core/transport.py` ↔ `packages/scheduler/.../transport.py` | ~508 lines, formatting drift |
+| `packages/node/src/node/core/autonomous_orchestrator.py` ↔ `packages/scheduler/.../autonomous_orchestrator.py` | **already diverged** (`Enum` vs `StrEnum`) |
+| `src/shared/storage/` ↔ `packages/node/src/shared/storage/` | third copy of the artifact store |
 
 ## 5. Confirm no secrets or .env files are tracked
 
 ```bash
-# is anything sensitive tracked, in the root repo or any submodule?
-git ls-files | grep -iE "\.env|\.pem$|\.key$|credential|secret" || echo "root: clean"
-for d in Node Scheduler website; do
-  echo "-- $d --"
-  git -C "$d" ls-files | grep -iE "\.env|\.pem$|\.key$|credential|secret" || echo "clean"
-done
-
-# does .gitignore actually cover them?
-for d in . Node Scheduler website; do
-  printf "%-12s " "$d"; git -C "$d" check-ignore -q .env && echo ".env ignored" || echo "!! .env NOT ignored"
-done
+# one repo now, so one check
+git ls-files | grep -iE "\.env$|\.pem$|\.key$|credential|secret" || echo "clean"
+git check-ignore -q .env && echo ".env ignored" || echo "!! .env NOT ignored"
 ```
 
-- [ ] No `.env`, key, or credential file tracked in root or any submodule
-- [ ] `.gitignore` covers `.env` in every repo that has one
+- [ ] No `.env`, key, or credential file tracked
+- [ ] `.gitignore` covers `.env`
 - [ ] `git diff --cached` reviewed for inline secrets before commit
 
 ## 6. Regenerate STATUS.md
