@@ -44,7 +44,9 @@ class FakeQuery:
         self.replies: list[dict[str, Any]] = []
         self.errors: list[str] = []
 
-    def reply(self, key_expr: str, payload: bytes) -> None:
+    # key_expr is unused but kept: this double mirrors Zenoh's Query.reply signature,
+    # which the server calls positionally. Dropping it would hide a real argument.
+    def reply(self, key_expr: str, payload: bytes) -> None:  # noqa: ARG002
         self.replies.append(json.loads(payload.decode("utf-8")))
 
     def reply_err(self, payload: bytes) -> None:
@@ -67,7 +69,13 @@ class FakeSession:
         self.callback: Any = None
         self.queryable = FakeQueryable()
 
-    def declare_queryable(self, key_expr: str, callback: Any, **kwargs: Any) -> FakeQueryable:
+    # **kwargs absorbs Zenoh's optional declaration arguments; unused by design.
+    def declare_queryable(
+        self,
+        key_expr: str,
+        callback: Any,
+        **kwargs: Any,  # noqa: ARG002
+    ) -> FakeQueryable:
         self.key_expr = key_expr
         self.callback = callback
         return self.queryable
@@ -195,8 +203,10 @@ async def test_unsigned_request_is_refused_and_never_reaches_ollama(settings: Se
 
 
 @pytest.mark.asyncio
-async def test_node_without_a_token_serves_nothing(settings: Settings) -> None:
+async def test_node_without_a_token_serves_nothing() -> None:
     """Fails closed, matching the HTTP control API."""
+    # Builds its own Settings rather than taking the `settings` fixture, which is
+    # why the fixture parameter was dropped.
     unconfigured = Settings(node_id=NODE_ID, network_auth_token=None)
     session = FakeSession()
     ollama = FakeOllama()

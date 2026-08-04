@@ -29,7 +29,7 @@ class TelemetryCollector:
         ram_percent = mem.percent
 
         # 3. Collect GPU Metrics (with fallback for non-NVIDIA systems)
-        gpu_info = await self._collect_gpu_metrics()
+        gpu_info = await self.collect_gpu_metrics()
 
         return {
             "cpu_utilization": float(cpu_percent),
@@ -45,10 +45,16 @@ class TelemetryCollector:
             "vram_used_bytes": int(gpu_info["vram_used_bytes"]),
         }
 
-    async def _collect_gpu_metrics(self) -> dict[str, Any]:
+    async def collect_gpu_metrics(self) -> dict[str, Any]:
         """Attempt to query NVIDIA GPU metrics via nvidia-smi.
 
-        Falls back gracefully if nvidia-smi is unavailable.
+        Falls back gracefully if nvidia-smi is unavailable, returning a profile
+        with name "N/A" and zero bytes -- that is the documented miss-signal.
+
+        Public because `node.core.hardware` builds the registration advertisement
+        from it. It was private, and `hardware.py` called it through the underscore,
+        which made a cross-module contract look like an implementation detail and
+        forced test doubles to mirror a private name.
         """
         default_gpu = {
             "name": "N/A",

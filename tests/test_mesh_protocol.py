@@ -139,7 +139,9 @@ def test_replayed_nonce_is_rejected() -> None:
     payload = _signed()
     cache = NonceCache()
 
-    assert verify_request(payload, node_id=NODE_ID, token=TOKEN, nonce_cache=cache).model == "llama3"
+    assert (
+        verify_request(payload, node_id=NODE_ID, token=TOKEN, nonce_cache=cache).model == "llama3"
+    )
 
     with pytest.raises(MeshRequestError, match="nonce"):
         verify_request(payload, node_id=NODE_ID, token=TOKEN, nonce_cache=cache)
@@ -159,7 +161,9 @@ def test_failed_verification_does_not_burn_the_nonce() -> None:
     tampered = dict(envelope)
     tampered["signature"] = "0" * 64
     with pytest.raises(MeshRequestError):
-        verify_request(json.dumps(tampered).encode(), node_id=NODE_ID, token=TOKEN, nonce_cache=cache)
+        verify_request(
+            json.dumps(tampered).encode(), node_id=NODE_ID, token=TOKEN, nonce_cache=cache
+        )
 
     # The genuine request carrying that same nonce must still be served.
     verified = verify_request(
@@ -231,9 +235,7 @@ def test_reply_encoders_round_trip() -> None:
 
 def test_build_request_generates_a_fresh_nonce_each_time() -> None:
     """Two requests with identical bodies must not collide in the nonce cache."""
-    first = build_request(
-        node_id=NODE_ID, model="llama3", prompt="same", stream=False, token=TOKEN
-    )
+    first = build_request(node_id=NODE_ID, model="llama3", prompt="same", stream=False, token=TOKEN)
     second = build_request(
         node_id=NODE_ID, model="llama3", prompt="same", stream=False, token=TOKEN
     )

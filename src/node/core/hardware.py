@@ -50,7 +50,7 @@ async def _detect_nvidia(collector: Any | None) -> GPUInfo | None:
 
         collector = TelemetryCollector()
 
-    metrics = await collector._collect_gpu_metrics()
+    metrics = await collector.collect_gpu_metrics()
 
     name = str(metrics.get("name", "")).strip()
     total_gb = _to_gb(metrics.get("vram_total_bytes", 0))
@@ -96,7 +96,7 @@ async def detect_gpu(collector: Any | None = None) -> GPUInfo:
     """Detect the host's usable GPU for advertisement at registration.
 
     Args:
-        collector: Optional object exposing `_collect_gpu_metrics()`, used to
+        collector: Optional object exposing `collect_gpu_metrics()`, used to
             inject a known nvidia-smi result in tests. Defaults to a real
             `TelemetryCollector`.
 

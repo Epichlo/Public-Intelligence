@@ -24,7 +24,7 @@ class _FakeCollector:
         self._gpu = gpu
         self._raises = raises
 
-    async def _collect_gpu_metrics(self) -> dict[str, Any]:
+    async def collect_gpu_metrics(self) -> dict[str, Any]:
         if self._raises:
             raise RuntimeError("nvidia-smi exploded")
         assert self._gpu is not None
@@ -49,8 +49,9 @@ def _apple_silicon(unified_gb: float = 36.0) -> dict[str, Any]:
     }
 
 
-def _nvidia(name: str = "NVIDIA GeForce RTX 4090", total_gb: float = 24.0,
-            free_gb: float = 20.0) -> dict[str, Any]:
+def _nvidia(
+    name: str = "NVIDIA GeForce RTX 4090", total_gb: float = 24.0, free_gb: float = 20.0
+) -> dict[str, Any]:
     return {
         "name": name,
         "utilization": 12.0,
@@ -164,12 +165,17 @@ async def test_detect_gpu_clamps_available_above_total() -> None:
 
 @pytest.mark.anyio
 async def test_detect_gpu_uses_real_collector_by_default() -> None:
-    """Called with no collector it still returns a usable, non-negative profile."""
+    """Called with no collector it probes this host and returns a coherent profile.
+
+    The `or vram_total_gb == 0.0` this assertion used to carry made it pass for any
+    `vram_available_gb` whenever the host had no GPU -- which is this machine, so
+    the bound was never actually enforced. Both invariants hold unconditionally.
+    """
     gpu = await detect_gpu()
 
     assert gpu.name
     assert gpu.vram_total_gb >= 0.0
-    assert 0.0 <= gpu.vram_available_gb <= max(gpu.vram_total_gb, 0.0) or gpu.vram_total_gb == 0.0
+    assert 0.0 <= gpu.vram_available_gb <= gpu.vram_total_gb
 
 
 def test_detect_ram_total_gb_matches_psutil() -> None:
