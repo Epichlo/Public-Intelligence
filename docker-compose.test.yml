@@ -1,4 +1,20 @@
-version: '3.8'
+# A local two-node network: one Scheduler, two Nodes, on one bridge.
+#
+#   docker compose -f docker-compose.test.yml up --build
+#   curl -H "X-Network-Auth-Token: local-dev-token" http://localhost:8000/nodes
+#
+# This file had never been run. It carried two faults that would each have stopped
+# it on the first attempt:
+#
+#   1. `NODE_ID` -- the Node's Settings read `NODE_NODE_ID` (env_prefix `NODE_`
+#      plus field `node_id`), so both workers silently kept the default id and the
+#      second would collide with the first.
+#   2. No auth token on any service. Roadmap 0.1 made the Node's control API fail
+#      closed and the Scheduler authenticate to nodes with the credential presented
+#      at registration. With none set, every registration and dispatch 401s.
+#
+# The token below is a throwaway for local use. It is not a secret and must not be
+# reused anywhere reachable.
 
 services:
   scheduler:
@@ -14,6 +30,11 @@ services:
       - SCHEDULER_PORT=8000
       - SCHEDULER_LOG_LEVEL=debug
       - SCHEDULER_ENVIRONMENT=development
+      - SCHEDULER_NETWORK_AUTH_TOKEN=local-dev-token
+      # Both services must agree on this or telemetry envelopes fail to
+      # decrypt. It otherwise defaults to a value published in this repo
+      # (ROADMAP 2.2), so local runs are kept off that default.
+      - TELEMETRY_SECRET_KEY=local-dev-telemetry-key
     networks:
       - pi-test-net
     healthcheck:
@@ -30,10 +51,13 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - NODE_ID=node-worker-1
+      # NODE_NODE_ID, not NODE_ID: env_prefix `NODE_` + field `node_id`.
+      - NODE_NODE_ID=node-worker-1
       - NODE_HOST=0.0.0.0
       - NODE_PORT=8080
       - NODE_SCHEDULER_URL=http://scheduler:8000
+      - NODE_NETWORK_AUTH_TOKEN=local-dev-token
+      - TELEMETRY_SECRET_KEY=local-dev-telemetry-key
       - NODE_ZENOH_LISTEN_ENDPOINTS=["tcp/0.0.0.0:7448"]
       - NODE_BOOTSTRAP_ROUTERS=["tcp/scheduler:7447"]
     depends_on:
@@ -50,10 +74,12 @@ services:
     ports:
       - "8081:8080"
     environment:
-      - NODE_ID=node-worker-2
+      - NODE_NODE_ID=node-worker-2
       - NODE_HOST=0.0.0.0
       - NODE_PORT=8080
       - NODE_SCHEDULER_URL=http://scheduler:8000
+      - NODE_NETWORK_AUTH_TOKEN=local-dev-token
+      - TELEMETRY_SECRET_KEY=local-dev-telemetry-key
       - NODE_ZENOH_LISTEN_ENDPOINTS=["tcp/0.0.0.0:7449"]
       - NODE_BOOTSTRAP_ROUTERS=["tcp/scheduler:7447"]
     depends_on:

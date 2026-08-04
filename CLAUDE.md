@@ -31,20 +31,21 @@ Scheduler/.venv/bin/python -m pytest Scheduler/tests -q
 Node/.venv/bin/python      -m pytest Node/tests      -q
 Node/.venv/bin/python      -m pytest tests           -q   # root E2E: needs BOTH packages
 
-# lint -- these are the commands CI runs, over the WHOLE submodule, tests included.
-# Linting only `src` will pass locally and still fail CI; that has happened.
-Node/.venv/bin/python -m ruff check        ./Node ./Scheduler
-Node/.venv/bin/python -m ruff format --check ./Node ./Scheduler
+**Do not run linters, mypy, or bandit individually. Run the gate:**
 
-# security gate -- CI fails on MEDIUM and above only
-Node/.venv/bin/python -m bandit -r ./Node/src ./Scheduler/src -x tests -ll
-
-# installer smoke test, also run by CI
-./install.sh --dry-run
+```bash
+./scripts/verify.sh           # everything CI runs, in one command
+./scripts/verify.sh --quick   # skips root E2E + installer, for a tight loop
 ```
 
-Before pushing, run all of the above plus the three suites. CI runs on
-windows-latest and macos-latest; `gh run list` and `gh run view <id>` show results.
+`.github/workflows/ci.yml` invokes that same script and nothing else, so there is
+exactly one definition of "does this pass". Adding a check means editing
+`scripts/verify.sh` — never adding a step to the workflow.
+`tests/test_source_parity.py` fails if CI grows its own check list again.
+
+Run `./scripts/install-hooks.sh` once per clone to get a pre-push hook that runs
+the gate before any push. It writes `.verify-receipt.json`; if that file's commit
+is not `HEAD`, whatever it says is about code that no longer exists.
 
 The root suite only runs under `Node/.venv` — it is the only environment where both
 `node` and `scheduler` are importable. There is no root `pyproject.toml` or
@@ -52,28 +53,29 @@ The root suite only runs under `Node/.venv` — it is the only environment where
 
 ## Things that are true about this repo, so you don't rediscover them
 
-**All four repos have GitHub remotes and are pushed.** Root is
-`Epichlo/Public-Intelligence`; the submodules are `Node-PublicIntelligence`,
-`Scheduler-PublicIntelligence`, and `website-PublicIntelligence`, all on `main` with
-upstreams set. `.gitmodules` exists and maps all three. Verify with `git remote -v`
-rather than trusting this line.
+**Facts about remotes, CI, submodules, interpreter/tool versions, and how far the
+duplicated modules have drifted are GENERATED — read the "Repo facts" section of
+`STATUS.md`, and regenerate it rather than trusting any prose about them.**
 
-**CI runs and has passed.** `.github/workflows/ci.yml` executes on push to `main`;
-`gh run list` shows successful runs. The `gh` CLI **is** installed. Three claims
-that stood here until 2026-08-04 — no remote, CI never run, no `.gitmodules` — were
-all false by then and caused at least one session to report "CI unverifiable" without
-checking. **Check with `gh run list`, do not repeat this paragraph as evidence.** A
-green CI run still only proves what the workflow actually executes; read it before
-citing it.
+This section used to assert those facts in prose. It said the root repo had no
+remote, that `.gitmodules` did not exist, and that CI had never run. All were false,
+and a session repeated them in a completion report instead of spending one command
+checking — reporting "CI unverifiable" for a change whose CI run had already failed.
+Prose cannot notice when it goes stale. Only judgment lives here now; measurements
+live in `STATUS.md`.
 
-**Four core modules are duplicated across Node and Scheduler** — `quantization.py`
-(byte-identical), `local_boundary.py`, `kv_cache.py`, `transport.py` — plus a third
-copy of the artifact store at `src/shared/storage/`. A fifth pair was added on
-2026-08-04: `Node/src/node/models/gpu_info.py::GPUInfo` ↔
-`Scheduler/src/scheduler/models/node.py::GPUInfo`. `autonomous_orchestrator.py`
-has already drifted (`Enum` vs `StrEnum`) because a fix landed on one copy only.
-**Before adding a module, check whether its twin exists.** If you change one of a
-pair, say explicitly whether the twin needs the same change.
+**Several core modules are duplicated across Node and Scheduler** — `quantization.py`,
+`local_boundary.py`, `kv_cache.py`, `transport.py`, `mesh_protocol.py`, and the
+`GPUInfo` pair — plus a third copy of the artifact store at `src/shared/storage/`.
+They exist because the two services are separate git repositories with no shared
+installable package. **Before adding a module, check whether its twin exists.** If
+you change one of a pair, change both.
+
+This is now enforced, not just requested: `tests/test_source_parity.py` records a
+drift budget per pair and fails if one drifts further, and
+`tests/test_wire_contract.py` feeds the Node's real serialiser output to the
+Scheduler's real models. Current drift is in `STATUS.md`. When you converge a pair,
+lower its budget so the ratchet holds.
 
 **The distributed inference path is not implemented.** `Node/src/node/runtime.py`
 never assigns `self.inference_backend` anything but `EchoBackend`. `LocalBoundaryEngine`

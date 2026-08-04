@@ -4,17 +4,17 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-04 11:18 UTC
+**Generated:** 2026-08-04 12:03 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 218 | 0 | 0 | 14.28s |
-| Node | PASS | 243 | 0 | 1 | 3.16s |
-| Root E2E | PASS | 29 | 0 | 0 | 22.04s |
-| **Total** | **PASSING** | **490** | **0** | **1** | |
+| Scheduler | PASS | 218 | 0 | 0 | 13.94s |
+| Node | PASS | 243 | 0 | 1 | 3.11s |
+| Root E2E | PASS | 53 | 0 | 0 | 22.03s |
+| **Total** | **PASSING** | **514** | **0** | **1** | |
 
 Reproduce:
 
@@ -26,33 +26,66 @@ Node/.venv/bin/python -m pytest tests -q   # Root E2E
 
 ## Git
 
-- **Last commit:** `59c8ced` fix: correct three false "facts" in CLAUDE.md and VERIFY.md
-- **Author / date:** Atharv Deshpande — 2026-08-04 16:31:14 +0530
+- **Last commit:** `fc12b9c` feat: deliver ROADMAP 1.3 real heartbeat metrics
+- **Author / date:** Atharv Deshpande — 2026-08-04 16:49:06 +0530
 - **Branch:** main
-- **Total commits:** 51
+- **Total commits:** 52
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence.git (fetch)
-- **Working tree:** 5 uncommitted change(s)
+- **Working tree:** 12 uncommitted change(s)
 
 ```
-  M Node
-   M ROADMAP.md
+  M .github/workflows/ci.yml
+   M .gitignore
+   M CLAUDE.md
+   M Node
    M Scheduler
-   M VERIFY.md
-  ?? specs/real-heartbeat-metrics.md
+   M docker-compose.test.yml
+   M scripts/generate_status.py
+  ?? .coverage
+  ?? scripts/install-hooks.sh
+  ?? scripts/verify.sh
 ```
 
 ## Submodules
 
 | Path | Pinned | Subject |
 | --- | --- | --- |
-| Node | `69179d9f` | fix(node): make collect_gpu_metrics public; satisfy CI's ruf |
-| Scheduler | `b42b331c` | style(scheduler): apply ruff format to satisfy CI |
+| Node | `9dd7dd01` | feat(node): measure the metrics the heartbeat reports |
+| Scheduler | `3292a928` | test(scheduler): pin heartbeat-driven filtering and selectio |
 | website | `40a94020` | fix(dashboard): forward the node's auth credential from the  |
 
 ## CI
 
 - **Status:** PASS
 - **Reason:** latest run concluded success
+
+
+## Repo facts
+
+_Measured, not asserted. Re-run to refresh._
+
+| Repo | Remote | Branch | Tracking |
+| --- | --- | --- | --- |
+| root | `https://github.com/Epichlo/Public-Intelligence.git` | main | origin/main |
+| Node | `https://github.com/Epichlo/Node-PublicIntelligence.git` | main | origin/main |
+| Scheduler | `https://github.com/Epichlo/Scheduler-PublicIntelligence.git` | main | origin/main |
+| website | `https://github.com/Epichlo/website-PublicIntelligence.git` | main | origin/main |
+
+- **`.gitmodules`:** present, maps Node, Scheduler, website
+- **Node venv interpreter:** Python 3.14.6
+- **Scheduler venv interpreter:** Python 3.14.6
+- **ruff:** ruff 0.16.1 (pinned in both pyproject `[dev]` extras)
+
+**Duplicated modules** (differing significant lines; imports and comments excluded).
+Ratcheted by `tests/test_source_parity.py` — these may not increase.
+
+| Pair | Drift |
+| --- | --- |
+| quantization | 0 |
+| kv_cache | 2 |
+| local_boundary | 2 |
+| autonomous_orchestrator | 14 |
+| transport | 22 |
 
 ---
 

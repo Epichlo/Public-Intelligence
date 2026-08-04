@@ -1,5 +1,15 @@
 name: Public Intelligence Multi-OS CI/CD Pipeline
 
+# This workflow deliberately contains NO list of checks.
+#
+# Every check lives in `scripts/verify.sh`, and CI invokes that file and nothing
+# else. Before this, CI ran `ruff check ./Node ./Scheduler` while CLAUDE.md told
+# contributors to run `ruff check <pkg>/src`; the narrower command passed locally,
+# the wider one failed here, and a red build reached main. Two lists meant two
+# answers to "does this pass". There is now one.
+#
+# If you want to add a check, add it to scripts/verify.sh. Do not add a step here.
+
 on:
   push:
     branches: [ main, master ]
@@ -7,14 +17,18 @@ on:
     branches: [ main, master ]
 
 jobs:
-  test-matrix:
-    name: Build & Test (${{ matrix.os }} - Python ${{ matrix.python-version }})
+  verify:
+    name: Verify (${{ matrix.os }} - Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
     strategy:
+      # One run should surface every broken platform, not just the first.
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ["3.11", "3.12"]
+        # 3.11 is the floor both packages declare in requires-python. 3.14 is what
+        # the local .venvs run, and was previously untested here -- so "green
+        # locally" was green on the one interpreter CI never exercised.
+        python-version: ["3.11", "3.12", "3.14"]
 
     steps:
       - name: Checkout Repository
@@ -28,56 +42,64 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
 
-      - name: Install System & Build Dependencies (Linux)
+      - name: Install System Dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y shellcheck
 
-      - name: Install Node & Scheduler Dependencies (POSIX)
-        if: runner.os != 'Windows'
+      - name: Install Packages
+        # The [dev] extras pin ruff, mypy, bandit and pytest exactly. CI used to
+        # `pip install --upgrade` them unpinned, so a tool release could turn main
+        # red with no code change, and local could disagree with CI about what passes.
         run: |
-          python -m pip install --upgrade pip setuptools wheel pytest pytest-asyncio ruff mypy bandit
-          pip install -e ./Node[dev]
-          pip install -e ./Scheduler[dev]
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e "./Node[dev]"
+          pip install -e "./Scheduler[dev]"
 
-      - name: Install Node & Scheduler Dependencies (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          python -m pip install --upgrade pip setuptools wheel pytest pytest-asyncio ruff mypy bandit
-          pip install -e ./Node[dev]
-          pip install -e ./Scheduler[dev]
+      - name: Verify
+        shell: bash
+        run: ./scripts/verify.sh
 
-      - name: Run PyTest Suite (Node)
-        run: |
-          pytest ./Node/tests
+      - name: Upload verify receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-receipt-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: .verify-receipt.json
+          if-no-files-found: ignore
 
-      - name: Run PyTest Suite (Scheduler)
+  fresh-clone:
+    name: Fresh clone can be built and run
+    runs-on: ubuntu-latest
+    steps:
+      # Nothing else proves a stranger can get from `git clone` to a working
+      # install. The repo shipped for a period with no `.gitmodules` while CI
+      # checked out `submodules: recursive`, so every submodule directory would
+      # have come up empty and `pip install -e ./Node` would have failed on step
+      # one -- and no job would have noticed. Getting an outside contributor to a
+      # running node is the actual v1 goal, so it gets a job.
+      - name: Clone as an outsider would
         run: |
-          pytest ./Scheduler/tests
+          git clone --recurse-submodules "https://github.com/${GITHUB_REPOSITORY}.git" fresh
+          cd fresh
+          test -f .gitmodules || { echo "::error::.gitmodules is missing"; exit 1; }
+          for d in Node Scheduler website; do
+            test -n "$(ls -A "$d" 2>/dev/null)" || {
+              echo "::error::submodule $d checked out empty"; exit 1; }
+          done
 
-      - name: Run Ruff Code Quality Checks
-        run: |
-          ruff check ./Node ./Scheduler
-          ruff format --check ./Node ./Scheduler
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-      - name: Run Security Analysis (Bandit)
+      - name: Install from a clean checkout
+        working-directory: fresh
         run: |
-          # -ll fails the build on MEDIUM severity and above only. Low-severity
-          # findings are still printed but do not gate: this codebase legitimately
-          # shells out (nvidia-smi, docker, git) and uses broad try/except around
-          # optional hardware probes, which Bandit flags as B404/B603/B607/B110.
-          bandit -r ./Node/src ./Scheduler/src -x tests -ll
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e "./Node[dev]"
+          pip install -e "./Scheduler[dev]"
 
-      - name: Test POSIX Installer Script (Linux/macOS)
-        if: runner.os != 'Windows'
-        run: |
-          chmod +x install.sh scripts/launch_host_node.sh
-          ./install.sh --dry-run
-
-      - name: Test Windows PowerShell Installer (Windows)
-        if: runner.os == 'Windows'
-        shell: powershell
-        run: |
-          $env:SCHEDULER_URL = "http://localhost:8000"
-          powershell -ExecutionPolicy Bypass -File .\install.ps1
+      - name: Both packages import
+        working-directory: fresh
+        run: python -c "import node, scheduler; print('node + scheduler import OK')"

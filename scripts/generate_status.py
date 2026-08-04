@@ -372,6 +372,8 @@ def render(results: list[SuiteResult], git: dict[str, str]) -> str:
         )
         lines.append("")
 
+    lines += repo_facts_section()
+
     lines += [
         "---",
         "",
@@ -383,6 +385,113 @@ def render(results: list[SuiteResult], git: dict[str, str]) -> str:
     ]
 
     return "\n".join(lines)
+
+
+def repo_facts_section() -> list[str]:
+    """Measure the facts that used to be hand-written prose in CLAUDE.md.
+
+    That section asserted, under a heading meaning "trust this without checking",
+    that the root repo had no remote, that `.gitmodules` did not exist, and that CI
+    had never run. All were false, and one session repeated them in a completion
+    report rather than spending a command. Prose cannot notice when it goes stale.
+    These are measured on every run instead.
+    """
+    lines = ["", "## Repo facts", "", "_Measured, not asserted. Re-run to refresh._", ""]
+
+    # --- remotes ---
+    lines += ["| Repo | Remote | Branch | Tracking |", "| --- | --- | --- | --- |"]
+    for name, path in [
+        ("root", ROOT),
+        ("Node", ROOT / "Node"),
+        ("Scheduler", ROOT / "Scheduler"),
+        ("website", ROOT / "website"),
+    ]:
+        if not (path / ".git").exists():
+            lines.append(f"| {name} | (not a git repo) | - | - |")
+            continue
+        _, remote = run(["git", "remote", "get-url", "origin"], cwd=path)
+        _, branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=path)
+        code, upstream = run(
+            ["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], cwd=path
+        )
+        remote = remote.strip() or "**NONE**"
+        tracking = upstream.strip() if code == 0 else "**none**"
+        lines.append(f"| {name} | `{remote}` | {branch.strip()} | {tracking} |")
+    lines.append("")
+
+    # --- .gitmodules ---
+    gm = ROOT / ".gitmodules"
+    if gm.exists():
+        code, out = run(["git", "config", "-f", str(gm), "--get-regexp", r"submodule\..*\.path"])
+        mapped = sorted(line.split()[-1] for line in out.splitlines() if line.strip())
+        lines.append(f"- **`.gitmodules`:** present, maps {', '.join(mapped) or '(nothing)'}")
+    else:
+        lines.append(
+            "- **`.gitmodules`:** **MISSING** — a fresh clone gets empty submodule "
+            "directories and `pip install -e ./Node` fails immediately."
+        )
+
+    # --- interpreters and pinned tools ---
+    node_py = ROOT / "Node/.venv/bin/python"
+    for label, py in [("Node", node_py), ("Scheduler", ROOT / "Scheduler/.venv/bin/python")]:
+        if py.exists():
+            _, ver = run([str(py), "-V"])
+            lines.append(f"- **{label} venv interpreter:** {ver.strip()}")
+    _, ruff_v = run([str(node_py), "-m", "ruff", "--version"])
+    if ruff_v.strip():
+        lines.append(f"- **ruff:** {ruff_v.strip()} (pinned in both pyproject `[dev]` extras)")
+
+    # --- duplicate-module drift ---
+    pairs = [
+        ("quantization", "Node/src/node/core/quantization.py",
+         "Scheduler/src/scheduler/core/quantization.py"),
+        ("kv_cache", "Node/src/node/core/kv_cache.py",
+         "Scheduler/src/scheduler/core/kv_cache.py"),
+        ("local_boundary", "Node/src/node/core/local_boundary.py",
+         "Scheduler/src/scheduler/core/local_boundary.py"),
+        ("autonomous_orchestrator", "Node/src/node/core/autonomous_orchestrator.py",
+         "Scheduler/src/scheduler/core/autonomous_orchestrator.py"),
+        ("transport", "Node/src/node/core/transport.py",
+         "Scheduler/src/scheduler/core/transport.py"),
+    ]
+    drift_rows = []
+    for name, left, right in pairs:
+        a, b = ROOT / left, ROOT / right
+        if not (a.exists() and b.exists()):
+            continue
+        drift_rows.append(f"| {name} | {_significant_drift(a, b)} |")
+    if drift_rows:
+        lines += [
+            "",
+            "**Duplicated modules** (differing significant lines; imports and comments excluded).",
+            "Ratcheted by `tests/test_source_parity.py` — these may not increase.",
+            "",
+            "| Pair | Drift |",
+            "| --- | --- |",
+            *drift_rows,
+        ]
+
+    lines.append("")
+    return lines
+
+
+def _significant_drift(a: Path, b: Path) -> int:
+    """Differing meaningful lines between two copies of a module."""
+    import difflib
+
+    def sig(p: Path) -> list[str]:
+        out = []
+        for raw in p.read_text().splitlines():
+            line = raw.strip()
+            if not line or line.startswith(("#", "import ", "from ")):
+                continue
+            out.append(line)
+        return out
+
+    diff = difflib.unified_diff(sig(a), sig(b), lineterm="", n=0)
+    return sum(
+        1 for ln in diff if ln.startswith(("+", "-")) and not ln.startswith(("+++", "---"))
+    )
 
 
 def main() -> int:
