@@ -23,9 +23,17 @@ class TestGPUInfo:
         with pytest.raises(ValidationError):
             GPUInfo(name="NVIDIA A100", vram_total_gb=-1.0, vram_available_gb=0.0)
 
-    def test_zero_vram_total_rejected(self):
-        with pytest.raises(ValidationError):
-            GPUInfo(name="NVIDIA A100", vram_total_gb=0.0, vram_available_gb=0.0)
+    def test_zero_vram_total_accepted_for_cpu_only_hosts(self):
+        """Deliberately inverted from `test_zero_vram_total_rejected` (roadmap 1.2).
+
+        This previously required VRAM > 0. That invariant held only because every
+        node hardcoded a 16 GB "unknown" card at registration; a real CPU-only host
+        could not register honestly. Nodes now report measured hardware, so 0.0 must
+        be representable. Exclusion from VRAM-gated work is the matchmaker's job, and
+        is covered by `test_cpu_only_node_advertisement.py`.
+        """
+        gpu = GPUInfo(name="cpu-only", vram_total_gb=0.0, vram_available_gb=0.0)
+        assert gpu.vram_total_gb == 0.0
 
     def test_negative_available_vram_rejected(self):
         with pytest.raises(ValidationError):

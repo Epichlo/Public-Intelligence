@@ -173,6 +173,12 @@ class ZenohRouter:
 
         try:
             await self.registry.update_heartbeat(heartbeat)
+            # This heartbeat arrived over Zenoh, so the node is holding a live session --
+            # which is what makes it dispatchable over the mesh rather than by dialling an
+            # `ip_address` that is 127.0.0.1 for every installer-provisioned node.
+            # Marked only after the update succeeds, so an unregistered node never leaves
+            # behind an entry that no unregister path would purge.
+            self.registry.mark_mesh_reachable(heartbeat.node_id)
             logger.info(
                 "zenoh_heartbeat_processed",
                 node_id=heartbeat.node_id,
@@ -195,15 +201,34 @@ class ZenohRouter:
         if self._loop is None or not self._loop.is_running():
             return
 
+        key_expr = str(sample.key_expr)
+        # key_expr format: public-intelligence/net/liveliness/<node_id>
+        parts = key_expr.split("/")
+        if len(parts) < 4:
+            return
+        node_id = parts[3]
+
         if sample.kind == zenoh.SampleKind.DELETE:
-            key_expr = str(sample.key_expr)
-            # key_expr format: public-intelligence/net/liveliness/<node_id>
-            parts = key_expr.split("/")
-            if len(parts) >= 4:
-                node_id = parts[3]
-                self._loop.call_soon_threadsafe(
-                    lambda: asyncio.create_task(self._process_deathrattle(node_id, key_expr))
-                )
+            self._loop.call_soon_threadsafe(
+                lambda: asyncio.create_task(self._process_deathrattle(node_id, key_expr))
+            )
+        else:
+            # A PUT means the node has just declared its liveliness token, which is the
+            # earliest evidence it is on the mesh -- it arrives before the first heartbeat.
+            self._loop.call_soon_threadsafe(
+                lambda: asyncio.create_task(self._process_liveliness_alive(node_id, key_expr))
+            )
+
+    async def _process_liveliness_alive(self, node_id: str, key_expr: str) -> None:
+        """Record a node as mesh-reachable once it declares its liveliness token."""
+        if not await self.registry.exists(node_id):
+            # Registration is a separate HTTP call and may not have landed yet. The
+            # node's first heartbeat will mark it; marking now would leave an entry that
+            # no unregister path purges.
+            logger.debug("zenoh_liveliness_alive_unregistered_node", node_id=node_id)
+            return
+        self.registry.mark_mesh_reachable(node_id)
+        logger.info("zenoh_liveliness_alive", node_id=node_id, key_expr=key_expr)
 
     async def _process_deathrattle(self, node_id: str, key_expr: str) -> None:
         """Unregister the dead node and log cluster group resizing."""
@@ -338,4 +363,12 @@ class ZenohRouter:
             self.registry._telemetry = {}
 
         self.registry._telemetry[node_id] = data
+
+        # Reached only after the HMAC check, decryption, and freshness check above, so a
+        # forged envelope cannot make a node look mesh-reachable. Independent of the
+        # heartbeat signal: a node whose heartbeat publisher failed but whose telemetry
+        # emitter works is still reachable over the mesh.
+        if await self.registry.exists(node_id):
+            self.registry.mark_mesh_reachable(node_id)
+
         logger.info("zenoh_telemetry_mapped", node_id=node_id, key_expr=key_expr)

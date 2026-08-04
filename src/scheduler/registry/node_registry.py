@@ -30,6 +30,11 @@ class NodeRegistry:
         # rather than on the Node model so they cannot be serialised into an API
         # response -- GET /nodes would otherwise hand out every node's secret.
         self._node_tokens: dict[str, str] = {}
+        # Nodes observed on the Zenoh mesh. Dispatch queries these over the mesh instead
+        # of dialling `ip_address`, which is how a node behind NAT is reached at all.
+        # Held outside the Node model for the same reason as the tokens: it must not be
+        # serialisable into an API response, and a node must not be able to assert it.
+        self._mesh_nodes: set[str] = set()
         self.consensus_engine: Any = None
 
     # These two are deliberately synchronous and do not take `self._lock`, unlike
@@ -55,10 +60,28 @@ class NodeRegistry:
             self._node_tokens[node_id] = token
         else:
             self._node_tokens.pop(node_id, None)
+            self._mesh_nodes.discard(node_id)
 
     def get_node_token(self, node_id: str) -> str | None:
         """Return the stored credential for a node, or None if unknown."""
         return self._node_tokens.get(node_id)
+
+    # Lock-free for the same reason as the two methods above: a single set membership
+    # test or insertion has no await point, and `is_mesh_reachable` sits on the hot path
+    # of every dispatched request.
+
+    def mark_mesh_reachable(self, node_id: str) -> None:
+        """Record that traffic has arrived from this node over the Zenoh mesh.
+
+        Called from the Zenoh router when a heartbeat, telemetry envelope, or liveliness
+        token is seen -- evidence the node holds a live session, rather than a claim it
+        made about itself.
+        """
+        self._mesh_nodes.add(node_id)
+
+    def is_mesh_reachable(self, node_id: str) -> bool:
+        """Return whether this node has been observed on the mesh."""
+        return node_id in self._mesh_nodes
 
     async def register(self, node: Node) -> None:
         """Register a new node.
@@ -104,6 +127,7 @@ class NodeRegistry:
             self._dampeners.pop(node_id, None)
             self._telemetry.pop(node_id, None)
             self._node_tokens.pop(node_id, None)
+            self._mesh_nodes.discard(node_id)
 
     async def get(self, node_id: str) -> Node | None:
         """Look up a node by ID.
@@ -166,6 +190,7 @@ class NodeRegistry:
             self._dampeners.clear()
             self._telemetry.clear()
             self._node_tokens.clear()
+            self._mesh_nodes.clear()
 
     async def count(self) -> int:
         """Return the number of registered nodes.
@@ -252,3 +277,4 @@ class NodeRegistry:
             self._dampeners.pop(node_id, None)
             self._telemetry.pop(node_id, None)
             self._node_tokens.pop(node_id, None)
+            self._mesh_nodes.discard(node_id)

@@ -83,6 +83,38 @@ class Settings(BaseSettings):
         default=True,
         description="Enable/disable local LAN multicast scouting.",
     )
+    mesh_inference_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "SCHEDULER_MESH_INFERENCE_ENABLED", "MESH_INFERENCE_ENABLED"
+        ),
+        description=(
+            "Route inference to nodes over the Zenoh mesh when they have been seen there. "
+            "Disable to force the HTTP path for every node."
+        ),
+    )
+    mesh_inference_timeout_seconds: float = Field(
+        default=120.0,
+        validation_alias=AliasChoices(
+            "SCHEDULER_MESH_INFERENCE_TIMEOUT", "MESH_INFERENCE_TIMEOUT"
+        ),
+        description=(
+            "Total seconds a mesh inference query may run. Must exceed generation time "
+            "for the largest model a host serves, or long completions are cut off."
+        ),
+    )
+    mesh_inference_first_reply_timeout_seconds: float = Field(
+        default=5.0,
+        validation_alias=AliasChoices(
+            "SCHEDULER_MESH_INFERENCE_FIRST_REPLY_TIMEOUT",
+            "MESH_INFERENCE_FIRST_REPLY_TIMEOUT",
+        ),
+        description=(
+            "Seconds to wait for a node's first mesh reply before falling back to HTTP. "
+            "Bounds what a node that is on the mesh but not serving costs per request, so "
+            "it is deliberately far shorter than the total timeout."
+        ),
+    )
     split_inference_timeout_seconds: float = Field(
         default=5.0,
         validation_alias=AliasChoices(

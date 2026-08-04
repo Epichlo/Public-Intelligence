@@ -1,7 +1,6 @@
 """OpenAI-compatible REST API Gateway router."""
 
 import asyncio
-import json
 import time
 import uuid
 from collections.abc import AsyncGenerator
@@ -11,14 +10,19 @@ from typing import TYPE_CHECKING, Annotated, Any
 if TYPE_CHECKING:
     from scheduler.registry.node_registry import NodeRegistry
 
-import httpx
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
 from scheduler.api.ingress import verify_jwt
+from scheduler.api.nodes import get_mesh_client
 from scheduler.core.boundary_engine import LocalBoundaryEngine
 from scheduler.core.config import get_settings
+from scheduler.core.node_dispatch import (
+    NodeDispatchError,
+    infer_once,
+    open_inference_stream,
+)
 from scheduler.core.transport import SharedMemoryIPC, get_tensor_topic
 from scheduler.models.openai import (
     ChatCompletionChunk,
@@ -404,52 +408,31 @@ async def create_chat_completion(
         except Exception as e:
             logger.error("openai_consensus_proposal_failed", error=str(e))
 
-    # 4. Proxy to Node /infer endpoint
+    # 4. Dispatch to the node. Over the Zenoh mesh when it has been seen there -- the only
+    # transport that reaches a node behind NAT, since `ip_address` is 127.0.0.1 for every
+    # installer-provisioned node -- and by dialling its HTTP /infer otherwise. Transport
+    # selection and credentials both live in scheduler/core/node_dispatch.py, shared with
+    # schedule.py so the two proxy paths cannot drift apart.
     settings = get_settings()
-    node_port = getattr(settings, "node_api_port", 8080)
-    ip_host = target_node.ip_address
-    if not ip_host.startswith("http://") and not ip_host.startswith("https://"):
-        node_url = f"http://{ip_host}:{node_port}/infer"
-    else:
-        node_url = f"{ip_host}/infer"
-
+    mesh_client = get_mesh_client(request)
     prompt_text = messages_to_prompt(req_data.messages)
-    infer_payload = {
-        "model": req_data.model,
-        "prompt": prompt_text,
-        "stream": req_data.stream,
-    }
-
-    # The node's /infer requires a credential and fails closed. Use the token
-    # that node presented when it registered, falling back to a fleet-wide token
-    # for deployments configured that way (see scheduler/api/schedule.py).
-    node_token = registry.get_node_token(target_node_id) or settings.network_auth_token
-    node_headers: dict[str, str] = {}
-    if node_token:
-        node_headers["X-Network-Auth-Token"] = node_token
-    else:
-        logger.warning("node_infer_no_credential", node_id=target_node_id)
 
     # Handle Non-Streaming (stream=False)
     if not req_data.stream:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            try:
-                resp = await client.post(node_url, json=infer_payload, headers=node_headers)
-            except httpx.RequestError as e:
-                logger.error("node_infer_request_failed", url=node_url, error=str(e))
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail=f"Failed to communicate with compute node: {e}",
-                ) from e
+        try:
+            result = await infer_once(
+                registry=registry,
+                settings=settings,
+                mesh_client=mesh_client,
+                node_id=target_node_id,
+                ip_address=target_node.ip_address,
+                model=req_data.model,
+                prompt=prompt_text,
+            )
+        except NodeDispatchError as e:
+            raise HTTPException(status_code=e.status, detail=e.detail) from e
 
-            if resp.status_code != 200:
-                raise HTTPException(
-                    status_code=resp.status_code,
-                    detail=f"Compute node error: {resp.text}",
-                )
-
-            data = resp.json()
-            generated_text = data.get("response", "")
+        generated_text = result["response"]
 
         prompt_tokens = estimate_tokens(prompt_text)
         completion_tokens = estimate_tokens(generated_text)
@@ -474,6 +457,25 @@ async def create_chat_completion(
         )
 
     # Handle Streaming (stream=True)
+    #
+    # The transport is chosen here rather than inside the generator, while nothing has been
+    # sent to the requester yet. That is the only moment at which falling back from the mesh
+    # to HTTP is still possible, and it lets the node's own error -- a model it has not
+    # pulled, say -- come back as a real status code instead of an error chunk buried in a
+    # 200 response.
+    try:
+        token_stream = await open_inference_stream(
+            registry=registry,
+            settings=settings,
+            mesh_client=mesh_client,
+            node_id=target_node_id,
+            ip_address=target_node.ip_address,
+            model=req_data.model,
+            prompt=prompt_text,
+        )
+    except NodeDispatchError as e:
+        raise HTTPException(status_code=e.status, detail=e.detail) from e
+
     async def sse_generator() -> AsyncGenerator[str, None]:
         # 1) Send initial role chunk
         role_chunk = ChatCompletionChunk(
@@ -491,75 +493,12 @@ async def create_chat_completion(
         )
         yield f"data: {role_chunk.model_dump_json()}\n\n"
 
-        # 2) Connect to Node and stream deltas
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            try:
-                async with client.stream(
-                    "POST", node_url, json=infer_payload, headers=node_headers
-                ) as response:
-                    if response.status_code != 200:
-                        error_text = await response.aread()
-                        err_chunk = ChatCompletionChunk(
-                            id=task_id,
-                            object="chat.completion.chunk",
-                            created=int(time.time()),
-                            model=req_data.model,
-                            choices=[
-                                ChatCompletionChunkChoice(
-                                    index=0,
-                                    delta=ChatCompletionChunkDelta(
-                                        content=(
-                                            "\n[Error: "
-                                            f"{error_text.decode('utf-8', errors='ignore')}]"
-                                        )
-                                    ),
-                                    finish_reason="error",
-                                )
-                            ],
-                        )
-                        yield f"data: {err_chunk.model_dump_json()}\n\n"
-                        yield "data: [DONE]\n\n"
-                        return
-
-                    async for line in response.aiter_lines():
-                        if not line.strip():
-                            continue
-                        clean_line = line
-                        if clean_line.startswith("data: "):
-                            clean_line = clean_line[6:].strip()
-
-                        # Skip session_id header line if present from transport
-                        if clean_line.startswith("session_id:"):
-                            continue
-
-                        token_content = clean_line
-                        try:
-                            json_obj = json.loads(clean_line)
-                            if isinstance(json_obj, dict):
-                                parsed_val = json_obj.get(
-                                    "response", json_obj.get("text", clean_line)
-                                )
-                                token_content = str(parsed_val) if parsed_val is not None else ""
-                        except json.JSONDecodeError:
-                            pass
-
-                        chunk_obj = ChatCompletionChunk(
-                            id=task_id,
-                            object="chat.completion.chunk",
-                            created=int(time.time()),
-                            model=req_data.model,
-                            choices=[
-                                ChatCompletionChunkChoice(
-                                    index=0,
-                                    delta=ChatCompletionChunkDelta(content=token_content),
-                                    finish_reason=None,
-                                )
-                            ],
-                        )
-                        yield f"data: {chunk_obj.model_dump_json()}\n\n"
-            except Exception as e:
-                logger.error("openai_stream_error", error=str(e))
-                err_chunk = ChatCompletionChunk(
+        # 2) Relay tokens from whichever transport was chosen above. Both hand back plain
+        # token strings, so no SSE or JSON unwrapping happens here any more -- that moved
+        # into node_dispatch alongside the HTTP client that produces the framing.
+        try:
+            async for token_content in token_stream:
+                chunk_obj = ChatCompletionChunk(
                     id=task_id,
                     object="chat.completion.chunk",
                     created=int(time.time()),
@@ -567,14 +506,50 @@ async def create_chat_completion(
                     choices=[
                         ChatCompletionChunkChoice(
                             index=0,
-                            delta=ChatCompletionChunkDelta(content=f"\n[Stream Error: {e}]"),
-                            finish_reason="error",
+                            delta=ChatCompletionChunkDelta(content=token_content),
+                            finish_reason=None,
                         )
                     ],
                 )
-                yield f"data: {err_chunk.model_dump_json()}\n\n"
-                yield "data: [DONE]\n\n"
-                return
+                yield f"data: {chunk_obj.model_dump_json()}\n\n"
+        except NodeDispatchError as e:
+            # Failed after the stream had opened. Too late for a status code, and too late
+            # to switch transports, so the requester is told inside the stream.
+            logger.error("openai_stream_node_error", error=e.detail, status=e.status)
+            err_chunk = ChatCompletionChunk(
+                id=task_id,
+                object="chat.completion.chunk",
+                created=int(time.time()),
+                model=req_data.model,
+                choices=[
+                    ChatCompletionChunkChoice(
+                        index=0,
+                        delta=ChatCompletionChunkDelta(content=f"\n[Error: {e.detail}]"),
+                        finish_reason="error",
+                    )
+                ],
+            )
+            yield f"data: {err_chunk.model_dump_json()}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+        except Exception as e:
+            logger.error("openai_stream_error", error=str(e))
+            err_chunk = ChatCompletionChunk(
+                id=task_id,
+                object="chat.completion.chunk",
+                created=int(time.time()),
+                model=req_data.model,
+                choices=[
+                    ChatCompletionChunkChoice(
+                        index=0,
+                        delta=ChatCompletionChunkDelta(content=f"\n[Stream Error: {e}]"),
+                        finish_reason="error",
+                    )
+                ],
+            )
+            yield f"data: {err_chunk.model_dump_json()}\n\n"
+            yield "data: [DONE]\n\n"
+            return
 
         # 3) Final stop chunk
         stop_chunk = ChatCompletionChunk(
