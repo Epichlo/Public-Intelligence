@@ -4,16 +4,16 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-04 12:03 UTC
+**Generated:** 2026-08-04 12:20 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 218 | 0 | 0 | 13.94s |
-| Node | PASS | 243 | 0 | 1 | 3.11s |
-| Root E2E | PASS | 53 | 0 | 0 | 22.03s |
+| Scheduler | PASS | 218 | 0 | 0 | 12.18s |
+| Node | PASS | 243 | 0 | 1 | 3.10s |
+| Root E2E | PASS | 53 | 0 | 0 | 22.10s |
 | **Total** | **PASSING** | **514** | **0** | **1** | |
 
 Reproduce:
@@ -26,38 +26,30 @@ Node/.venv/bin/python -m pytest tests -q   # Root E2E
 
 ## Git
 
-- **Last commit:** `fc12b9c` feat: deliver ROADMAP 1.3 real heartbeat metrics
-- **Author / date:** Atharv Deshpande — 2026-08-04 16:49:06 +0530
+- **Last commit:** `d79a52b` fix: pin types-psutil; correct stale test filename references
+- **Author / date:** Atharv Deshpande — 2026-08-04 17:42:20 +0530
 - **Branch:** main
-- **Total commits:** 52
+- **Total commits:** 54
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence.git (fetch)
-- **Working tree:** 12 uncommitted change(s)
+- **Working tree:** 2 uncommitted change(s)
 
 ```
-  M .github/workflows/ci.yml
-   M .gitignore
-   M CLAUDE.md
-   M Node
-   M Scheduler
-   M docker-compose.test.yml
-   M scripts/generate_status.py
-  ?? .coverage
-  ?? scripts/install-hooks.sh
-  ?? scripts/verify.sh
+  M Node
+   M scripts/verify.sh
 ```
 
 ## Submodules
 
 | Path | Pinned | Subject |
 | --- | --- | --- |
-| Node | `9dd7dd01` | feat(node): measure the metrics the heartbeat reports |
-| Scheduler | `3292a928` | test(scheduler): pin heartbeat-driven filtering and selectio |
+| Node | `bb9f9437` | fix(node): pin types-psutil so the mypy gate is reproducible |
+| Scheduler | `f1dc3bcc` | fix(scheduler): pin types-psutil so the mypy gate is reprodu |
 | website | `40a94020` | fix(dashboard): forward the node's auth credential from the  |
 
 ## CI
 
-- **Status:** PASS
-- **Reason:** latest run concluded success
+- **Status:** FAIL
+- **Reason:** latest run did not succeed: [{"conclusion":"failure","headSha":"d79a52b31e6e3fe5b89bd8e9e67ff5b6580d6200"}]
 
 
 ## Repo facts

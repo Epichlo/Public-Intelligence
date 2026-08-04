@@ -85,6 +85,14 @@ fi
 run_step "mypy (node)"       "$NODE_PY"  -m mypy Node/src
 run_step "mypy (scheduler)"  "$SCHED_PY" -m mypy Scheduler/src
 
+# mypy is platform-aware, so a POSIX-only call is only an error when it checks as
+# Windows. Running this locally rather than discovering it on a Windows runner:
+# the first Windows type-check found `os.getloadavg()` behind a bare `except`
+# whose fallback published a RANDOM cpu figure into the telemetry mesh, and an
+# `os.getgid()` call. There is a Windows installer, so these were reachable.
+run_step "mypy (node, win32)"      "$NODE_PY"  -m mypy Node/src --platform win32
+run_step "mypy (scheduler, win32)" "$SCHED_PY" -m mypy Scheduler/src --platform win32
+
 # --- tests -----------------------------------------------------------------
 # Branch coverage, reported not gated: the point is seeing which branches a
 # change left unexecuted, which is how an untested regex and an untested except
