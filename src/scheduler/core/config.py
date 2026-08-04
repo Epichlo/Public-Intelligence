@@ -39,10 +39,14 @@ class Settings(BaseSettings):
     environment: Environment = Environment.DEVELOPMENT
     debug: bool = False
     log_level: str = "info"
-    # nosec B104 - binding all interfaces is required, not accidental: Render (and
-    # Scheduler/Dockerfile's `uvicorn --host 0.0.0.0`) routes external traffic into
-    # the container, where loopback would be unreachable and health checks would
-    # fail. Operators who want a specific interface override it via SCHEDULER_HOST.
+    # B104 (bind-all-interfaces) is suppressed on the default below, and that is
+    # deliberate, not accidental: Render (and Scheduler/Dockerfile's
+    # `uvicorn --host 0.0.0.0`) routes external traffic into the container, where
+    # loopback would be unreachable and health checks would fail. Operators wanting
+    # a specific interface override it via SCHEDULER_HOST.
+    #
+    # This explanation must not begin with the `nosec` token: bandit parses the
+    # words following it as test IDs and warns on each one.
     host: str = "0.0.0.0"  # nosec B104
     port: int = 8000
     network_auth_token: str | None = Field(
@@ -59,9 +63,7 @@ class Settings(BaseSettings):
     # Zenoh WAN Networking
     zenoh_listen_endpoints: list[str] = Field(
         default_factory=lambda: ["tcp/0.0.0.0:7447"],
-        validation_alias=AliasChoices(
-            "SCHEDULER_ZENOH_LISTEN_ENDPOINTS", "ZENOH_LISTEN_ENDPOINTS"
-        ),
+        validation_alias=AliasChoices("SCHEDULER_ZENOH_LISTEN_ENDPOINTS", "ZENOH_LISTEN_ENDPOINTS"),
         description="Zenoh TCP endpoints to listen on for WAN node connections.",
     )
     zenoh_peer_endpoints: list[str] = Field(
@@ -85,9 +87,7 @@ class Settings(BaseSettings):
     )
     mesh_inference_enabled: bool = Field(
         default=True,
-        validation_alias=AliasChoices(
-            "SCHEDULER_MESH_INFERENCE_ENABLED", "MESH_INFERENCE_ENABLED"
-        ),
+        validation_alias=AliasChoices("SCHEDULER_MESH_INFERENCE_ENABLED", "MESH_INFERENCE_ENABLED"),
         description=(
             "Route inference to nodes over the Zenoh mesh when they have been seen there. "
             "Disable to force the HTTP path for every node."
@@ -95,9 +95,7 @@ class Settings(BaseSettings):
     )
     mesh_inference_timeout_seconds: float = Field(
         default=120.0,
-        validation_alias=AliasChoices(
-            "SCHEDULER_MESH_INFERENCE_TIMEOUT", "MESH_INFERENCE_TIMEOUT"
-        ),
+        validation_alias=AliasChoices("SCHEDULER_MESH_INFERENCE_TIMEOUT", "MESH_INFERENCE_TIMEOUT"),
         description=(
             "Total seconds a mesh inference query may run. Must exceed generation time "
             "for the largest model a host serves, or long completions are cut off."

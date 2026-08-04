@@ -76,17 +76,18 @@ class CreditLedger:
         )
         return account
 
-    def deduct_usage(self, account_id: str, credits: float) -> CreditAccount:
+    def deduct_usage(self, account_id: str, amount: float) -> CreditAccount:
         """Deduct credits consumed for inference.
 
         Args:
             account_id: Account identifier.
-            credits: Amount of credits to deduct.
+            amount: Number of credits to deduct. Renamed from `credits`, which
+                shadowed the Python builtin.
 
         Returns:
             Updated CreditAccount.
         """
         account = self.get_or_create_account(account_id)
-        account.consumed_credits += max(0.0, credits)
+        account.consumed_credits += max(0.0, amount)
         account.updated_at = time.time()
         return account

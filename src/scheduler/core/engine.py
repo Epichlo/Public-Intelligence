@@ -126,9 +126,7 @@ class SchedulingEngine:
         if vram_per_layer_val is None and "vram_required_gb" in task:
             vram_per_layer_val = float(task["vram_required_gb"]) / float(total_layers)
 
-        vram_per_layer: float = (
-            float(vram_per_layer_val) if vram_per_layer_val is not None else 0.5
-        )
+        vram_per_layer: float = float(vram_per_layer_val) if vram_per_layer_val is not None else 0.5
 
         # Calculate VRAM layer capacities per node
         node_capacities: list[tuple[Node, int]] = []
@@ -285,9 +283,7 @@ class SchedulingEngine:
         vram_per_layer_val = task_dict.get("vram_per_layer_gb") or task_dict.get("layer_vram_gb")
         if vram_per_layer_val is None and "vram_required_gb" in task_dict:
             vram_per_layer_val = float(task_dict["vram_required_gb"]) / float(t_layers)
-        vram_per_layer: float = (
-            float(vram_per_layer_val) if vram_per_layer_val is not None else 0.5
-        )
+        vram_per_layer: float = float(vram_per_layer_val) if vram_per_layer_val is not None else 0.5
 
         node_capacities: list[tuple[Node, int]] = []
         total_cluster_capacity = 0

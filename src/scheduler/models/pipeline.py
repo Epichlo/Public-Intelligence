@@ -244,9 +244,7 @@ class PipelineConfig(BaseModel):
         # Ensure stages are ordered and contiguous
         for idx, stage in enumerate(self.stages):
             if stage.stage_index != idx:
-                raise ValueError(
-                    f"Stage index mismatch at position {idx}: got {stage.stage_index}"
-                )
+                raise ValueError(f"Stage index mismatch at position {idx}: got {stage.stage_index}")
 
         # Check total layers coverage
         if self.stages[0].layer_range.start_layer != 0:
@@ -287,9 +285,7 @@ class DraftBlockPayload(BaseModel):
 
     task_id: str = Field(description="Unique task identifier")
     sequence_start_id: int = Field(default=0, ge=0, description="Starting sequence position index")
-    speculative_k: int = Field(
-        default=5, ge=1, le=16, description="Number of candidate tokens (K)"
-    )
+    speculative_k: int = Field(default=5, ge=1, le=16, description="Number of candidate tokens (K)")
     candidate_tokens: list[int] = Field(default_factory=list, description="Candidate token IDs")
     draft_logprobs: list[float] = Field(default_factory=list, description="Draft logprobs")
     activation_payload: TensorPayload = Field(description="Batched activation tensor payload")

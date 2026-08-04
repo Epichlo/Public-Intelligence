@@ -27,7 +27,10 @@ class GitHubIssuePayload(BaseModel):
 )
 async def process_github_issue_webhook(
     payload: GitHubIssuePayload,
-    x_github_event: str = Header("issues", alias="X-GitHub-Event"),
+    # Declared but unread: FastAPI needs the parameter to document and validate the
+    # header, and GitHub always sends it. Reading it would mean dispatching on event
+    # type, which this endpoint does not do.
+    x_github_event: str = Header("issues", alias="X-GitHub-Event"),  # noqa: ARG001
 ) -> MissionResult:
     """Ingest GitHub issue webhook from n8n automation and launch autonomous mission."""
     issue_data = payload.issue
@@ -38,10 +41,8 @@ async def process_github_issue_webhook(
     mission_id = f"mission_{uuid.uuid4().hex[:12]}"
     prompt = f"{issue_title}: {issue_body}"
 
-    result = await _orchestrator.execute_mission(
+    return await _orchestrator.execute_mission(
         mission_id=mission_id,
         prompt=prompt,
         issue_id=f"#{issue_number}",
     )
-
-    return result

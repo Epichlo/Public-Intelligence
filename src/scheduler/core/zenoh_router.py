@@ -33,9 +33,7 @@ class ZenohRouter:
             settings = get_settings()
             config = zenoh.Config()
             if settings.zenoh_listen_endpoints:
-                config.insert_json5(
-                    "listen/endpoints", json.dumps(settings.zenoh_listen_endpoints)
-                )
+                config.insert_json5("listen/endpoints", json.dumps(settings.zenoh_listen_endpoints))
                 config.insert_json5("mode", '"router"')
 
             connect_endpoints: list[str] = []

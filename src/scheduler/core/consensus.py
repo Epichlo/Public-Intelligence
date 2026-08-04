@@ -169,8 +169,7 @@ class RaftConsensusEngine:
                                     return
                         await asyncio.sleep(0.05)
                     raise TimeoutError("Proposal replication timed out")
-                else:
-                    raise RuntimeError("No leader found in consensus cluster")
+                raise RuntimeError("No leader found in consensus cluster")
 
         if proposal_index is None:
             # Non-leader paths return or raise inside the lock above.

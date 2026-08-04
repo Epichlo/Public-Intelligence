@@ -106,9 +106,7 @@ class SharedMemoryIPC:
 class BackpressuredStreamRouter:
     """WAN streaming router enforcing backpressure via sliding window flow control."""
 
-    def __init__(
-        self, session_id: str, zenoh_session: zenoh.Session, window_size: int = 4
-    ) -> None:
+    def __init__(self, session_id: str, zenoh_session: zenoh.Session, window_size: int = 4) -> None:
         """Initialize the BackpressuredStreamRouter.
 
         Args:
@@ -304,8 +302,7 @@ class BackpressuredStreamRouter:
             except Exception as e:
                 logger.debug("Failed to send tensor ACK on %s: %s", ack_topic, e)
 
-        subscriber = self.zenoh_session.declare_subscriber(stream_topic, _on_sample)
-        return subscriber
+        return self.zenoh_session.declare_subscriber(stream_topic, _on_sample)
 
     def stop(self) -> None:
         """Undeclare Zenoh subscribers and publishers, and stop the router."""

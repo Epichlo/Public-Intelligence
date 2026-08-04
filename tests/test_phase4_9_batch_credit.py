@@ -18,7 +18,7 @@ def test_credit_ledger_accrual_and_deduction() -> None:
     assert account.net_balance == 2400.0
 
     # 2. Requester usage deduction: deduct 500 credits
-    updated = ledger.deduct_usage(account_id="node-gpu-1", credits=500.0)
+    updated = ledger.deduct_usage(account_id="node-gpu-1", amount=500.0)
     assert updated.consumed_credits == 500.0
     assert updated.net_balance == 1900.0
 

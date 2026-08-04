@@ -10,9 +10,7 @@ class SchedulingStrategy(ABC):
     """Abstract interface defining the two-stage scheduling strategy."""
 
     @abstractmethod
-    def filter_nodes(
-        self, task_requirements: dict[str, Any], live_nodes: list[Node]
-    ) -> list[Node]:
+    def filter_nodes(self, task_requirements: dict[str, Any], live_nodes: list[Node]) -> list[Node]:
         """Filter live nodes based on hard requirements (e.g. model support, VRAM).
 
         Args:

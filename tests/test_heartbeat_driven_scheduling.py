@@ -14,52 +14,12 @@ Scheduler does the right thing with honest ones. What makes the Node *send* hone
 ones is covered in `Node/tests/test_heartbeat_metrics.py`.
 """
 
-from datetime import UTC, datetime
-
 import pytest
 
 from scheduler.core.matchmaker import CapabilityMatchmaker
-from scheduler.models.heartbeat import Heartbeat
-from scheduler.models.node import GPUInfo, Node, NodeStatus
 from scheduler.registry.node_registry import NodeRegistry
 from scheduler.scheduler.algorithm import Scheduler as SchedulingAlgorithm
-
-
-def _node(node_id: str, vram_total: float = 24.0) -> Node:
-    return Node(
-        node_id=node_id,
-        hostname="host",
-        ip_address="127.0.0.1",
-        region="local",
-        gpu=GPUInfo(
-            name="NVIDIA GeForce RTX 4090",
-            vram_total_gb=vram_total,
-            vram_available_gb=vram_total,
-        ),
-        cpu_cores=8,
-        ram_total_gb=32.0,
-        available_models=["llama3"],
-    )
-
-
-def _heartbeat(
-    node_id: str,
-    *,
-    vram_available_gb: float,
-    cpu_utilization: float = 10.0,
-    gpu_utilization: float = 0.0,
-    queue_length: int = 0,
-) -> Heartbeat:
-    return Heartbeat(
-        node_id=node_id,
-        timestamp=datetime.now(UTC),
-        queue_length=queue_length,
-        cpu_utilization=cpu_utilization,
-        ram_available_gb=16.0,
-        gpu_utilization=gpu_utilization,
-        vram_available_gb=vram_available_gb,
-        status=NodeStatus.ONLINE,
-    )
+from tests.factories import make_heartbeat, make_node
 
 
 @pytest.mark.anyio
@@ -71,8 +31,8 @@ async def test_placeholder_vram_excludes_a_real_gpu_node() -> None:
     nothing.
     """
     registry = NodeRegistry()
-    await registry.register(_node("gpu-node"))
-    await registry.update_heartbeat(_heartbeat("gpu-node", vram_available_gb=0.0))
+    await registry.register(make_node("gpu-node"))
+    await registry.update_heartbeat(make_heartbeat("gpu-node", vram=0.0))
 
     eligible = CapabilityMatchmaker(registry).filter_nodes(
         {"model_name": "llama3", "min_vram_gb": 8.0},
@@ -86,8 +46,8 @@ async def test_placeholder_vram_excludes_a_real_gpu_node() -> None:
 async def test_honest_vram_heartbeat_keeps_a_capable_node_eligible() -> None:
     """With a measured figure, the same node is correctly offered the work."""
     registry = NodeRegistry()
-    await registry.register(_node("gpu-node"))
-    await registry.update_heartbeat(_heartbeat("gpu-node", vram_available_gb=20.0))
+    await registry.register(make_node("gpu-node"))
+    await registry.update_heartbeat(make_heartbeat("gpu-node", vram=20.0))
 
     eligible = CapabilityMatchmaker(registry).filter_nodes(
         {"model_name": "llama3", "min_vram_gb": 8.0},
@@ -101,8 +61,8 @@ async def test_honest_vram_heartbeat_keeps_a_capable_node_eligible() -> None:
 async def test_honest_vram_still_excludes_a_node_that_is_genuinely_full() -> None:
     """Real numbers must exclude as well as include, or the filter is decorative."""
     registry = NodeRegistry()
-    await registry.register(_node("busy-node"))
-    await registry.update_heartbeat(_heartbeat("busy-node", vram_available_gb=1.5))
+    await registry.register(make_node("busy-node"))
+    await registry.update_heartbeat(make_heartbeat("busy-node", vram=1.5))
 
     eligible = CapabilityMatchmaker(registry).filter_nodes(
         {"model_name": "llama3", "min_vram_gb": 8.0},
@@ -122,19 +82,13 @@ async def test_placeholder_metrics_hide_real_load_from_selection() -> None:
     saturated one. Real load is invisible to it.
     """
     registry = NodeRegistry()
-    await registry.register(_node("saturated-node"))
-    await registry.register(_node("idle-node"))
+    await registry.register(make_node("saturated-node"))
+    await registry.register(make_node("idle-node"))
 
     # Exactly what runtime._collect_heartbeat_metrics returns today, for both.
     for node_id in ("saturated-node", "idle-node"):
         await registry.update_heartbeat(
-            _heartbeat(
-                node_id,
-                vram_available_gb=0.0,
-                cpu_utilization=15.0,
-                gpu_utilization=0.0,
-                queue_length=0,
-            )
+            make_heartbeat(node_id, vram=0.0, cpu=15.0, gpu=0.0, queue=0)
         )
 
     selected = await SchedulingAlgorithm(registry).select_node("llama3")
@@ -148,25 +102,25 @@ async def test_placeholder_metrics_hide_real_load_from_selection() -> None:
 async def test_idle_node_is_selected_over_a_loaded_one() -> None:
     """The point of 1.3: measured load must actually steer selection."""
     registry = NodeRegistry()
-    await registry.register(_node("idle-node"))
-    await registry.register(_node("loaded-node"))
+    await registry.register(make_node("idle-node"))
+    await registry.register(make_node("loaded-node"))
 
     await registry.update_heartbeat(
-        _heartbeat(
+        make_heartbeat(
             "idle-node",
-            vram_available_gb=22.0,
-            cpu_utilization=5.0,
-            gpu_utilization=2.0,
-            queue_length=0,
+            vram=22.0,
+            cpu=5.0,
+            gpu=2.0,
+            queue=0,
         )
     )
     await registry.update_heartbeat(
-        _heartbeat(
+        make_heartbeat(
             "loaded-node",
-            vram_available_gb=3.0,
-            cpu_utilization=90.0,
-            gpu_utilization=95.0,
-            queue_length=4,
+            vram=3.0,
+            cpu=90.0,
+            gpu=95.0,
+            queue=4,
         )
     )
 

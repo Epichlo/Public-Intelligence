@@ -93,9 +93,7 @@ class TestScheduleAPI:
 
     async def test_missing_model_ignored(self, client: AsyncClient):
         # Node does not support llama-3
-        reg = await client.post(
-            "/nodes/register", json=_node_payload("node-1", models=["mistral"])
-        )
+        reg = await client.post("/nodes/register", json=_node_payload("node-1", models=["mistral"]))
         assert reg.status_code == 201
 
         hb = await client.post("/heartbeat", json=_heartbeat_payload("node-1"))

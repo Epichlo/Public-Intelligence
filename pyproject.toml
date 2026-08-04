@@ -22,11 +22,18 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.24.0",
-    "httpx>=0.27.0",
-    "ruff>=0.6.0",
-    "mypy>=1.11.0",
+    # Lint/type/security tools are PINNED EXACTLY, not floored. CI used to run
+    # `pip install --upgrade ruff mypy bandit`, so a new ruff release could turn
+    # main red with no code change, and local (0.16.0) could disagree with CI
+    # (0.16.1) about what passes. These versions must match across both packages;
+    # `tests/test_lint_config_parity.py` enforces that.
+    "ruff==0.16.1",
+    "mypy==2.3.0",
+    "bandit==1.9.4",
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "pytest-cov==7.0.0",
+    "httpx>=0.24.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -36,27 +43,38 @@ packages = ["src/scheduler"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 
+# ---------------------------------------------------------------------------
+# SHARED LINT CONFIG -- must stay byte-identical to the matching block in the
+# other package's pyproject.toml. `tests/test_lint_config_parity.py` in the root
+# suite fails if they diverge.
+#
+# Why duplicated: Node and Scheduler are separate git repositories, so a shared
+# root config file would not exist in a standalone clone of either one.
+#
+# History: these two configs used to differ -- ARG was enabled on Node only, and
+# line-length was 100 vs 99. `ruff check ./Node ./Scheduler` therefore applied
+# different rules to each subtree, so "does this pass lint" had no single answer
+# and depended on which directory the file happened to live in.
+#
+# TC (flake8-type-checking) is deliberately NOT enabled: FastAPI resolves type
+# annotations at runtime for dependency injection and response models, so moving
+# those imports into `if TYPE_CHECKING:` blocks breaks the app at import time.
+# ---------------------------------------------------------------------------
 [tool.ruff]
-src = ["src", "tests"]
-line-length = 99
+line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
-select = [
-    "E",   # pycodestyle errors
-    "W",   # pycodestyle warnings
-    "F",   # pyflakes
-    "I",   # isort
-    "N",   # pep8-naming
-    "UP",  # pyupgrade
-    "B",   # flake8-bugbear
-    "SIM", # flake8-simplify
-    "TCH", # flake8-type-checking
-    "RUF", # ruff-specific
-]
+select = ["E", "W", "F", "I", "N", "UP", "B", "A", "C4", "RET", "SIM", "ARG", "RUF"]
+ignore = ["E501"]
 
-[tool.ruff.lint.isort]
-known-first-party = ["scheduler"]
+[tool.ruff.lint.per-file-ignores]
+# Test doubles must mirror the signature of the thing they stand in for -- a fake
+# Zenoh session takes `**kwargs` it never reads, a fake Query takes the `key_expr`
+# the real one is called with. Dropping those parameters would hide the real API.
+# This exemption is ARG-only and applies only to tests; `src/` has every rule on
+# and is clean under all of them.
+"tests/**" = ["ARG001", "ARG002", "ARG005"]
 
 [tool.mypy]
 python_version = "3.11"

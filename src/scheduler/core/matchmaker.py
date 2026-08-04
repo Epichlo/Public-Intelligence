@@ -18,9 +18,7 @@ class CapabilityMatchmaker(SchedulingStrategy):
         """
         self.registry = registry
 
-    def filter_nodes(
-        self, task_requirements: dict[str, Any], live_nodes: list[Node]
-    ) -> list[Node]:
+    def filter_nodes(self, task_requirements: dict[str, Any], live_nodes: list[Node]) -> list[Node]:
         """Filter live nodes based on hard VRAM, model, and backend requirements.
 
         Args:
@@ -41,9 +39,7 @@ class CapabilityMatchmaker(SchedulingStrategy):
             min_vram_gb = task_requirements.get("min_vram_gb") or task_requirements.get("vram")
             if min_vram_gb is not None:
                 heartbeat = self.registry._heartbeats.get(node.node_id)
-                vram_available = getattr(
-                    heartbeat, "vram_available_gb", node.gpu.vram_available_gb
-                )
+                vram_available = getattr(heartbeat, "vram_available_gb", node.gpu.vram_available_gb)
                 if vram_available < float(min_vram_gb):
                     continue
 
@@ -60,8 +56,12 @@ class CapabilityMatchmaker(SchedulingStrategy):
 
         return eligible
 
+    # `task` is unread here but required by the SchedulingStrategy ABC in
+    # strategy.py; this implementation scores purely on live node load.
     def score_nodes(
-        self, task: dict[str, Any], eligible_nodes: list[Node]
+        self,
+        task: dict[str, Any],  # noqa: ARG002
+        eligible_nodes: list[Node],
     ) -> list[tuple[Node, float]]:
         """Rank eligible nodes by dynamic load metrics and reliability score.
 
