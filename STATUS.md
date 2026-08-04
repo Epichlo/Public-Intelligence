@@ -4,17 +4,17 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-04 11:01 UTC
+**Generated:** 2026-08-04 11:18 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 213 | 0 | 0 | 12.23s |
-| Node | PASS | 231 | 0 | 1 | 2.92s |
-| Root E2E | PASS | 29 | 0 | 0 | 22.01s |
-| **Total** | **PASSING** | **473** | **0** | **1** | |
+| Scheduler | PASS | 218 | 0 | 0 | 14.28s |
+| Node | PASS | 243 | 0 | 1 | 3.16s |
+| Root E2E | PASS | 29 | 0 | 0 | 22.04s |
+| **Total** | **PASSING** | **490** | **0** | **1** | |
 
 Reproduce:
 
@@ -26,32 +26,33 @@ Node/.venv/bin/python -m pytest tests -q   # Root E2E
 
 ## Git
 
-- **Last commit:** `62db2ac` feat: deliver ROADMAP 1.1 node reachability and 1.2 real hardware
-- **Author / date:** Atharv Deshpande — 2026-08-04 16:23:08 +0530
+- **Last commit:** `59c8ced` fix: correct three false "facts" in CLAUDE.md and VERIFY.md
+- **Author / date:** Atharv Deshpande — 2026-08-04 16:31:14 +0530
 - **Branch:** main
-- **Total commits:** 50
+- **Total commits:** 51
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence.git (fetch)
-- **Working tree:** 4 uncommitted change(s)
+- **Working tree:** 5 uncommitted change(s)
 
 ```
-  M CLAUDE.md
-   M Node
+  M Node
+   M ROADMAP.md
    M Scheduler
    M VERIFY.md
+  ?? specs/real-heartbeat-metrics.md
 ```
 
 ## Submodules
 
 | Path | Pinned | Subject |
 | --- | --- | --- |
-| Node | `2b37f20f` | fix(node): make collect_gpu_metrics public; satisfy CI's ruf |
-| Scheduler | `14f949ce` | style(scheduler): apply ruff format to satisfy CI |
+| Node | `69179d9f` | fix(node): make collect_gpu_metrics public; satisfy CI's ruf |
+| Scheduler | `b42b331c` | style(scheduler): apply ruff format to satisfy CI |
 | website | `40a94020` | fix(dashboard): forward the node's auth credential from the  |
 
 ## CI
 
-- **Status:** FAIL
-- **Reason:** latest run did not succeed: [{"conclusion":"failure","headSha":"62db2ac4968a8bc8b0add5ca894d29a2932d1b49"}]
+- **Status:** PASS
+- **Reason:** latest run concluded success
 
 ---
 
