@@ -5,6 +5,7 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 from collections import deque
@@ -272,8 +273,11 @@ class WorktreeManager:
             "none",
         ]
 
-        # Use non-root user matching host user's UID and GID where possible
-        if hasattr(os, "getuid") and hasattr(os, "getgid"):
+        # Use non-root user matching host user's UID and GID where possible.
+        # `sys.platform`, not `hasattr`: both are correct at runtime, but mypy
+        # narrows the platform check and cannot narrow hasattr on a module, so
+        # the hasattr form failed the type gate on Windows.
+        if sys.platform != "win32":
             uid = os.getuid()
             gid = os.getgid()
             if uid != 0:

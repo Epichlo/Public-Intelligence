@@ -13,6 +13,7 @@ from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Any
 
+import psutil
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 logger = logging.getLogger(__name__)
@@ -63,17 +64,30 @@ def encrypt_payload(payload_str: str, secret_str: str) -> dict[str, str]:
 def get_cpu_utilization() -> float:
     """Retrieve system CPU utilization percentage.
 
+    Uses psutil, matching `node.core.hardware`, so telemetry and heartbeats cannot
+    disagree about the same machine.
+
+    This previously called `os.getloadavg()`, which does not exist on Windows -- the
+    AttributeError was caught by a bare `except Exception` whose fallback returned
+    `10.0 + random.random() * 20.0`. Every Windows host therefore published a
+    **randomly generated** CPU figure into the telemetry mesh, indistinguishable
+    from a real reading. mypy found this the first time it was run against the
+    Windows platform; the `except` branch had hidden it from every test.
+
+    Load average was also the wrong measure: it is a run-queue depth, not a
+    percentage, so dividing by core count only approximated utilisation even on
+    POSIX.
+
     Returns:
-        CPU utilization percentage.
+        CPU utilization percentage, 0.0-100.0.
     """
     try:
-        load = os.getloadavg()[0]
-        cores = os.cpu_count() or 1
-        return min(100.0, round((load / cores) * 100.0, 2))
-    except Exception:
-        import random
-
-        return round(10.0 + random.random() * 20.0, 2)
+        return round(float(psutil.cpu_percent(interval=None)), 2)
+    except Exception as e:
+        # Report zero rather than invent a number. A node that cannot read its own
+        # CPU should look idle, not plausible.
+        logger.warning("CPU utilisation read failed, reporting 0.0: %s", e)
+        return 0.0
 
 
 def get_ram_usage_bytes() -> int:
