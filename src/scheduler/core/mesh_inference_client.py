@@ -327,8 +327,7 @@ class MeshInferenceClient:
             item = await asyncio.wait_for(queue.get(), timeout=self._first_reply_timeout)
         except TimeoutError as e:
             raise MeshUnavailableError(
-                f"Node {node_id} did not answer over the mesh within "
-                f"{self._first_reply_timeout}s."
+                f"Node {node_id} did not answer over the mesh within {self._first_reply_timeout}s."
             ) from e
 
         if item is _END:

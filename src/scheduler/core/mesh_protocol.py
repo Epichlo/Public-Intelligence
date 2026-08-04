@@ -264,9 +264,7 @@ def verify_request(
 
     version = envelope.get("v")
     if version != PROTOCOL_VERSION:
-        raise MeshRequestError(
-            f"Unsupported mesh protocol version: {version!r}.", status=400
-        )
+        raise MeshRequestError(f"Unsupported mesh protocol version: {version!r}.", status=400)
 
     claimed_node = envelope.get("node_id")
     model = envelope.get("model")

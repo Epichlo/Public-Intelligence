@@ -120,9 +120,7 @@ async def test_rejected_telemetry_does_not_mark_the_node_reachable() -> None:
     router = _router(registry)
 
     forged = json.dumps({"iv": "AAAA", "ciphertext": "BBBB", "signature": "0" * 64})
-    await router._process_telemetry(
-        forged, f"public-intelligence/net/nodes/{NODE_ID}/telemetry"
-    )
+    await router._process_telemetry(forged, f"public-intelligence/net/nodes/{NODE_ID}/telemetry")
 
     assert registry.is_mesh_reachable(NODE_ID) is False
 
