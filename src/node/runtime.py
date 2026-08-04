@@ -10,9 +10,12 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from node.clients import OllamaClient, SchedulerClient, ZenohHeartbeatClient
+from node.clients.mesh_inference_server import ZenohInferenceServer
 from node.core.configuration import Settings
+from node.core.hardware import detect_gpu, detect_ram_total_gb
 from node.core.telemetry import TelemetryEmitter
 from node.models import Heartbeat, NodeInfo
+from node.models.gpu_info import cpu_only_gpu
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +45,9 @@ class Runtime:
         self.heartbeat_task: asyncio.Task[None] | None = None
         self.telemetry_emitter: TelemetryEmitter | None = None
         self.split_stage_sub: Any | None = None
+        # Serves inference over the Zenoh session rather than over an inbound HTTP port.
+        # None until start() finds a live session; see specs/node-reachability.md.
+        self.mesh_inference_server: ZenohInferenceServer | None = None
         self.is_running = False
 
         if TYPE_CHECKING:
@@ -78,7 +84,16 @@ class Runtime:
                 logger.warning("ollama_discovery_warning", error=str(e))
                 models = []
 
-            # 2. Build NodeInfo
+            # 2. Discover real hardware. `detect_gpu` already degrades internally;
+            # this guard is for the case where it fails in a way it did not expect,
+            # because advertising nothing is better than failing to register at all.
+            try:
+                gpu = await detect_gpu()
+            except Exception as e:
+                logger.warning("Hardware discovery failed, advertising cpu-only: %s", e)
+                gpu = cpu_only_gpu()
+
+            # 2.5. Build NodeInfo
             node_info = NodeInfo(
                 node_id=self.settings.node_id,
                 hostname=self.settings.hostname,
@@ -86,6 +101,7 @@ class Runtime:
                 ip_address=self._resolve_ip(),
                 cpu_cores=self._get_cpu_cores(),
                 ram_total_gb=self._get_ram_total_gb(),
+                gpu=gpu,
                 available_models=models,
             )
 
@@ -104,6 +120,14 @@ class Runtime:
                 self.telemetry_emitter.start()
                 self._setup_split_stage_listener()
 
+                # 3.7. Serve inference over the mesh. This is what makes a node behind
+                # NAT reachable: the Scheduler queries this session instead of dialling
+                # an inbound port that does not exist.
+                self.mesh_inference_server = ZenohInferenceServer(
+                    self.settings, self.zenoh_client.session, self.ollama_client
+                )
+                self.mesh_inference_server.start()
+
             # 4. Start periodic heartbeats
             self.heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
@@ -120,6 +144,15 @@ class Runtime:
             return
         self.is_running = False
         self.registration_status = "stopping"
+
+        # Stop accepting mesh inference queries, then give any already being answered a
+        # brief chance to reply rather than dropping a request the caller is waiting on.
+        if self.mesh_inference_server is not None:
+            with suppress(Exception):
+                self.mesh_inference_server.stop()
+            with suppress(Exception):
+                await self.mesh_inference_server.wait_for_inflight(timeout=5.0)
+            self.mesh_inference_server = None
 
         # Undeclare split stage subscriber
         if self.split_stage_sub is not None:
@@ -261,8 +294,8 @@ class Runtime:
         return os.cpu_count() or 4
 
     def _get_ram_total_gb(self) -> float:
-        """Retrieve total system RAM (placeholder)."""
-        return 16.0
+        """Retrieve total system RAM in gigabytes, measured from the host."""
+        return detect_ram_total_gb()
 
     def _collect_heartbeat_metrics(self) -> dict[str, Any]:
         """Collect current metrics for heartbeat reports (placeholders)."""

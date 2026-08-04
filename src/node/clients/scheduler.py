@@ -92,12 +92,9 @@ class SchedulerClient:
         payload = node_info.model_dump(mode="json")
         # Translate available_models from ModelInfo list to list[str] of names
         payload["available_models"] = [m["name"] for m in payload.get("available_models", [])]
-        # Inject standard GPUInfo structure required by Scheduler
-        payload["gpu"] = {
-            "name": "unknown",
-            "vram_total_gb": 16.0,
-            "vram_available_gb": 16.0,
-        }
+        # `gpu` rides along from NodeInfo.gpu -- it used to be overwritten here with a
+        # hardcoded 16 GB "unknown" card for every node on the network, which is what
+        # the Scheduler then filtered and scored against. See specs/real-hardware-advertisement.md.
         try:
             await self._send_request("POST", "/nodes/register", payload)
         except SchedulerError as e:

@@ -4,6 +4,7 @@ import ipaddress
 
 from pydantic import BaseModel, Field, field_validator
 
+from node.models.gpu_info import GPUInfo, cpu_only_gpu
 from node.models.model_info import ModelInfo
 
 
@@ -33,6 +34,14 @@ class NodeInfo(BaseModel):
     ram_total_gb: float = Field(
         ...,
         description="Total system RAM in gigabytes.",
+    )
+    gpu: GPUInfo = Field(
+        default_factory=cpu_only_gpu,
+        description=(
+            "Real GPU hardware on this host. Defaults to the honest cpu-only profile "
+            "rather than to a made-up capacity, so a caller that forgets to set it "
+            "advertises no VRAM instead of claiming some."
+        ),
     )
     available_models: list[ModelInfo] = Field(
         default_factory=list,

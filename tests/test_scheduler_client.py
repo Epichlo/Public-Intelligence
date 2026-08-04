@@ -8,7 +8,7 @@ import pytest
 
 from node.clients import SchedulerClient, SchedulerError
 from node.core.configuration import Settings
-from node.models import Heartbeat, ModelInfo, NodeInfo
+from node.models import GPUInfo, Heartbeat, ModelInfo, NodeInfo
 
 
 @pytest.fixture
@@ -27,6 +27,11 @@ def node_info() -> NodeInfo:
         ip_address="192.168.1.50",
         cpu_cores=8,
         ram_total_gb=16.0,
+        gpu=GPUInfo(
+            name="NVIDIA GeForce RTX 3090",
+            vram_total_gb=24.0,
+            vram_available_gb=22.0,
+        ),
         available_models=[
             ModelInfo(
                 name="llama3-8b",
@@ -74,11 +79,8 @@ async def test_register_success_custom_client(
     expected_payload["available_models"] = [
         m["name"] for m in expected_payload.get("available_models", [])
     ]
-    expected_payload["gpu"] = {
-        "name": "unknown",
-        "vram_total_gb": 16.0,
-        "vram_available_gb": 16.0,
-    }
+    # `gpu` is no longer overwritten by the client -- it rides along from
+    # NodeInfo.gpu as model_dump produced it. See specs/real-hardware-advertisement.md.
 
     mock_client.request.assert_called_once_with(
         "POST",
@@ -110,11 +112,8 @@ async def test_register_success_transient_client(
     expected_payload["available_models"] = [
         m["name"] for m in expected_payload.get("available_models", [])
     ]
-    expected_payload["gpu"] = {
-        "name": "unknown",
-        "vram_total_gb": 16.0,
-        "vram_available_gb": 16.0,
-    }
+    # `gpu` is no longer overwritten by the client -- it rides along from
+    # NodeInfo.gpu as model_dump produced it. See specs/real-hardware-advertisement.md.
 
     mock_client.request.assert_called_once_with(
         "POST",
