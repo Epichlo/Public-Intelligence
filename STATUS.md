@@ -4,17 +4,17 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-05 10:53 UTC
+**Generated:** 2026-08-05 11:18 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 227 | 0 | 0 | 12.96s |
-| Node | PASS | 256 | 0 | 1 | 3.28s |
-| Root E2E | PASS | 57 | 0 | 0 | 22.06s |
-| **Total** | **PASSING** | **540** | **0** | **1** | |
+| Scheduler | PASS | 227 | 0 | 0 | 14.53s |
+| Node | PASS | 273 | 0 | 1 | 3.32s |
+| Root E2E | PASS | 57 | 0 | 0 | 22.05s |
+| **Total** | **PASSING** | **557** | **0** | **1** | |
 
 Reproduce:
 
@@ -26,24 +26,24 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `aae9652` feat: complete the monorepo migration
-- **Author / date:** Atharv Deshpande — 2026-08-04 18:31:42 +0530
+- **Last commit:** `3dbaa96` chore: untrack .DS_Store
+- **Author / date:** Atharv Deshpande — 2026-08-05 16:30:40 +0530
 - **Branch:** main
-- **Total commits:** 196
+- **Total commits:** 198
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence.git (fetch)
-- **Working tree:** 19 uncommitted change(s)
+- **Working tree:** 10 uncommitted change(s)
 
 ```
-  M .DS_Store
-   M ROADMAP.md
+  M ROADMAP.md
+   M STATUS.md
    M VERIFY.md
-   M packages/node/.env.example
-   M packages/node/examples/demo.md
-   M packages/node/examples/demo.py
-   M packages/node/src/node/clients/ollama.py
    M packages/node/src/node/clients/scheduler.py
    M packages/node/src/node/core/configuration.py
    M packages/node/src/node/runtime.py
+   M packages/node/tests/test_runtime.py
+   M packages/node/tests/test_scheduler_client.py
+  ?? packages/node/tests/test_scheduler_outage.py
+  ?? specs/scheduler-outage-resilience.md
 ```
 
 ## CI

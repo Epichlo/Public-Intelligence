@@ -79,7 +79,13 @@ async def test_runtime_registration_failure(
     mock_ollama_client: AsyncMock,
     mock_zenoh_client: MagicMock,
 ) -> None:
-    """Verify start propagates registration exceptions and resets running status."""
+    """Verify start propagates a NON-SchedulerError from registration.
+
+    This still fails fast on purpose. A bare `Exception` from the register call is
+    a bug in this node, not the Scheduler being unreachable -- only `SchedulerError`
+    is survivable, and `test_scheduler_outage.py` pins that half. Roadmap 1.6
+    changed which exceptions kill startup, not whether any do.
+    """
     mock_scheduler_client.register.side_effect = Exception("Registration rejected")
 
     runtime = Runtime(

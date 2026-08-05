@@ -241,3 +241,87 @@ async def test_client_sends_auth_token(settings: Settings, dummy_request: httpx.
         headers={"X-Network-Auth-Token": "secure-test-token"},
         timeout=5.0,
     )
+
+
+@pytest.mark.anyio
+async def test_error_carries_the_response_status_code(
+    settings: Settings, node_info: NodeInfo, dummy_request: httpx.Request
+) -> None:
+    """Callers must be able to branch on the status without parsing the message.
+
+    Registration reads 409 as "already registered" and the heartbeat loop reads 404
+    as "the Scheduler has forgotten this node, register again". Both used to mean
+    substring-matching an error string, which would match a node id containing
+    "409" and would break on any rewording. See specs/scheduler-outage-resilience.md.
+    """
+    mock_client = AsyncMock()
+    mock_client.request.return_value = httpx.Response(404, request=dummy_request)
+
+    client = SchedulerClient(settings, client=mock_client)
+    with pytest.raises(SchedulerError) as exc_info:
+        await client.heartbeat(
+            Heartbeat(
+                node_id="node-1",
+                timestamp=datetime.now(UTC),
+                queue_length=0,
+                cpu_utilization=1.0,
+                ram_available_gb=1.0,
+                gpu_utilization=1.0,
+                vram_available_gb=1.0,
+            )
+        )
+
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_a_request_that_never_landed_has_no_status_code(
+    settings: Settings, node_info: NodeInfo, dummy_request: httpx.Request
+) -> None:
+    """None distinguishes "no response at all" from "the Scheduler said something".
+
+    A refused connection must not be mistaken for a 404, or a node would tear down
+    its registration state every time the network hiccuped.
+    """
+    mock_client = AsyncMock()
+    mock_client.request.side_effect = httpx.ConnectError(
+        "Connection refused", request=dummy_request
+    )
+
+    client = SchedulerClient(settings, client=mock_client)
+    with pytest.raises(SchedulerError) as exc_info:
+        await client.register(node_info)
+
+    assert exc_info.value.status_code is None
+
+
+@pytest.mark.anyio
+async def test_conflict_is_detected_by_status_not_by_message(
+    settings: Settings, dummy_request: httpx.Request
+) -> None:
+    """A 500 whose body happens to contain "409" must not read as already registered.
+
+    The old check was `"409" in str(e)`, and the error message interpolates
+    `e.response.text` -- so any Scheduler error body mentioning that number turned a
+    hard failure into a silent "already registered", and the node carried on with a
+    registration that had never happened.
+    """
+    mock_client = AsyncMock()
+    mock_client.request.return_value = httpx.Response(
+        500, request=dummy_request, text="internal error handling node-409"
+    )
+
+    client = SchedulerClient(settings, client=mock_client)
+    info = NodeInfo(
+        node_id="node-409",
+        hostname="node.local",
+        region="local",
+        ip_address="127.0.0.1",
+        cpu_cores=4,
+        ram_total_gb=8.0,
+        gpu=GPUInfo(name="cpu-only", vram_total_gb=0.0, vram_available_gb=0.0),
+        available_models=[],
+    )
+
+    with pytest.raises(SchedulerError):
+        await client.register(info)

@@ -1,6 +1,7 @@
 """Scheduler client implementation."""
 
 import logging
+from http import HTTPStatus
 from typing import Any
 
 import httpx
@@ -12,9 +13,22 @@ logger = logging.getLogger(__name__)
 
 
 class SchedulerError(Exception):
-    """Exception raised for errors during Scheduler communication."""
+    """Exception raised for errors during Scheduler communication.
 
-    pass
+    `status_code` is the HTTP status the Scheduler answered with, or None when the
+    request never got a response at all (connection refused, DNS failure, timeout).
+    That distinction is load-bearing: None and 5xx mean "retry", 409 means "already
+    registered", and 404 on a heartbeat means "the Scheduler has forgotten this
+    node and it must register again". See specs/scheduler-outage-resilience.md.
+
+    It is an attribute rather than something callers dig out of `str(e)`. The 409
+    case used to be detected with `"409" in str(e)`, which would also have matched
+    a node id containing "409" and would break on any rewording of the message.
+    """
+
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 # These two build the exact bytes that go on the wire to the Scheduler. They are
@@ -97,31 +111,28 @@ class SchedulerClient:
         if self.network_auth_token:
             headers["X-Network-Auth-Token"] = self.network_auth_token
 
-        if self.client is not None:
-            try:
+        # Both branches raised the same two errors in the same two ways. Kept as one
+        # handler so a change to how failures are reported -- such as attaching the
+        # status code -- cannot be made to one branch and forgotten on the other.
+        try:
+            if self.client is not None:
                 response = await self.client.request(
                     method, url, json=json_data, headers=headers, timeout=self.timeout
                 )
                 response.raise_for_status()
-            except httpx.HTTPStatusError as e:
-                raise SchedulerError(
-                    f"Scheduler request {method} {path} failed with status "
-                    f"{e.response.status_code}: {e.response.text}"
-                ) from e
-            except httpx.RequestError as e:
-                raise SchedulerError(f"Scheduler request {method} {path} failed: {e}") from e
-        else:
-            try:
+            else:
                 async with httpx.AsyncClient(timeout=self.timeout) as client:
                     response = await client.request(method, url, json=json_data, headers=headers)
                     response.raise_for_status()
-            except httpx.HTTPStatusError as e:
-                raise SchedulerError(
-                    f"Scheduler request {method} {path} failed with status "
-                    f"{e.response.status_code}: {e.response.text}"
-                ) from e
-            except httpx.RequestError as e:
-                raise SchedulerError(f"Scheduler request {method} {path} failed: {e}") from e
+        except httpx.HTTPStatusError as e:
+            raise SchedulerError(
+                f"Scheduler request {method} {path} failed with status "
+                f"{e.response.status_code}: {e.response.text}",
+                status_code=e.response.status_code,
+            ) from e
+        except httpx.RequestError as e:
+            # No status code: the request never reached a responding Scheduler.
+            raise SchedulerError(f"Scheduler request {method} {path} failed: {e}") from e
 
     async def register(self, node_info: NodeInfo) -> bool:
         """Register the Node with the Scheduler.
@@ -145,7 +156,7 @@ class SchedulerClient:
         try:
             await self._send_request("POST", "/nodes/register", payload)
         except SchedulerError as e:
-            if "409" in str(e):
+            if e.status_code == HTTPStatus.CONFLICT:
                 logger.info("Node already registered with Scheduler.")
                 return False
             raise

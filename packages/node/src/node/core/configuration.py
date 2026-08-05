@@ -72,6 +72,14 @@ class Settings(BaseSettings):
         default=30,
         description="Interval in seconds for sending heartbeats to the Scheduler.",
     )
+    registration_retry_max_seconds: float = Field(
+        default=60.0,
+        description=(
+            "Ceiling for the exponential backoff between registration attempts when "
+            "the Scheduler is unreachable. The node retries for the life of the "
+            "process; this only bounds how long it waits between tries."
+        ),
+    )
 
     # Models
     #
@@ -192,6 +200,14 @@ class Settings(BaseSettings):
         if upper_val not in allowed:
             raise ValueError(f"Log level must be one of {allowed}")
         return upper_val
+
+    @field_validator("registration_retry_max_seconds")
+    @classmethod
+    def validate_registration_retry_max(cls, v: float) -> float:
+        """Validate that the registration backoff ceiling is in range (0, 3600]."""
+        if not (0.0 < v <= 3600.0):
+            raise ValueError("Registration retry ceiling must be >0 and <=3600 seconds.")
+        return v
 
     @field_validator("model_refresh_interval_seconds")
     @classmethod

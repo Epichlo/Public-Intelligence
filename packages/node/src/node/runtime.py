@@ -3,13 +3,15 @@
 import asyncio
 import logging
 import os
+import random
 import socket
 from asyncio import sleep as async_sleep
 from contextlib import suppress
 from datetime import UTC, datetime
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Any
 
-from node.clients import OllamaClient, SchedulerClient, ZenohHeartbeatClient
+from node.clients import OllamaClient, SchedulerClient, SchedulerError, ZenohHeartbeatClient
 from node.clients.mesh_inference_server import ZenohInferenceServer
 from node.core.configuration import Settings
 from node.core.hardware import detect_gpu, detect_host_metrics, detect_ram_total_gb
@@ -44,6 +46,14 @@ class Runtime:
         self.zenoh_client = zenoh_client or ZenohHeartbeatClient(settings)
         self.heartbeat_task: asyncio.Task[None] | None = None
         self.model_refresh_task: asyncio.Task[None] | None = None
+        # Runs only while registration is outstanding, and exits as soon as it lands.
+        # Re-armed if the Scheduler later forgets this node -- see `_heartbeat_loop`.
+        self.registration_retry_task: asyncio.Task[None] | None = None
+        # The payload to re-send on a retry. Held so a retry does not re-probe
+        # hardware: the figures were measured at startup and do not change while
+        # this process lives, and a retry loop that re-ran nvidia-smi every few
+        # seconds during an outage would be its own problem.
+        self.node_info: NodeInfo | None = None
         # What the Scheduler currently believes this node can serve. Compared against
         # a fresh Ollama read each refresh so the push happens only on real change --
         # the list is near-constant, and re-sending it every interval would put it on
@@ -124,24 +134,27 @@ class Runtime:
                 available_models=models,
             )
 
-            # 3. Register with Scheduler
-            created = await self.scheduler_client.register(node_info)
-            self.registration_status = "registered"
-
-            if created:
-                # The registration payload carried the catalogue, so the Scheduler's
-                # view and ours agree by construction.
-                self.advertised_models = models
-                self.catalogue_synced = True
-            else:
-                # A 409 means the Scheduler already had a record for this node_id,
-                # written by an *earlier* process and carrying that process's model
-                # catalogue. Registration cannot correct it -- it is a create, and the
-                # 409 is swallowed -- and heartbeats carry no model list, so without
-                # this push a node that restarts after an `ollama pull` stays
-                # misadvertised for as long as the Scheduler lives. If the push fails,
-                # `catalogue_synced` stays False and the refresh loop keeps retrying.
-                await self._publish_model_catalogue(models)
+            # 3. Register with Scheduler.
+            #
+            # A `SchedulerError` here is NOT fatal. It used to be: it propagated out
+            # of `start()`, out of the FastAPI lifespan, and uvicorn reported
+            # "Application startup failed. Exiting." A host booting while the
+            # Scheduler was briefly down -- a Render cold start, a network blip --
+            # was left with no node process at all. Everything after this point is
+            # local or mesh-side and does not need the Scheduler to exist.
+            #
+            # Only SchedulerError is survivable. A ValidationError from NodeInfo or a
+            # TypeError in a probe is a bug in this node, and starting degraded would
+            # hide it. See specs/scheduler-outage-resilience.md.
+            self.node_info = node_info
+            try:
+                await self._attempt_registration(node_info)
+            except SchedulerError as e:
+                logger.warning(
+                    "Scheduler unreachable at startup, starting degraded and retrying: %s", e
+                )
+                self.registration_status = "pending"
+                self._arm_registration_retry()
 
             # 3.5. Start Zenoh heartbeat client
             self.zenoh_client.start()
@@ -205,6 +218,15 @@ class Runtime:
             with suppress(asyncio.CancelledError):
                 await self.heartbeat_task
             self.heartbeat_task = None
+
+        # Cancel the registration retry task. Normally already finished -- it exits as
+        # soon as registration lands -- but a node stopped during an outage is exactly
+        # the case where it is still sleeping on a backoff.
+        if self.registration_retry_task is not None:
+            self.registration_retry_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self.registration_retry_task
+            self.registration_retry_task = None
 
         # Cancel background model-catalogue refresh task
         if self.model_refresh_task is not None:
@@ -287,6 +309,17 @@ class Runtime:
     async def _heartbeat_loop(self) -> None:
         """Periodic background loop that sends heartbeats to the Scheduler."""
         while self.is_running:
+            # Nothing to heartbeat to yet. `/heartbeat` 404s for a node the registry
+            # does not know, so posting while registration is outstanding would log an
+            # error every interval and say nothing the retry loop is not already
+            # handling. See specs/scheduler-outage-resilience.md.
+            if self.registration_status != "registered":
+                try:
+                    await async_sleep(self.settings.heartbeat_interval_seconds)
+                except asyncio.CancelledError:
+                    break
+                continue
+
             try:
                 metrics = await self._collect_heartbeat_metrics()
                 hb = Heartbeat(
@@ -315,6 +348,21 @@ class Runtime:
                     )
                 except Exception as ze:
                     logger.error("Failed to publish heartbeat via Zenoh: %s", ze)
+            except SchedulerError as e:
+                self.last_heartbeat_ok = False
+                self.last_heartbeat_error = str(e)
+
+                # 404 means the Scheduler no longer has a record for this node -- it
+                # restarted and lost its in-memory registry (ROADMAP 2.1), or evicted
+                # this node as stale. Without this, the node heartbeats into a 404
+                # every interval for the rest of its life and is never matchmade
+                # again; the only recovery was a manual restart.
+                if e.status_code == HTTPStatus.NOT_FOUND:
+                    logger.warning("Scheduler has forgotten this node, re-registering: %s", e)
+                    self.registration_status = "pending"
+                    self._arm_registration_retry()
+                else:
+                    logger.error("Failed to send heartbeat: %s", e)
             except Exception as e:
                 self.last_heartbeat_ok = False
                 self.last_heartbeat_error = str(e)
@@ -324,6 +372,76 @@ class Runtime:
                 await async_sleep(self.settings.heartbeat_interval_seconds)
             except asyncio.CancelledError:
                 break
+
+    async def _attempt_registration(self, node_info: NodeInfo) -> None:
+        """Register once and reconcile the catalogue. Raises SchedulerError on failure.
+
+        Shared by `start()` and the retry loop so a late registration leaves exactly
+        the same state as an on-time one -- in particular so a node that registers
+        after an outage still corrects a catalogue an earlier process left behind.
+        """
+        created = await self.scheduler_client.register(node_info)
+        self.registration_status = "registered"
+
+        if created:
+            # The registration payload carried the catalogue, so the Scheduler's
+            # view and ours agree by construction.
+            self.advertised_models = node_info.available_models
+            self.catalogue_synced = True
+        else:
+            # A 409 means the Scheduler already had a record for this node_id,
+            # written by an *earlier* process and carrying that process's model
+            # catalogue. Registration cannot correct it -- it is a create, and the
+            # 409 is swallowed -- and heartbeats carry no model list, so without
+            # this push a node that restarts after an `ollama pull` stays
+            # misadvertised for as long as the Scheduler lives. If the push fails,
+            # `catalogue_synced` stays False and the refresh loop keeps retrying.
+            await self._publish_model_catalogue(node_info.available_models)
+
+    def _arm_registration_retry(self) -> None:
+        """Start the retry loop, unless one is already running."""
+        if self.registration_retry_task is not None and not self.registration_retry_task.done():
+            return
+        self.registration_retry_task = asyncio.create_task(self._registration_retry_loop())
+
+    async def _registration_retry_loop(self) -> None:
+        """Retry registration with exponential backoff until it succeeds.
+
+        There is no attempt limit. A node whose Scheduler is down for a day should
+        join when it comes back, not give up and require a manual restart -- the
+        absence of any recovery path is the whole defect being fixed here.
+
+        The delay is full jitter: `uniform(0, interval)` rather than `interval`. The
+        situation that produces this is a Scheduler that was down and returned, which
+        means every node in the fleet is retrying at the same moment; plain
+        exponential backoff keeps them synchronised and lands the herd on a service
+        that has only just started. (`random` here picks a sleep duration. It is not
+        used for anything that needs to be unpredictable.)
+        """
+        interval = 1.0
+        while self.is_running and self.registration_status != "registered":
+            delay = random.uniform(0, min(interval, self.settings.registration_retry_max_seconds))
+            try:
+                await async_sleep(delay)
+            except asyncio.CancelledError:
+                break
+
+            if not self.is_running or self.node_info is None:
+                break
+
+            try:
+                await self._attempt_registration(self.node_info)
+            except SchedulerError as e:
+                interval = min(interval * 2, self.settings.registration_retry_max_seconds)
+                logger.warning(
+                    "Registration retry failed, next attempt in <=%.1fs: %s", interval, e
+                )
+                continue
+            except asyncio.CancelledError:
+                break
+
+            logger.info("Registered with Scheduler after retrying: %s", self.settings.node_id)
+            return
 
     async def _model_refresh_loop(self) -> None:
         """Periodically re-read Ollama's model list and push it if it changed.
@@ -342,6 +460,11 @@ class Runtime:
                 break
             if not self.is_running:
                 break
+            # `PUT /nodes/{id}/models` 404s for a node the Scheduler does not know.
+            # Registration reconciles the catalogue itself when it lands, so there is
+            # nothing for this loop to do until then.
+            if self.registration_status != "registered":
+                continue
             await self._refresh_model_catalogue()
 
     async def _refresh_model_catalogue(self) -> None:
