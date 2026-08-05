@@ -74,9 +74,18 @@ class Settings(BaseSettings):
     )
 
     # Models
-    hosted_models: list[str] = Field(
-        default_factory=list,
-        description="List of AI model names hosted and supported by this Node.",
+    #
+    # There is deliberately no setting for *which* models this node hosts. That is
+    # not a matter of configuration -- it is whatever Ollama has pulled, read at
+    # runtime. A `hosted_models` setting used to live here, documented in
+    # .env.example, and was read by no production code at all: an operator who set
+    # it got no effect and no warning. See specs/truthful-model-catalogue.md.
+    model_refresh_interval_seconds: int = Field(
+        default=60,
+        description=(
+            "How often to re-read Ollama's model list and push it to the Scheduler "
+            "if it changed. Also the worst-case staleness after an `ollama pull`/`rm`."
+        ),
     )
 
     # Logging
@@ -184,40 +193,13 @@ class Settings(BaseSettings):
             raise ValueError(f"Log level must be one of {allowed}")
         return upper_val
 
-    @field_validator("hosted_models", mode="before")
+    @field_validator("model_refresh_interval_seconds")
     @classmethod
-    def parse_hosted_models(cls, v: Any) -> list[str]:
-        """Parse list of hosted models from comma-separated string, JSON, or list.
-
-        Raises ValueError if any model name is empty or whitespace-only.
-        """
-        raw_items: list[Any] = []
-        if isinstance(v, list):
-            raw_items = v
-        elif isinstance(v, str):
-            val = v.strip()
-            if not val:
-                return []
-            # Check if it's a JSON array representation
-            if val.startswith("[") and val.endswith("]"):
-                try:
-                    parsed = json.loads(val)
-                    raw_items = parsed if isinstance(parsed, list) else [val]
-                except json.JSONDecodeError:
-                    raw_items = [val]
-            else:
-                # Comma-separated parsing
-                raw_items = val.split(",")
-        else:
-            return []
-
-        parsed_items: list[str] = []
-        for item in raw_items:
-            item_str = str(item).strip()
-            if not item_str:
-                raise ValueError("Model name cannot be empty or whitespace-only.")
-            parsed_items.append(item_str)
-        return parsed_items
+    def validate_model_refresh_interval(cls, v: int) -> int:
+        """Validate that the model refresh interval is in range [1, 3600]."""
+        if not (1 <= v <= 3600):
+            raise ValueError("Model refresh interval must be between 1 and 3600 seconds inclusive.")
+        return v
 
     @field_validator("zenoh_peer_endpoints", "bootstrap_routers", mode="before")
     @classmethod
@@ -274,7 +256,6 @@ class Settings(BaseSettings):
 
             def custom_env_decode(field_name: str, field: Any, value: Any) -> Any:
                 if field_name in (
-                    "hosted_models",
                     "zenoh_peer_endpoints",
                     "bootstrap_routers",
                 ):
@@ -292,7 +273,6 @@ class Settings(BaseSettings):
 
             def custom_dotenv_decode(field_name: str, field: Any, value: Any) -> Any:
                 if field_name in (
-                    "hosted_models",
                     "zenoh_peer_endpoints",
                     "bootstrap_routers",
                 ):

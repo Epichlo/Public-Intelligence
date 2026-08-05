@@ -47,32 +47,23 @@ async def run_demo() -> None:
         return
     print("✓ Ollama daemon is running.")
 
-    # STEP 2: Verify configured model exists locally
-    print("\n[STEP 2] Verifying configured model exists locally...")
+    # STEP 2: Show what this node will advertise
+    #
+    # There is nothing to check against a configured list, because there is no
+    # configured list: the node advertises whatever Ollama has pulled, and
+    # re-advertises when that changes. See specs/truthful-model-catalogue.md.
+    print("\n[STEP 2] Reading the model catalogue this node will advertise...")
     models = await ollama_client.list_models()
-    local_model_names = {m.name for m in models}
 
-    # Default to llama3.2:1b for demo if hosted_models is empty
-    target_models = settings.hosted_models if settings.hosted_models else ["llama3.2:1b"]
-    missing_models = []
-    for model_name in target_models:
-        matched = False
-        for local_name in local_model_names:
-            if local_name == model_name or local_name.startswith(f"{model_name}:"):
-                matched = True
-                break
-        if not matched:
-            missing_models.append(model_name)
-
-    if missing_models:
-        print("\033[91m✗ The following configured models are missing locally:\033[0m")
-        for m in missing_models:
-            print(f"  - {m}")
-        print("\nPlease pull the missing model(s) by running:")
-        for m in missing_models:
-            print(f"  ollama pull {m}")
+    if not models:
+        print("\033[91m✗ Ollama has no models pulled, so this node would advertise none.\033[0m")
+        print("\nPull one first, for example:")
+        print("  ollama pull llama3.2:1b")
         return
-    print(f"✓ Target model '{target_models[0]}' is available locally.")
+
+    print(f"✓ {len(models)} model(s) available locally:")
+    for m in models:
+        print(f"  - {m.name} ({m.size_gb} GB)")
 
     # STEP 3: Wait until the Scheduler is reachable
     print(f"\n[STEP 3] Verifying Scheduler is reachable at {scheduler_url}...")
@@ -110,7 +101,9 @@ async def run_demo() -> None:
     # Configure env for short heartbeat intervals to speed up demo
     env = os.environ.copy()
     env["NODE_HEARTBEAT_INTERVAL_SECONDS"] = "2"
-    env["NODE_HOSTED_MODELS"] = json.dumps(target_models)
+    # No model list to pass through: the node it starts reads its own from Ollama,
+    # which is the same list STEP 2 printed.
+    env["NODE_MODEL_REFRESH_INTERVAL_SECONDS"] = "5"
 
     node_process = subprocess.Popen(
         [
@@ -187,7 +180,7 @@ async def run_demo() -> None:
 
         # STEP 6: Send a real inference request to the Node
         print("\n[STEP 6] Executing a real inference request...")
-        target_model = target_models[0]
+        target_model = models[0].name
         prompt = "Hello from Public Intelligence."
         print(f"Request payload: model='{target_model}', prompt='{prompt}'")
 

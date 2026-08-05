@@ -14,7 +14,7 @@ from node.clients.mesh_inference_server import ZenohInferenceServer
 from node.core.configuration import Settings
 from node.core.hardware import detect_gpu, detect_host_metrics, detect_ram_total_gb
 from node.core.telemetry import TelemetryEmitter
-from node.models import Heartbeat, NodeInfo
+from node.models import Heartbeat, ModelInfo, NodeInfo
 from node.models.gpu_info import cpu_only_gpu
 
 logger = logging.getLogger(__name__)
@@ -43,6 +43,22 @@ class Runtime:
         self.ollama_client = ollama_client or OllamaClient(settings)
         self.zenoh_client = zenoh_client or ZenohHeartbeatClient(settings)
         self.heartbeat_task: asyncio.Task[None] | None = None
+        self.model_refresh_task: asyncio.Task[None] | None = None
+        # What the Scheduler currently believes this node can serve. Compared against
+        # a fresh Ollama read each refresh so the push happens only on real change --
+        # the list is near-constant, and re-sending it every interval would put it on
+        # the wire thousands of times a day to say nothing.
+        self.advertised_models: list[ModelInfo] = []
+        # Invariant: True means the Scheduler is believed to hold exactly
+        # `advertised_models`. False means we do not know what it holds -- which is
+        # the state after a 409, where the record was written by an earlier process.
+        # A failed push leaves both fields untouched, so the retry falls out of the
+        # ordinary difference check on the next refresh.
+        #
+        # This exists because a difference check alone is not sufficient at startup:
+        # a node whose Ollama is now empty, whose Scheduler record still lists models
+        # from a previous process, would compare [] against [] and never push.
+        self.catalogue_synced = False
         self.telemetry_emitter: TelemetryEmitter | None = None
         self.split_stage_sub: Any | None = None
         # Serves inference over the Zenoh session rather than over an inbound HTTP port.
@@ -109,8 +125,23 @@ class Runtime:
             )
 
             # 3. Register with Scheduler
-            await self.scheduler_client.register(node_info)
+            created = await self.scheduler_client.register(node_info)
             self.registration_status = "registered"
+
+            if created:
+                # The registration payload carried the catalogue, so the Scheduler's
+                # view and ours agree by construction.
+                self.advertised_models = models
+                self.catalogue_synced = True
+            else:
+                # A 409 means the Scheduler already had a record for this node_id,
+                # written by an *earlier* process and carrying that process's model
+                # catalogue. Registration cannot correct it -- it is a create, and the
+                # 409 is swallowed -- and heartbeats carry no model list, so without
+                # this push a node that restarts after an `ollama pull` stays
+                # misadvertised for as long as the Scheduler lives. If the push fails,
+                # `catalogue_synced` stays False and the refresh loop keeps retrying.
+                await self._publish_model_catalogue(models)
 
             # 3.5. Start Zenoh heartbeat client
             self.zenoh_client.start()
@@ -133,6 +164,10 @@ class Runtime:
 
             # 4. Start periodic heartbeats
             self.heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+
+            # 4.5. Start periodic model-catalogue refresh, so `ollama pull` and
+            # `ollama rm` reach the Scheduler without restarting the node.
+            self.model_refresh_task = asyncio.create_task(self._model_refresh_loop())
 
             # 5. Start task consumer worker loop
             self.worker_task = asyncio.create_task(self._worker_loop())
@@ -170,6 +205,13 @@ class Runtime:
             with suppress(asyncio.CancelledError):
                 await self.heartbeat_task
             self.heartbeat_task = None
+
+        # Cancel background model-catalogue refresh task
+        if self.model_refresh_task is not None:
+            self.model_refresh_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self.model_refresh_task
+            self.model_refresh_task = None
 
         # Cancel task consumer worker task
         if self.worker_task is not None:
@@ -283,6 +325,78 @@ class Runtime:
             except asyncio.CancelledError:
                 break
 
+    async def _model_refresh_loop(self) -> None:
+        """Periodically re-read Ollama's model list and push it if it changed.
+
+        Ollama has no change-notification API, so this polls. The interval is
+        therefore the staleness bound: worst case, the Scheduler is wrong about this
+        node's catalogue for `model_refresh_interval_seconds` after an `ollama pull`
+        or `ollama rm`. See specs/truthful-model-catalogue.md.
+        """
+        while self.is_running:
+            # Sleep first: the catalogue was read moments ago in `start()`, so an
+            # immediate refresh would be a guaranteed no-op call to Ollama.
+            try:
+                await async_sleep(self.settings.model_refresh_interval_seconds)
+            except asyncio.CancelledError:
+                break
+            if not self.is_running:
+                break
+            await self._refresh_model_catalogue()
+
+    async def _refresh_model_catalogue(self) -> None:
+        """Read the current catalogue and push it to the Scheduler if it differs."""
+        try:
+            models = await self.ollama_client.list_models()
+        except Exception as e:
+            # Keep advertising the previous catalogue. "I cannot reach Ollama right
+            # now" is not "I have no models": treating it as such would unadvertise
+            # the whole node on a transient blip and re-advertise seconds later,
+            # flapping the fleet catalogue and dropping the node out of matchmaking
+            # for no reason. This is the opposite of the startup path, where
+            # advertising nothing is correct because nothing has been advertised yet.
+            logger.warning("Model refresh failed, keeping the advertised catalogue: %s", e)
+            return
+
+        # Names, not ModelInfo objects: names are all the Scheduler stores, so a
+        # changed `size_gb` is not a change to anything it can act on. Sorted, because
+        # a reordering of the same models is likewise not a change -- the matchmaker
+        # does membership tests and `/v1/models` sorts.
+        if self.catalogue_synced and self._model_names(models) == self._model_names(
+            self.advertised_models
+        ):
+            return
+
+        await self._publish_model_catalogue(models)
+
+    @staticmethod
+    def _model_names(models: list[ModelInfo]) -> list[str]:
+        """Return the comparable identity of a catalogue: its model names, sorted."""
+        return sorted(m.name for m in models)
+
+    async def _publish_model_catalogue(self, models: list[ModelInfo]) -> bool:
+        """Send `models` to the Scheduler, recording them as advertised only if it lands.
+
+        A failed push must not update `advertised_models` or set `catalogue_synced`.
+        If it did, the node would believe the Scheduler agrees with it and would never
+        retry -- leaving the fleet catalogue permanently wrong after one dropped
+        request. Returns whether the push succeeded.
+        """
+        try:
+            await self.scheduler_client.update_models(self.settings.node_id, models)
+        except Exception as e:
+            logger.warning("Failed to publish model catalogue, will retry: %s", e)
+            return False
+
+        self.advertised_models = models
+        self.catalogue_synced = True
+        logger.info(
+            "Published model catalogue for node %s: %s",
+            self.settings.node_id,
+            self._model_names(models),
+        )
+        return True
+
     def _resolve_ip(self) -> str:
         """Resolve settings hostname to an IP address."""
         if self.settings.hostname == "localhost":
@@ -369,9 +483,12 @@ class Runtime:
                         total_stages=3,
                         layer_range=LayerRange(start_layer=1, end_layer=31),
                         node_id=self.settings.node_id,
-                        model_id=self.settings.hosted_models[0]
-                        if self.settings.hosted_models
-                        else "default",
+                        # A label, not a routing decision -- this stage is handed to
+                        # `inference_backend`, which is only ever EchoBackend. It used
+                        # to read `settings.hosted_models[0]`, a config-declared model
+                        # list that no node actually set; "default" is what every such
+                        # node already produced here.
+                        model_id="default",
                         is_local_boundary=False,
                         stage_type=StageType.REMOTE_HIDDEN,
                         is_split_inference=True,

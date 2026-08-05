@@ -24,10 +24,15 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from node.clients.scheduler import build_heartbeat_payload, build_registration_payload
+from node.clients.scheduler import (
+    build_heartbeat_payload,
+    build_model_catalogue_payload,
+    build_registration_payload,
+)
 from node.core.hardware import detect_gpu, detect_host_metrics, detect_ram_total_gb
 from node.models import GPUInfo, Heartbeat, ModelInfo, NodeInfo
 from scheduler.models.heartbeat import Heartbeat as SchedulerHeartbeat
+from scheduler.models.node import ModelCatalogueUpdate as SchedulerCatalogueUpdate
 from scheduler.models.node import Node as SchedulerNode
 
 
@@ -193,6 +198,68 @@ async def test_measured_metrics_produce_an_acceptable_heartbeat() -> None:
     assert 0.0 <= hb.cpu_utilization <= 100.0
     assert 0.0 <= hb.gpu_utilization <= 100.0
     assert hb.vram_available_gb >= 0.0
+
+
+# --------------------------------------------------------------------------
+# Model catalogue refresh
+# --------------------------------------------------------------------------
+
+
+def test_catalogue_payload_satisfies_the_scheduler_model() -> None:
+    """What a refresh pushes must be what `PUT /nodes/{id}/models` accepts."""
+    payload = build_model_catalogue_payload(
+        [
+            ModelInfo(name="llama3-8b", size_gb=4.7, family="llama", context_length=8192),
+            ModelInfo(name="mistral-7b", size_gb=4.1, family="mistral", context_length=8192),
+        ]
+    )
+
+    update = SchedulerCatalogueUpdate.model_validate(payload)
+
+    assert update.available_models == ["llama3-8b", "mistral-7b"]
+
+
+def test_empty_catalogue_crosses_the_boundary() -> None:
+    """A node that has removed every model must be able to say so, not 422.
+
+    This is a real state -- `ollama rm` of the last model -- and rejecting it would
+    leave the Scheduler advertising models the node cannot serve, which is the
+    failure roadmap 1.4 exists to close.
+    """
+    update = SchedulerCatalogueUpdate.model_validate(build_model_catalogue_payload([]))
+
+    assert update.available_models == []
+
+
+def test_catalogue_and_registration_flatten_models_identically() -> None:
+    """The two paths that send a catalogue must not disagree about its shape.
+
+    Registration and refresh both carry the same information. If one ever sent
+    `[{"name": ...}]` while the other sent `["..."]`, a node would advertise
+    correctly at startup and 422 on its first refresh -- or worse, the reverse.
+    """
+    models = [
+        ModelInfo(name="llama3-8b", size_gb=4.7, family="llama", context_length=8192),
+        ModelInfo(name="qwen2-7b", size_gb=4.4, family="qwen2", context_length=32768),
+    ]
+
+    from_registration = build_registration_payload(_node_info(available_models=models))
+    from_refresh = build_model_catalogue_payload(models)
+
+    assert from_registration["available_models"] == from_refresh["available_models"]
+
+
+def test_every_scheduler_required_catalogue_field_is_supplied() -> None:
+    """Same guard as registration and heartbeat, for the refresh payload."""
+    supplied = set(build_model_catalogue_payload([]))
+    required = {
+        name for name, f in SchedulerCatalogueUpdate.model_fields.items() if f.is_required()
+    }
+
+    assert required <= supplied, (
+        f"Scheduler.ModelCatalogueUpdate requires {sorted(required - supplied)}, "
+        "which the Node never sends."
+    )
 
 
 # --------------------------------------------------------------------------

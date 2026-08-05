@@ -27,6 +27,40 @@ class OllamaClient:
         """
         self.host = settings.ollama_host
         self.client = client or ollama.AsyncClient(host=self.host)
+        # Resolved context lengths, keyed by model digest. `list()` is now called on
+        # an interval rather than once at startup (see specs/truthful-model-catalogue.md),
+        # and each entry it returns used to cost a follow-up `show()` -- an N+1 against
+        # Ollama every refresh. The digest changes exactly when the model's content
+        # does, so it is the correct key: a re-pull invalidates, a re-list does not.
+        self._context_length_by_digest: dict[str, int] = {}
+
+    async def _resolve_context_length(self, name: str, digest: str | None) -> int:
+        """Return the model's context length, asking Ollama at most once per digest.
+
+        Falls back to 2048 when `show()` fails or reports nothing usable. That
+        fallback is deliberately *not* cached: it means "we do not know yet", and
+        caching it would make one transient failure permanent for that digest.
+        """
+        if digest and digest in self._context_length_by_digest:
+            return self._context_length_by_digest[digest]
+
+        try:
+            show_info = await self.client.show(name)
+            if show_info.modelinfo:
+                for key, val in show_info.modelinfo.items():
+                    if "context_length" in key:
+                        try:
+                            context_length = int(val)
+                        except (ValueError, TypeError):
+                            continue
+                        if digest:
+                            self._context_length_by_digest[digest] = context_length
+                        return context_length
+        except Exception:
+            # Fallback to default if show() fails
+            pass
+
+        return 2048
 
     async def list_models(self) -> list[ModelInfo]:
         """List all models currently hosted by the local Ollama server.
@@ -43,7 +77,6 @@ class OllamaClient:
             for model_data in response.models:
                 name = model_data.model or "unknown"
                 family = "unknown"
-                context_length = 2048
 
                 if model_data.details:
                     family = model_data.details.family or "unknown"
@@ -52,20 +85,9 @@ class OllamaClient:
                 size_bytes = model_data.size or 0
                 size_gb = float(size_bytes) / (1024**3)
 
-                # Try to get context length using client.show()
-                try:
-                    show_info = await self.client.show(name)
-                    if show_info.modelinfo:
-                        for key, val in show_info.modelinfo.items():
-                            if "context_length" in key:
-                                try:
-                                    context_length = int(val)
-                                    break
-                                except (ValueError, TypeError):
-                                    pass
-                except Exception:
-                    # Fallback to default if show() fails
-                    pass
+                context_length = await self._resolve_context_length(
+                    name, getattr(model_data, "digest", None)
+                )
 
                 models.append(
                     ModelInfo(

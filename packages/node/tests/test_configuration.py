@@ -22,7 +22,7 @@ def test_default_values() -> None:
         assert settings.host == "0.0.0.0"
         assert settings.port == 8080
         assert settings.heartbeat_interval_seconds == 30
-        assert settings.hosted_models == []
+        assert settings.model_refresh_interval_seconds == 60
         assert settings.log_level == "INFO"
         assert settings.debug is False
 
@@ -37,7 +37,7 @@ def test_environment_overrides() -> None:
         "NODE_HOST": "127.0.0.1",
         "NODE_PORT": "9000",
         "NODE_HEARTBEAT_INTERVAL_SECONDS": "60",
-        "NODE_HOSTED_MODELS": "model-a,model-b",
+        "NODE_MODEL_REFRESH_INTERVAL_SECONDS": "120",
         "NODE_LOG_LEVEL": "DEBUG",
         "NODE_DEBUG": "True",
     }
@@ -51,7 +51,7 @@ def test_environment_overrides() -> None:
         assert settings.host == "127.0.0.1"
         assert settings.port == 9000
         assert settings.heartbeat_interval_seconds == 60
-        assert settings.hosted_models == ["model-a", "model-b"]
+        assert settings.model_refresh_interval_seconds == 120
         assert settings.log_level == "DEBUG"
         assert settings.debug is True
 
@@ -92,43 +92,26 @@ def test_validation_failures() -> None:
     with pytest.raises(ValidationError):
         Settings(log_level="TRACE")  # Invalid log level
 
-
-def test_hosted_models_list_parsing() -> None:
-    """Verify list parsing from various input formats for hosted_models."""
-    # List input
-    s1 = Settings(hosted_models=["model-1", "model-2"])
-    assert s1.hosted_models == ["model-1", "model-2"]
-
-    # Comma-separated string input
-    s2 = Settings(hosted_models="model-1, model-2, model-3")
-    assert s2.hosted_models == ["model-1", "model-2", "model-3"]
-
-    # JSON array string input
-    s3 = Settings(hosted_models='["model-1", "model-2"]')
-    assert s3.hosted_models == ["model-1", "model-2"]
-
-    # Single value string input
-    s4 = Settings(hosted_models="model-1")
-    assert s4.hosted_models == ["model-1"]
-
-    # Empty string input
-    s5 = Settings(hosted_models="")
-    assert s5.hosted_models == []
-
-
-def test_hosted_models_validation_failures() -> None:
-    """Verify that hosted_models rejects empty or whitespace-only elements."""
     with pytest.raises(ValidationError):
-        Settings(hosted_models=["", "llama3-8b"])
+        Settings(model_refresh_interval_seconds=0)  # Interval below minimum
 
     with pytest.raises(ValidationError):
-        Settings(hosted_models=[" ", "llama3-8b"])
+        Settings(model_refresh_interval_seconds=3601)  # Interval above maximum
 
-    with pytest.raises(ValidationError):
-        Settings(hosted_models="llama3-8b, ,mistral-7b")
 
-    with pytest.raises(ValidationError):
-        Settings(hosted_models='["", "llama3-8b"]')
+def test_there_is_no_configured_model_list() -> None:
+    """Which models a node serves is read from Ollama, never configured.
+
+    `hosted_models` used to be settable here and documented in `.env.example` as
+    the models this node hosts. It did not control what the node advertised --
+    nothing on the registration or heartbeat path read it -- so an operator who
+    set it got no effect and no warning. See specs/truthful-model-catalogue.md.
+
+    This is a regression guard: pydantic-settings ignores unknown keyword
+    arguments by default, so re-adding a config-declared catalogue would not
+    otherwise announce itself.
+    """
+    assert "hosted_models" not in Settings.model_fields
 
 
 def test_get_settings_cached() -> None:

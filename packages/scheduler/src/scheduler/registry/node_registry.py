@@ -170,6 +170,36 @@ class NodeRegistry:
                 raise ValueError(msg)
             self._nodes[node.node_id] = node
 
+    async def set_available_models(self, node_id: str, models: builtins.list[str]) -> None:
+        """Replace a node's advertised model catalogue.
+
+        This is the only thing a node may restate about itself after registration.
+        Its hardware is measured once per process and cannot change while that
+        process lives; its model list changes whenever the host runs `ollama pull`
+        or `ollama rm`. See specs/truthful-model-catalogue.md.
+
+        The read-modify-write happens inside the lock rather than as a `get()` then
+        `update()` pair, which would put an await between reading the node and
+        writing it back and so could interleave with an unregister.
+
+        `model_copy` rather than in-place mutation: `list()` hands out references to
+        these same objects, so assigning to `node.available_models` would change the
+        catalogue under a reader already iterating the result of a previous `list()`.
+
+        Args:
+            node_id: Node whose catalogue is being replaced.
+            models: The node's current model identifiers.
+
+        Raises:
+            ValueError: If the node_id is not registered.
+        """
+        async with self._lock:
+            node = self._nodes.get(node_id)
+            if node is None:
+                msg = f"Node not found: {node_id}"
+                raise ValueError(msg)
+            self._nodes[node_id] = node.model_copy(update={"available_models": list(models)})
+
     async def exists(self, node_id: str) -> bool:
         """Check whether a node is registered.
 

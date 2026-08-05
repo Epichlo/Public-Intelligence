@@ -23,9 +23,10 @@ Copy the example environment file:
 ```bash
 cp .env.example .env
 ```
-Open `.env` and verify that the target model matches:
-```dotenv
-NODE_HOSTED_MODELS=["llama3.2:1b"]
+There is no model list to set. The node advertises whatever Ollama has pulled, so
+pull the model you want to serve instead:
+```bash
+ollama pull llama3.2:1b
 ```
 
 ### 3. Install Dependencies & Build Node virtualenv

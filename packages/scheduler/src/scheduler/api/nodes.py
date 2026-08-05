@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from scheduler.api.auth import verify_auth_token
 from scheduler.core.config import get_settings
 from scheduler.core.mesh_inference_client import MeshInferenceClient
-from scheduler.models.node import Node, NodeView
+from scheduler.models.node import ModelCatalogueUpdate, Node, NodeView
 from scheduler.registry.node_registry import NodeRegistry
 
 router = APIRouter(tags=["nodes"])
@@ -105,6 +105,45 @@ async def get_node(
     """Get a specific node by ID, with how it is reachable."""
     node = await registry.get(node_id)
     if node is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Node not found: {node_id}",
+        )
+    return NodeView.from_node(node, mesh_reachable=registry.is_mesh_reachable(node_id))
+
+
+@router.put(
+    "/nodes/{node_id}/models",
+    response_model=NodeView,
+    dependencies=[Depends(verify_auth_token)],
+)
+async def update_node_models(
+    node_id: str,
+    update: ModelCatalogueUpdate,
+    registry: RegistryDep,
+) -> NodeView:
+    """Replace what a node advertises it can serve.
+
+    Registration captures the catalogue once, at node startup. Without this a host
+    that runs `ollama pull` stays unroutable for the new model, and a host that
+    runs `ollama rm` keeps being sent requests for a model it no longer has --
+    neither of which a node restart fixes, because re-registration answers 409 and
+    heartbeats carry no model list. See specs/truthful-model-catalogue.md.
+
+    Separate from registration rather than an upsert on it so that `POST
+    /nodes/register` keeps meaning "create", and so the only thing a node can
+    restate at runtime is the one thing that actually varies at runtime.
+    """
+    try:
+        await registry.set_available_models(node_id, update.available_models)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Node not found: {node_id}",
+        ) from None
+
+    node = await registry.get(node_id)
+    if node is None:  # pragma: no cover - unregistered between the write and the read
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Node not found: {node_id}",

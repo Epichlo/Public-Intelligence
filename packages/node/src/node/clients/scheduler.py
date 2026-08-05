@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 
 from node.core.configuration import Settings
-from node.models import Heartbeat, NodeInfo
+from node.models import Heartbeat, ModelInfo, NodeInfo
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,16 @@ def build_registration_payload(node_info: NodeInfo) -> dict[str, Any]:
     # hardcoded 16 GB "unknown" card for every node on the network, which is what
     # the Scheduler then filtered and scored against. See specs/real-hardware-advertisement.md.
     return payload
+
+
+def build_model_catalogue_payload(models: list[ModelInfo]) -> dict[str, Any]:
+    """Serialise a model catalogue into the body of `PUT /nodes/{id}/models`.
+
+    Flattens to names for the same reason `build_registration_payload` does: the
+    Scheduler's `available_models` is `list[str]`. The size/family/context-length
+    metadata the node carries has never reached the Scheduler.
+    """
+    return {"available_models": [m.name for m in models]}
 
 
 def build_heartbeat_payload(heartbeat: Heartbeat) -> dict[str, Any]:
@@ -113,14 +123,23 @@ class SchedulerClient:
             except httpx.RequestError as e:
                 raise SchedulerError(f"Scheduler request {method} {path} failed: {e}") from e
 
-    async def register(self, node_info: NodeInfo) -> None:
+    async def register(self, node_info: NodeInfo) -> bool:
         """Register the Node with the Scheduler.
 
         Args:
             node_info: Identity and capability specifications of the Node.
 
+        Returns:
+            True if the Scheduler created the record, False if it answered 409
+            because a record for this node_id already existed. A False here means
+            the Scheduler is holding registration data written by an *earlier*
+            process -- including a model catalogue that may since have changed --
+            so the caller must push the current catalogue rather than assume the
+            Scheduler's view matches this process. See
+            specs/truthful-model-catalogue.md.
+
         Raises:
-            SchedulerError: If registration fails.
+            SchedulerError: If registration fails for any reason other than 409.
         """
         payload = build_registration_payload(node_info)
         try:
@@ -128,8 +147,23 @@ class SchedulerClient:
         except SchedulerError as e:
             if "409" in str(e):
                 logger.info("Node already registered with Scheduler.")
-            else:
-                raise
+                return False
+            raise
+        return True
+
+    async def update_models(self, node_id: str, models: list[ModelInfo]) -> None:
+        """Replace the model catalogue the Scheduler holds for this node.
+
+        Args:
+            node_id: This node's identifier.
+            models: The models Ollama currently has pulled.
+
+        Raises:
+            SchedulerError: If the update request fails.
+        """
+        await self._send_request(
+            "PUT", f"/nodes/{node_id}/models", build_model_catalogue_payload(models)
+        )
 
     async def heartbeat(self, heartbeat: Heartbeat) -> None:
         """Send a periodic heartbeat update to the Scheduler.

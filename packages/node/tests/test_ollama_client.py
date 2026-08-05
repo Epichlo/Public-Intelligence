@@ -150,3 +150,81 @@ async def test_generate_stream_success(settings: Settings) -> None:
     assert chunks[0] == ('data: {"model": "llama3-8b", "response": "chunk1", "done": false}\n\n')
     assert chunks[1] == ('data: {"model": "llama3-8b", "response": "chunk2", "done": true}\n\n')
     mock_client.generate.assert_called_once_with(model="llama3-8b", prompt="Hello", stream=True)
+
+
+def _listed_model(name: str, digest: str, size_gb: float = 4.7) -> MagicMock:
+    """Build one entry as `ollama.AsyncClient.list()` returns it."""
+    entry = MagicMock()
+    entry.model = name
+    entry.digest = digest
+    entry.size = int(size_gb * (1024**3))
+    entry.details.family = "llama"
+    return entry
+
+
+@pytest.mark.anyio
+async def test_context_length_is_resolved_once_per_digest(settings: Settings) -> None:
+    """Re-listing the same models must not re-issue `show()` for each of them.
+
+    `list_models` is now called on an interval rather than once at startup (see
+    specs/truthful-model-catalogue.md), and every entry it returns used to cost a
+    follow-up `show()`. Left alone, a node hosting ten models would make ten extra
+    round trips to Ollama every refresh, forever, to re-learn constants.
+    """
+    mock_client = AsyncMock()
+    mock_client.list.return_value = MagicMock(
+        models=[_listed_model("llama3-8b", "sha256:aaa"), _listed_model("mistral-7b", "sha256:bbb")]
+    )
+    mock_show = MagicMock()
+    mock_show.modelinfo = {"llama.context_length": 8192}
+    mock_client.show.return_value = mock_show
+
+    client = OllamaClient(settings, client=mock_client)
+
+    first = await client.list_models()
+    assert mock_client.show.await_count == 2
+
+    second = await client.list_models()
+    assert mock_client.show.await_count == 2
+    assert [m.context_length for m in second] == [m.context_length for m in first] == [8192, 8192]
+
+
+@pytest.mark.anyio
+async def test_a_repulled_model_resolves_its_context_length_again(settings: Settings) -> None:
+    """The cache is keyed by digest, so re-pulling a model invalidates its entry.
+
+    Keying by name would pin the first answer for a model whose weights -- and
+    therefore whose context length -- had since been replaced.
+    """
+    mock_client = AsyncMock()
+    mock_client.list.return_value = MagicMock(models=[_listed_model("llama3-8b", "sha256:aaa")])
+    mock_show = MagicMock()
+    mock_show.modelinfo = {"llama.context_length": 8192}
+    mock_client.show.return_value = mock_show
+
+    client = OllamaClient(settings, client=mock_client)
+    assert (await client.list_models())[0].context_length == 8192
+
+    mock_client.list.return_value = MagicMock(models=[_listed_model("llama3-8b", "sha256:ccc")])
+    mock_show.modelinfo = {"llama.context_length": 32768}
+
+    assert (await client.list_models())[0].context_length == 32768
+    assert mock_client.show.await_count == 2
+
+
+@pytest.mark.anyio
+async def test_a_failed_show_is_not_cached(settings: Settings) -> None:
+    """The 2048 fallback means "not known yet", so one blip must not make it permanent."""
+    mock_client = AsyncMock()
+    mock_client.list.return_value = MagicMock(models=[_listed_model("llama3-8b", "sha256:aaa")])
+    mock_client.show.side_effect = Exception("ollama busy")
+
+    client = OllamaClient(settings, client=mock_client)
+    assert (await client.list_models())[0].context_length == 2048
+
+    mock_show = MagicMock()
+    mock_show.modelinfo = {"llama.context_length": 8192}
+    mock_client.show.side_effect = None
+    mock_client.show.return_value = mock_show
+
+    assert (await client.list_models())[0].context_length == 8192

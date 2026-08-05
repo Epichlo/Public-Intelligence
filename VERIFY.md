@@ -72,15 +72,18 @@ grep -rn -A3 "allow_origins" packages/node/src packages/scheduler/src
 - [ ] Any pre-existing hit is listed below as known, not silently passed over
 
 The first grep returns two benign hits — `AliasChoices("NODE_NETWORK_AUTH_TOKEN", ...)`
-in `packages/node/src/node/core/configuration.py:92` and `packages/scheduler/src/scheduler/core/config.py:50`
+in `packages/node/src/node/core/configuration.py:105` and `packages/scheduler/src/scheduler/core/config.py:54`
 — which declare env var *names*, not values. Everything else it returns is real.
+
+The auth-bypass grep returns one hit, `packages/website/src/app/architecture/page.tsx:42`,
+which is prose containing the word "bypassing", not code.
 
 **Known pre-existing hits as of 2026-08-03** — these are real and unfixed. Do not
 let them mask a *new* one, and do not report them as clean:
 
 | Location | Issue |
 |---|---|
-| `packages/node/src/node/core/telemetry.py:175`, `packages/scheduler/src/scheduler/core/zenoh_router.py:280` | `TELEMETRY_SECRET_KEY` defaults to a constant published in this repo (ROADMAP 2.2) |
+| `packages/node/src/node/core/telemetry.py:189`, `packages/scheduler/src/scheduler/core/zenoh_router.py:278` | `TELEMETRY_SECRET_KEY` defaults to a constant published in this repo (ROADMAP 2.2) |
 | `packages/scheduler/src/scheduler/api/ingress.py:16` | hardcoded fallback RSA public key |
 | `packages/scheduler/src/scheduler/main.py:76`, `packages/node/src/node/main.py:43` | `allow_origins=["*"]` with `allow_credentials=True` (ROADMAP 2.3) |
 
@@ -156,6 +159,87 @@ the code — not the file.
 Fill this in. It is the whole point of the file.
 
 ```
+Date:        2026-08-05
+Change:      ROADMAP 1.4 — the advertised model catalogue tracks what Ollama
+             actually has, instead of freezing at node startup.
+Spec:        specs/truthful-model-catalogue.md
+
+  1. Test suite ......... PASS
+  2. Spec match ......... PASS
+  3. Secrets & bypasses . PASS
+  4. Duplication ........ PASS
+  5. Nothing tracked .... PASS
+  6. STATUS regenerated . PASS
+
+VERDICT: PASS
+
+Reasons:
+- 1. `./scripts/verify.sh` → `PASS 12 checks`, this session. Node 256 passed /
+  1 skipped, Scheduler 227 passed, root E2E 57 passed. That is +13 / +9 / +4 over
+  the 1.3 pass; 26 tests are new (11 catalogue refresh, 9 endpoint, 4 wire
+  contract, 3 Ollama cache) and 3 existing config tests were rewritten.
+- 1a. Red observed first, by stashing ONLY the seven changed source files and
+  running the new tests against pre-change code: 11/11 refresh tests failed,
+  9/9 endpoint tests failed, and 4/4 config assertions failed. Restored with
+  `git stash pop`, all green.
+- 1b. The wire-contract tests went red as a *collection* error (ImportError on
+  `build_model_catalogue_payload`), which proves only that the symbol is new. They
+  were checked properly by mutation instead: making the builder emit full
+  `ModelInfo` dicts rather than names failed 2 of the 4 on the real assertion
+  (`'llama3-8b' != {'name': 'llama3-8b', 'size_gb': 4.7, ...}`). The other two
+  survive that mutation by construction — one passes an empty list, one inspects
+  field names — and are guards, not red-green evidence.
+  A second mutation, dropping `sorted()` from `Runtime._model_names`, failed
+  `test_reordering_is_not_a_change` and nothing else, which is what it should do.
+- 1c. HONEST NOTE: 2 of the 3 new Ollama tests passed against pre-change code.
+  `test_a_repulled_model_resolves_its_context_length_again` and
+  `test_a_failed_show_is_not_cached` describe correct behaviour of a cache that
+  did not exist, so the uncached code satisfied them trivially. They are
+  regression protection for the cache, not evidence it was needed. Only
+  `test_context_length_is_resolved_once_per_digest` was genuinely red.
+- 2. Every box under "Done looks like" is ticked. Nothing under "Out of scope"
+  was built: the Scheduler still trusts the pushed list without verification,
+  refresh is still polling rather than event-driven, the catalogue is still not
+  persisted, and `context_length` still falls back to 2048.
+- 2a. Scope DID grow during the pass, and the spec was corrected before the code
+  was written, not after: the spec first claimed `hosted_models` was "read by no
+  production code anywhere". That came from a grep truncated by `| head`. It has
+  one production read (`runtime.py:372`, a `PipelineStage` label on the split
+  path). The spec now says so and states what removing it costs.
+- 3. Five hits, all pre-existing and all already tabled in step 3: the two
+  `TELEMETRY_SECRET_KEY` defaults, the fallback RSA public key, and
+  `allow_origins=["*"]` with `allow_credentials=True` in both services. Plus the
+  two benign `AliasChoices` env-var-name hits, whose line numbers had drifted to
+  configuration.py:105 and config.py:54 and are corrected above; telemetry.py and
+  zenoh_router.py likewise moved to :189 and :278. The auth-bypass grep returns
+  one hit, prose in a website page. No new secret, credential, or bypass.
+  `PUT /nodes/{id}/models` carries `Depends(verify_auth_token)`, the same
+  dependency as register and unregister, and
+  `test_update_requires_authentication` pins that it fails closed.
+- 4. No new duplicate, and none of the six known pairs was touched — the diff is
+  confined to the registry, the node/scheduler models and API, the two node
+  clients, the runtime, and docs. Searched first (`grep -rn "available_models"`,
+  `list_models`, `discover`) before adding anything. `ModelInfo` exists only in
+  packages/node; there is no Scheduler twin to keep in step.
+  `tests/test_source_parity.py` passes with its budgets unchanged.
+- 5. `git ls-files | grep -iE "\.env$|..."` → clean; `.env` ignored. Only
+  `.env.example` is tracked, and this change removed a line from it rather than
+  adding one.
+- 6. Regenerated by `scripts/generate_status.py`; its counts (227/256/57) match
+  step 1 exactly.
+
+Not claimed: nothing here was exercised against a real Ollama daemon or a real
+running Scheduler. Every test drives mocks or the ASGI app in-process, so what is
+proven is that the node decides correctly and that the two sides agree on the
+wire — not that `ollama pull` on a live host propagates end to end. That would
+need the same two-machine setup roadmap 1.5 is still waiting on.
+```
+
+---
+
+## Previous verdict — ROADMAP 1.3
+
+```
 Date:        2026-08-04
 Change:      ROADMAP 1.3 — nodes measure the metrics they heartbeat, instead of
              sending five constants. Includes corrections to the 1.2 pass.
@@ -200,6 +284,7 @@ failed Ollama discovery. stdlib Logger raises TypeError on unknown kwargs, so a 
 whose Ollama was down died on the exact path meant to keep it alive. Reproduced with
 a failing test first. Swept every other `logging.getLogger` module; this was the only
 instance -- the 36 similar calls elsewhere use structlog, where kwargs are valid.
+```
 
 ---
 

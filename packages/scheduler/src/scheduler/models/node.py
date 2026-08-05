@@ -48,6 +48,21 @@ class Node(BaseModel):
     )
 
 
+class ModelCatalogueUpdate(BaseModel):
+    """Body of `PUT /nodes/{node_id}/models`.
+
+    Deliberately carries only the model list. A node refreshing its catalogue must
+    not be able to restate its hardware along the way -- `gpu` and `ram_total_gb`
+    are measured on the host once per process and are not runtime-variable, so a
+    refresh path that accepted them would only be a way to re-introduce the
+    self-asserted figures that 1.2 removed.
+    """
+
+    available_models: list[str] = Field(
+        default_factory=list, description="Model identifiers the node can currently serve"
+    )
+
+
 class Reachability(StrEnum):
     """How the Scheduler can actually reach a node."""
 
