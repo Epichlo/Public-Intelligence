@@ -12,6 +12,9 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
+    # Imported directly by core/autonomous_orchestrator.py, not only via
+    # pydantic-settings/fastapi. Declared so it is not a transitive accident.
+    "pydantic>=2.0.0",
     "pydantic-settings>=2.4.0",
     "structlog>=24.1.0",
     "eclipse-zenoh",

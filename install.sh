@@ -234,7 +234,7 @@ check_prerequisites() {
 configure_environment() {
     log_info "Configuring P2P WAN Node Environment..."
 
-    local ENV_FILE="${PROJECT_ROOT}/Node/.env"
+    local ENV_FILE="${PROJECT_ROOT}/packages/node/.env"
     local HOSTNAME_RAW
     HOSTNAME_RAW=$(hostname 2>/dev/null | tr -cd 'a-zA-Z0-9' | tr '[:upper:]' '[:lower:]' || echo "host")
     if [[ -z "$HOSTNAME_RAW" ]]; then
@@ -319,13 +319,13 @@ setup_virtual_environment() {
         return 0
     fi
 
-    log_info "Setting up Python Virtual Environment in Node/.venv..."
+    log_info "Setting up Python Virtual Environment in packages/node/.venv..."
 
-    local VENV_DIR="${PROJECT_ROOT}/Node/.venv"
+    local VENV_DIR="${PROJECT_ROOT}/packages/node/.venv"
 
     if [[ "$DRY_RUN" == "true" ]]; then
         log_dry_run "Would create virtual environment at ${VENV_DIR} if missing."
-        log_dry_run "Would run: ${VENV_DIR}/bin/pip install -e ${PROJECT_ROOT}/Node"
+        log_dry_run "Would run: ${VENV_DIR}/bin/pip install -e ${PROJECT_ROOT}/packages/node"
         return 0
     fi
 
@@ -338,7 +338,7 @@ setup_virtual_environment() {
 
     log_info "Installing public-intelligence-node package and dependencies..."
     "${VENV_DIR}/bin/pip" install --upgrade pip setuptools wheel >/dev/null 2>&1 || true
-    "${VENV_DIR}/bin/pip" install -e "${PROJECT_ROOT}/Node"
+    "${VENV_DIR}/bin/pip" install -e "${PROJECT_ROOT}/packages/node"
     log_success "Successfully installed public-intelligence-node executable in virtual environment."
 }
 
@@ -350,7 +350,7 @@ setup_executables() {
 
     local LAUNCH_SCRIPT="${PROJECT_ROOT}/scripts/launch_host_node.sh"
     local NODE_RUNNER_LINK="${PROJECT_ROOT}/public-intelligence-node"
-    local VENV_CLI="${PROJECT_ROOT}/Node/.venv/bin/public-intelligence-node"
+    local VENV_CLI="${PROJECT_ROOT}/packages/node/.venv/bin/public-intelligence-node"
 
     if [[ "$DRY_RUN" == "true" ]]; then
         log_dry_run "Would grant executable permissions (chmod +x) on install.sh and scripts/launch_host_node.sh."

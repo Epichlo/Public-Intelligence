@@ -4,7 +4,7 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-06 11:39 UTC
+**Generated:** 2026-08-06 15:23 UTC
 **Test status:** PASSING
 
 ## Tests
@@ -12,9 +12,9 @@
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
 | Scheduler | PASS | 272 | 0 | 0 | 12.63s |
-| Node | PASS | 280 | 0 | 1 | 3.41s |
-| Root E2E | PASS | 57 | 0 | 0 | 22.07s |
-| **Total** | **PASSING** | **609** | **0** | **1** | |
+| Node | PASS | 280 | 0 | 1 | 3.39s |
+| Root E2E | PASS | 68 | 0 | 0 | 22.10s |
+| **Total** | **PASSING** | **620** | **0** | **1** | |
 
 Reproduce:
 
@@ -26,24 +26,24 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `1250c0b` feat: Scheduler state survives a restart (roadmap 2.1)
-- **Author / date:** Atharv Deshpande — 2026-08-06 16:34:12 +0530
+- **Last commit:** `4ff1184` feat: close the open HTTP surface (roadmap 2.3 + 2.4)
+- **Author / date:** Atharv Deshpande — 2026-08-06 17:11:57 +0530
 - **Branch:** main
-- **Total commits:** 200
+- **Total commits:** 201
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence.git (fetch)
-- **Working tree:** 15 uncommitted change(s)
+- **Working tree:** 12 uncommitted change(s)
 
 ```
   M ROADMAP.md
-   M VERIFY.md
-   M packages/node/.env.example
-   M packages/node/src/node/core/configuration.py
-   M packages/node/src/node/main.py
-   M packages/scheduler/.env.example
-   M packages/scheduler/src/scheduler/api/batch.py
-   M packages/scheduler/src/scheduler/api/ingress.py
-   M packages/scheduler/src/scheduler/core/config.py
-   M packages/scheduler/src/scheduler/main.py
+   M install.ps1
+   M install.sh
+  D  packages/node/install.ps1
+   M packages/node/pyproject.toml
+   M packages/scheduler/pyproject.toml
+   M scripts/launch_host_node.sh
+   M scripts/verify.sh
+  ?? scripts/verify_install.sh
+  ?? specs/installer-actually-installs.md
 ```
 
 ## CI

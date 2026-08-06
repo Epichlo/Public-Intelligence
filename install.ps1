@@ -69,27 +69,39 @@ $PyVersion = (& $PythonCmd --version 2>&1).ToString()
 Write-Host "[OK] $PyVersion verified." -ForegroundColor Green
 
 # Target Working Directory Resolution
+#
+# The Node package lives at "packages/node" since the 2026-08-04 monorepo migration.
+# This script used to set $NodeDir to its own directory, find no pyproject.toml
+# there (the repo root has none), fall through to the clone branch, and install
+# Epichlo/Node-PublicIntelligence -- the ARCHIVED pre-monorepo repo. Windows hosts
+# got no error; they got a node frozen before 1.4, 1.6, 2.1, 2.3 and 2.4. Silently
+# installing stale software is worse than failing.
+# See specs/installer-actually-installs.md.
 $ScriptDir = Get-Location
 if ($MyInvocation.MyCommand.Path -and (Test-Path -Path $MyInvocation.MyCommand.Path -PathType Leaf)) {
     $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 }
 
-$NodeDir = $ScriptDir
+$RepoRoot = $ScriptDir
+$NodeDir = Join-Path $RepoRoot "packages/node"
+
 if (-not (Test-Path (Join-Path $NodeDir "pyproject.toml"))) {
-    $WorkDir = Join-Path $env:USERPROFILE "PublicIntelligenceNode"
+    # Not run from inside a checkout: fetch the monorepo, then install the node
+    # package from within it.
+    $WorkDir = Join-Path $env:USERPROFILE "PublicIntelligence"
     if (Test-Path (Join-Path $WorkDir ".git")) {
-        Write-Host "[INFO] Updating existing Node package from GitHub..." -ForegroundColor Blue
+        Write-Host "[INFO] Updating existing Public Intelligence checkout..." -ForegroundColor Blue
         git -C $WorkDir pull origin main --quiet
     } else {
-        Write-Host "[INFO] Downloading Public Intelligence Node package from GitHub..." -ForegroundColor Blue
+        Write-Host "[INFO] Downloading Public Intelligence from GitHub..." -ForegroundColor Blue
         if (Test-Path $WorkDir) { Remove-Item -Path $WorkDir -Recurse -Force }
         if (Get-Command "git" -ErrorAction SilentlyContinue) {
-            git clone --depth 1 https://github.com/Epichlo/Node-PublicIntelligence.git $WorkDir --quiet
+            git clone --depth 1 https://github.com/Epichlo/Public-Intelligence.git $WorkDir --quiet
         } else {
-            $ZipPath = Join-Path $env:TEMP "node_main.zip"
-            Invoke-WebRequest -Uri "https://github.com/Epichlo/Node-PublicIntelligence/archive/refs/heads/main.zip" -OutFile $ZipPath
+            $ZipPath = Join-Path $env:TEMP "public_intelligence_main.zip"
+            Invoke-WebRequest -Uri "https://github.com/Epichlo/Public-Intelligence/archive/refs/heads/main.zip" -OutFile $ZipPath
             Expand-Archive -Path $ZipPath -DestinationPath $env:TEMP -Force
-            $Extracted = Join-Path $env:TEMP "Node-PublicIntelligence-main"
+            $Extracted = Join-Path $env:TEMP "Public-Intelligence-main"
             if (Test-Path $Extracted) {
                 New-Item -ItemType Directory -Path $WorkDir -Force | Out-Null
                 Copy-Item -Path "$Extracted\*" -Destination $WorkDir -Recurse -Force
@@ -98,7 +110,14 @@ if (-not (Test-Path (Join-Path $NodeDir "pyproject.toml"))) {
             if (Test-Path $ZipPath) { Remove-Item -Path $ZipPath -Force }
         }
     }
-    $NodeDir = $WorkDir
+    $RepoRoot = $WorkDir
+    $NodeDir = Join-Path $RepoRoot "packages/node"
+}
+
+if (-not (Test-Path (Join-Path $NodeDir "pyproject.toml"))) {
+    Write-Host "[ERROR] Could not find the node package at $NodeDir." -ForegroundColor Red
+    Write-Host "[ERROR] Expected 'packages/node/pyproject.toml' under $RepoRoot." -ForegroundColor Red
+    exit 1
 }
 
 # Environment Setup
@@ -113,7 +132,7 @@ $AuthTokenBytes = New-Object 'System.Byte[]' 32
 $AuthToken = ($AuthTokenBytes | ForEach-Object { $_.ToString("x2") }) -join ''
 
 if (-not (Test-Path $EnvFile)) {
-    Write-Host "[INFO] Creating Node/.env configuration..." -ForegroundColor Blue
+    Write-Host "[INFO] Creating packages/node/.env configuration..." -ForegroundColor Blue
     $EnvContent = @"
 NODE_ID=node-win-$($env:COMPUTERNAME.ToLower())
 NODE_HOST=0.0.0.0
@@ -147,7 +166,7 @@ Write-Host "[INFO] Send it as the 'X-Network-Auth-Token' header, or set NODE_AUT
 # Virtual Environment
 $VenvDir = Join-Path $NodeDir ".venv"
 if (-not (Test-Path $VenvDir)) {
-    Write-Host "[INFO] Creating Python Virtual Environment in Node/.venv..." -ForegroundColor Blue
+    Write-Host "[INFO] Creating Python Virtual Environment in packages/node/.venv..." -ForegroundColor Blue
     & $PythonCmd -m venv $VenvDir
 }
 

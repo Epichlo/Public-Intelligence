@@ -19,6 +19,13 @@ dependencies = [
     "eclipse-zenoh",
     "cryptography",
     "psutil",
+    # Both were imported at module scope while undeclared, and both resolved anyway
+    # in the shared dev venv -- httpx because `ollama` happens to pull it, structlog
+    # because the scheduler package declares it. A host installing ONLY this package
+    # got `ModuleNotFoundError: structlog` on `import node.main`. Found by
+    # scripts/verify_install.sh; ratcheted by tests/test_declared_dependencies.py.
+    "httpx>=0.27.0",
+    "structlog>=24.1.0",
 ]
 
 [project.optional-dependencies]

@@ -6,7 +6,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-NODE_DIR="${PROJECT_ROOT}/Node"
+NODE_DIR="${PROJECT_ROOT}/packages/node"
 PID_FILE="${NODE_DIR}/node.pid"
 LOG_FILE="${NODE_DIR}/node.log"
 VENV_PYTHON="${NODE_DIR}/.venv/bin/python3"
@@ -85,22 +85,28 @@ start_node() {
 
     echo "Starting Public Intelligence Host Node daemon..."
 
-    local EXEC_CMD
+    # An array, not a string. `nohup $EXEC_CMD` relied on word splitting to turn one
+    # string back into a command and its arguments, which meant any path containing a
+    # space -- `/Users/Jane Smith/...`, an entirely ordinary home directory -- split in
+    # the wrong places and the daemon never started. Shellcheck flags the string form
+    # (SC2086) and quoting it would have been worse: it would exec a single binary
+    # whose name contains spaces. See specs/installer-actually-installs.md.
+    local -a EXEC_CMD
     if [[ -x "$VENV_NODE_CLI" ]]; then
-        EXEC_CMD="$VENV_NODE_CLI --host $HOST --port $PORT"
+        EXEC_CMD=("$VENV_NODE_CLI" --host "$HOST" --port "$PORT")
     elif [[ -x "$VENV_PYTHON" ]]; then
-        EXEC_CMD="$VENV_PYTHON -m node.main --host $HOST --port $PORT"
+        EXEC_CMD=("$VENV_PYTHON" -m node.main --host "$HOST" --port "$PORT")
     else
-        EXEC_CMD="python3 -m node.main --host $HOST --port $PORT"
+        EXEC_CMD=(python3 -m node.main --host "$HOST" --port "$PORT")
     fi
 
-    echo "Executable command: ${EXEC_CMD}"
+    echo "Executable command: ${EXEC_CMD[*]}"
     echo "Output log: ${LOG_FILE}"
 
     (
-        cd "$NODE_DIR"
+        cd "$NODE_DIR" || exit 1
         export PYTHONPATH="${NODE_DIR}/src:${PYTHONPATH:-}"
-        nohup $EXEC_CMD >> "$LOG_FILE" 2>&1 &
+        nohup "${EXEC_CMD[@]}" >> "$LOG_FILE" 2>&1 &
         echo $! > "$PID_FILE"
         disown $! 2>/dev/null || true
     )

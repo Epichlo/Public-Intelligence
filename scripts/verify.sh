@@ -72,7 +72,8 @@ run_step "ruff format"       "$PY" -m ruff format --check ./packages
 # never ran it; a `[ "$x" != "PATTERN"* ]` comparison that silently never matched
 # sat in this very file until shellcheck was pointed at it.
 if command -v shellcheck >/dev/null 2>&1; then
-    run_step "shellcheck" shellcheck scripts/verify.sh scripts/install-hooks.sh install.sh
+    run_step "shellcheck" shellcheck scripts/verify.sh scripts/install-hooks.sh \
+        scripts/verify_install.sh scripts/launch_host_node.sh install.sh
 else
     printf '\n\033[33m── shellcheck (skipped: not installed)\033[0m\n'
 fi
@@ -126,6 +127,19 @@ case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) IS_WINDOWS=1 ;; esac
 
 if [ "$QUICK" -eq 0 ] && [ "$IS_WINDOWS" -eq 0 ] && [ -f ./install.sh ]; then
     run_step "install.sh --dry-run" bash ./install.sh --dry-run
+
+    # The dry-run above proves almost nothing on its own, and for two days it
+    # proved nothing at all: EVERY step of install.sh returns early in dry-run
+    # mode after printing what it *would* do, so the paths it prints were never
+    # exercised. They still said `Node/`, which the monorepo migration renamed to
+    # `packages/node/` -- the installer exited 1 on its first write, and CI was
+    # green over it the whole time.
+    #
+    # This step runs the installer for real against a throwaway copy of the tree
+    # and checks the result imports. Its first real run found a second bug the
+    # dry-run could never have caught: the node package did not declare structlog.
+    # See specs/installer-actually-installs.md.
+    run_step "install.sh (real, throwaway copy)" bash ./scripts/verify_install.sh
 fi
 
 # --- receipt ---------------------------------------------------------------

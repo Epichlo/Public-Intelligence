@@ -165,6 +165,96 @@ Fill this in. It is the whole point of the file.
 
 ```
 Date:        2026-08-06
+Change:      ROADMAP 2.8 — the installer actually installs, and the gate can now
+             tell when it stops.
+Spec:        specs/installer-actually-installs.md
+
+  1. Test suite ......... PASS
+  2. Spec match ......... PASS
+  3. Secrets & bypasses . PASS
+  4. Duplication ........ PASS
+  5. Nothing tracked .... PASS
+  6. STATUS regenerated . PASS
+
+VERDICT: PASS
+
+Reasons:
+- 1. `./scripts/verify.sh` → `PASS 13 checks` (was 12; the new real-install step is
+  the thirteenth), this session. Scheduler 272 passed, Node 280 passed / 1 skipped,
+  root E2E 68 passed — +11, all new: 9 in `tests/test_installer_paths.py`, 2 in
+  `tests/test_declared_dependencies.py`. Also confirmed `--quick` does NOT run the
+  real installer (`grep -c "install.sh (real"` → 0), which is the point of putting
+  it behind the full path.
+- 1a. Red observed first and from a real failure, not a constructed one. The
+  starting evidence was running the actual installer against a throwaway copy of
+  the tree: `./install.sh: line 274: .../Node/.env: No such file or directory`,
+  `REAL EXIT CODE: 1`. Then 6 of the 9 new path tests failed against the unfixed
+  scripts.
+- 1b. HONEST NOTE — two of the three that passed initially passed **vacuously**,
+  and I only found that by reading which assertions fired rather than trusting the
+  red count:
+    * the `install.ps1` case of `test_every_path_an_installer_references_exists`
+      matched nothing, because that file builds paths with `Join-Path` and never
+      writes `${PROJECT_ROOT}/...`. Fixed by adding a quoted-`packages/...` pattern.
+    * `test_no_installer_still_points_at_the_pre_monorepo_layout` for
+      `launch_host_node.sh` passed because it searched for the substring `"Node/"`
+      and that file contains `"${PROJECT_ROOT}/Node"` — no trailing slash. Fixed by
+      matching a path *segment*. It then failed, correctly.
+- 1c. Mutation-tested, 3 mutations, 3 reds: reverting `install.sh`'s env path to
+  `Node/`; reverting the launch script's `NODE_DIR`; and removing the `structlog`
+  dependency again. Each failed the intended test and no others.
+- 2. Every box under "Done looks like" is ticked. Nothing under "Out of scope" was
+  built: `install.ps1` is still not executed for real anywhere, `docker-compose.test.yml`
+  is untouched, the clone branch was repointed rather than redesigned, no installed
+  node is started or registered, and the archived repo is left alone.
+- 2a. Scope grew twice, both recorded in the spec rather than folded in silently:
+    * `scripts/launch_host_node.sh` had the same stale path AND is what `install.sh`
+      symlinks to as its fallback — so the fallback was broken in the same way as
+      the thing it falls back from;
+    * **three undeclared dependencies**, found by the new check on its FIRST real
+      run. `node/api/auth.py:25` imports `structlog` and `clients/scheduler.py:7`
+      imports `httpx`, neither declared; `scheduler/core/autonomous_orchestrator.py:7`
+      imports `pydantic`, not declared. All resolve in the shared dev venv and none
+      resolve for a host installing one package. 280 node tests passed while
+      `import node.main` raised `ModuleNotFoundError: structlog` in a clean install.
+      Declared all three, and added `tests/test_declared_dependencies.py` as the
+      cheap ratchet so the next one does not need a full install to find.
+- 2b. Also fixed, found by pointing shellcheck at `launch_host_node.sh` for the
+  first time: `nohup $EXEC_CMD` relied on word splitting, so any path containing a
+  space — an ordinary home directory like `/Users/Jane Smith` — split in the wrong
+  places and the daemon never started. Now a bash array. Quoting the string, which
+  is what the lint literally suggests, would have been worse.
+- 3. Three hits, all pre-existing and all tabled in step 3: the two
+  `TELEMETRY_SECRET_KEY` defaults and the fallback RSA public key, plus the two
+  benign `AliasChoices` hits. The auth-bypass grep returns one hit, prose in a
+  website page. No new secret or bypass. NOT FIXED HERE, deliberately: `install.sh`
+  still writes `TELEMETRY_SECRET_KEY=<the published constant>` into every `.env` it
+  generates. That is ROADMAP 2.7, and burying a protocol decision inside a path fix
+  is how the original problem got made.
+- 4. This change REMOVES a duplicate: `packages/node/install.ps1`, which had drifted
+  into never generating `NODE_NETWORK_AUTH_TOKEN` — the credential the control API
+  fails closed without (0.1) — so that copy produced a node serving nothing. One
+  Windows installer now, pinned by a test. None of the six known Python pairs was
+  touched; `tests/test_source_parity.py` passes with budgets unchanged.
+- 5. `git ls-files | grep -iE "\.env$|..."` → clean; `.env` ignored. The installer
+  writes `packages/node/.env`, which `.gitignore` already covers.
+- 6. Regenerated by `scripts/generate_status.py`; its counts (272/280/68) match
+  step 1 exactly.
+
+Not claimed: `install.ps1` has NOT been executed. There is no Windows machine here,
+and `verify.sh` skips the POSIX installer on Windows runners, so the Windows path is
+covered only by reading its paths and its clone URL out of the file. That is
+strictly weaker than what `install.sh` now gets, and the asymmetry is deliberate and
+recorded in the spec rather than smoothed over. Nor does anything here prove an
+installed node registers or serves — the check ends at "importable and configured".
+```
+
+---
+
+## Previous verdict — ROADMAP 2.3 + 2.4
+
+```
+Date:        2026-08-06
 Change:      ROADMAP 2.3 + 2.4 — close the open HTTP surface. CORS stops handing
              responses to every origin that asks; /v1/batch stops being anonymous.
 Spec:        specs/close-the-open-http-surface.md
