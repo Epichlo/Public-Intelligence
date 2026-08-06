@@ -3,12 +3,22 @@
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Header, status
+from fastapi import APIRouter, Depends, Header, status
 from pydantic import BaseModel, Field
 
+from scheduler.api.auth import verify_auth_token
 from scheduler.core.autonomous_orchestrator import AutonomousOrchestrator, MissionResult
 
-router = APIRouter(prefix="/v1/webhooks", tags=["webhooks"])
+# NOT MOUNTED: `create_app` does not include this router, so these paths 404 today.
+# Guarded anyway, so that mounting it is a one-line change that does not also open
+# an anonymous POST. The proper control for a GitHub webhook is X-Hub-Signature-256
+# HMAC verification, which needs a shared secret nothing here provisions -- recorded
+# in specs/authenticate-the-read-surface.md rather than half-built.
+router = APIRouter(
+    prefix="/v1/webhooks",
+    tags=["webhooks"],
+    dependencies=[Depends(verify_auth_token)],
+)
 
 _orchestrator = AutonomousOrchestrator()
 

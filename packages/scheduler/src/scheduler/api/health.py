@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 from fastapi import APIRouter, Depends, Request
 
 from scheduler import __version__
+from scheduler.api.auth import verify_auth_token
 from scheduler.core.config import Settings, get_settings
 from scheduler.models.health import HealthResponse, ReadinessResponse
 from scheduler.models.node import NodeStatus
@@ -46,7 +47,14 @@ async def readiness(
     )
 
 
-@router.get("/status", response_model=SchedulerStatusResponse)
+@router.get(
+    "/status",
+    response_model=SchedulerStatusResponse,
+    # Per-node snapshots: hostname, region, queue depth, CPU, GPU, VRAM. `/health`
+    # and `/health/ready` above stay public on purpose -- they are probes, and a
+    # health check that needs a secret reports unhealthy when the secret is wrong.
+    dependencies=[Depends(verify_auth_token)],
+)
 async def operational_status(
     request: Request,
     settings: Annotated[Settings, Depends(get_settings)],

@@ -172,6 +172,74 @@ Fill this in. It is the whole point of the file.
 
 ```
 Date:        2026-08-06
+Change:      ROADMAP 2.6 — the fleet-describing endpoints stop answering strangers.
+Spec:        specs/authenticate-the-read-surface.md
+
+  1. Test suite ......... PASS
+  2. Spec match ......... PASS
+  3. Secrets & bypasses . PASS
+  4. Duplication ........ PASS
+  5. Nothing tracked .... PASS
+  6. STATUS regenerated . PASS
+
+VERDICT: PASS
+
+Reasons:
+- 1. `./scripts/verify.sh` -> `PASS 13 checks`, this session. Scheduler 303 passed
+  (+17, all new in `test_read_surface_auth.py`), Node 280 / 1 skipped, root E2E 73.
+- 1a. Red observed first: 7 of the 17 failed against pre-change code — the five
+  guarded reads, the fleet-telemetry test, and the webhook test. The five
+  "works with a credential" cases passed before and after (the routes answered
+  everyone, so they answered a credentialed caller too); they are the other half of
+  each pair and are not red-green evidence on their own.
+- 1b. Mutation: removing the guard from `GET /nodes` turns the route-inventory
+  ratchet red with a message naming the reopened route. That ratchet is the part of
+  this change with lasting value.
+- 1c. TWO OF MY OWN TESTS WERE WRONG, both found by reading results rather than
+  trusting a green count:
+  * `test_no_route_is_unauthenticated_by_accident` PASSED against the unfixed code.
+    FastAPI 0.141 keeps included routers as `_IncludedRouter` wrappers instead of
+    flattening them into `app.routes`, so my walk found only the four docs routes
+    and reported nothing unguarded. An inventory test that inventories nothing is
+    worse than no test — it reads like coverage. Rewritten to traverse
+    `original_router`, and given a companion,
+    `test_the_route_inventory_actually_finds_routes`, which fails loudly if the walk
+    ever stops finding known routes again.
+  * the webhook test asserted 401 and got 404, which is how I learned
+    `create_app` never mounts the webhooks router at all.
+- 2. Every box under "Done looks like" is ticked. One box was CORRECTED rather than
+  ticked as written — see 2a. Nothing under "Out of scope" was built: no GitHub
+  HMAC verification, no per-tenant scoping, no rate limiting, and the orchestrator's
+  false verification claim is untouched.
+- 2a. SPEC CORRECTION, recorded rather than quietly dropped: the spec first claimed
+  `POST /v1/webhooks/github` was a live unauthenticated write path. It is not — the
+  router is never mounted, so it 404s. A spec that overstates a vulnerability is the
+  same defect as one that understates it. The router is guarded anyway so mounting
+  it later is not also a hole, and the test asserts that on the router object.
+- 2b. Scope grew past the roadmap line, deliberately: it named five routes and
+  missed `/nodes/telemetry` and `/nodes/{id}/telemetry`, which return live decrypted
+  metrics for the whole fleet. Guarding the mesh in 2.7 while serving the same data
+  to anyone over HTTP would have been half a fix.
+- 3. Same two pre-existing hits as the previous pass — the fallback RSA public key
+  and the two benign `AliasChoices` env-var-name hits. No new secret or bypass; this
+  change only removes access. The CORS grep is unchanged.
+- 4. No new module and no new duplicate. This adds a dependency to existing routes
+  and one header to one TypeScript file. `tests/test_source_parity.py` unchanged.
+- 5. `git ls-files | grep -iE "\.env$|..."` -> clean; `.env` ignored.
+- 6. Regenerated; counts (303/280/73) match step 1.
+
+Not claimed: THE WEBSITE CHANGE IS UNTESTED. `packages/website` has no test
+harness — no runner, no test files — so the telemetry proxy now sending
+`X-Network-Auth-Token` is verified only by reading it. If that env var is unset in a
+deployment, the dashboard's telemetry panel will now 401 where it previously
+worked, and nothing here would catch that. It is the same gap ROADMAP 4.1 records.
+
+---
+
+## Previous verdict — ROADMAP 2.7
+
+```
+Date:        2026-08-06
 Change:      ROADMAP 2.7 (absorbing 2.5) — nothing unauthenticated may change
              registry state from the Zenoh mesh.
 Spec:        specs/authenticated-mesh-ingress.md

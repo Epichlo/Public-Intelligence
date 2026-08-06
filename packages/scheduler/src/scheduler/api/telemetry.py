@@ -4,9 +4,14 @@ from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from scheduler.api.auth import verify_auth_token
 from scheduler.registry.node_registry import NodeRegistry
 
-router = APIRouter(tags=["telemetry"])
+# Every route here returns decrypted per-node metrics. ROADMAP 2.7 authenticated
+# the mesh so only a node can report its own; serving the same data to anyone over
+# HTTP would have made that half a fix. Guarded at the router level so a route
+# added later inherits it. See specs/authenticate-the-read-surface.md.
+router = APIRouter(tags=["telemetry"], dependencies=[Depends(verify_auth_token)])
 
 
 def get_registry(request: Request) -> NodeRegistry:

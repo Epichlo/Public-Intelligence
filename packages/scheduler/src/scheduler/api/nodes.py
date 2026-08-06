@@ -86,7 +86,14 @@ async def register_node(
     return node
 
 
-@router.get("/nodes", response_model=list[NodeView])
+@router.get(
+    "/nodes",
+    response_model=list[NodeView],
+    # Hostnames, addresses, GPU models, RAM and per-node catalogues. Its siblings
+    # in this router (register, update-models, unregister) were already guarded;
+    # three protected routes and two open ones is an oversight, not a policy.
+    dependencies=[Depends(verify_auth_token)],
+)
 async def list_nodes(
     registry: RegistryDep,
 ) -> list[NodeView]:
@@ -97,7 +104,11 @@ async def list_nodes(
     ]
 
 
-@router.get("/nodes/{node_id}", response_model=NodeView)
+@router.get(
+    "/nodes/{node_id}",
+    response_model=NodeView,
+    dependencies=[Depends(verify_auth_token)],
+)
 async def get_node(
     node_id: str,
     registry: RegistryDep,

@@ -4,17 +4,17 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-06 16:24 UTC
+**Generated:** 2026-08-06 17:19 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 286 | 0 | 0 | 14.22s |
-| Node | PASS | 280 | 0 | 1 | 3.32s |
-| Root E2E | PASS | 73 | 0 | 0 | 22.12s |
-| **Total** | **PASSING** | **639** | **0** | **1** | |
+| Scheduler | PASS | 303 | 0 | 0 | 12.71s |
+| Node | PASS | 280 | 0 | 1 | 3.30s |
+| Root E2E | PASS | 73 | 0 | 0 | 22.14s |
+| **Total** | **PASSING** | **656** | **0** | **1** | |
 
 Reproduce:
 
@@ -26,30 +26,28 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `4ff2125` fix: the installer actually installs (roadmap 2.8)
-- **Author / date:** Atharv Deshpande — 2026-08-06 20:54:16 +0530
+- **Last commit:** `39f4a1d` fix: read files as utf-8, not as whatever the platform defaults to
+- **Author / date:** Atharv Deshpande — 2026-08-06 22:16:58 +0530
 - **Branch:** main
-- **Total commits:** 202
+- **Total commits:** 204
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence.git (fetch)
-- **Working tree:** 20 uncommitted change(s)
+- **Working tree:** 8 uncommitted change(s)
 
 ```
-  M  ROADMAP.md
-  M  STATUS.md
-  MM VERIFY.md
-  M  docker-compose.test.yml
-  M  install.ps1
-  M  install.sh
-  M  packages/node/src/node/clients/zenoh_heartbeat.py
-  A  packages/node/src/node/core/mesh_auth.py
-  M  packages/node/src/node/core/telemetry.py
-  M  packages/node/src/node/runtime.py
+  M ROADMAP.md
+   M packages/scheduler/src/scheduler/api/health.py
+   M packages/scheduler/src/scheduler/api/nodes.py
+   M packages/scheduler/src/scheduler/api/telemetry.py
+   M packages/scheduler/src/scheduler/api/webhooks.py
+   M packages/website/src/app/api/telemetry/all/route.ts
+  ?? packages/scheduler/tests/test_read_surface_auth.py
+  ?? specs/authenticate-the-read-surface.md
 ```
 
 ## CI
 
-- **Status:** PASS
-- **Reason:** latest run concluded success
+- **Status:** FAIL
+- **Reason:** latest run did not succeed: [{"conclusion":"","headSha":"39f4a1d69b4c96784a52961bebf9049bb9128d25"}]
 
 
 ## Repo facts
