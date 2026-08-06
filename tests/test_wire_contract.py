@@ -22,8 +22,6 @@ This is the root suite because it is the only interpreter where both `node` and
 from datetime import UTC, datetime
 
 import pytest
-from pydantic import ValidationError
-
 from node.clients.scheduler import (
     build_heartbeat_payload,
     build_model_catalogue_payload,
@@ -31,6 +29,7 @@ from node.clients.scheduler import (
 )
 from node.core.hardware import detect_gpu, detect_host_metrics, detect_ram_total_gb
 from node.models import GPUInfo, Heartbeat, ModelInfo, NodeInfo
+from pydantic import ValidationError
 from scheduler.models.heartbeat import Heartbeat as SchedulerHeartbeat
 from scheduler.models.node import ModelCatalogueUpdate as SchedulerCatalogueUpdate
 from scheduler.models.node import Node as SchedulerNode
@@ -275,9 +274,7 @@ def test_every_scheduler_required_field_is_supplied_by_the_node() -> None:
     Scheduler's model), and only a real registration 422s.
     """
     supplied = set(build_registration_payload(_node_info()))
-    required = {
-        name for name, f in SchedulerNode.model_fields.items() if f.is_required()
-    }
+    required = {name for name, f in SchedulerNode.model_fields.items() if f.is_required()}
 
     assert required <= supplied, (
         f"Scheduler.Node requires {sorted(required - supplied)}, which the Node never sends. "
@@ -288,9 +285,7 @@ def test_every_scheduler_required_field_is_supplied_by_the_node() -> None:
 def test_every_scheduler_required_heartbeat_field_is_supplied() -> None:
     """Same guard for the heartbeat contract."""
     supplied = set(build_heartbeat_payload(_heartbeat()))
-    required = {
-        name for name, f in SchedulerHeartbeat.model_fields.items() if f.is_required()
-    }
+    required = {name for name, f in SchedulerHeartbeat.model_fields.items() if f.is_required()}
 
     assert required <= supplied, (
         f"Scheduler.Heartbeat requires {sorted(required - supplied)}, which the Node never sends."

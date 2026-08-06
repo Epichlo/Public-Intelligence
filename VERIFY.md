@@ -172,6 +172,65 @@ Fill this in. It is the whole point of the file.
 
 ```
 Date:        2026-08-06
+Change:      ROADMAP 2.9 — close the two gate holes that let 2.7 reach main green
+             locally and fail CI on Windows.
+Spec:        specs/lint-the-tests-and-the-encodings.md
+
+  1. Test suite ......... PASS
+  2. Spec match ......... PASS
+  3. Secrets & bypasses . PASS
+  4. Duplication ........ PASS
+  5. Nothing tracked .... PASS
+  6. STATUS regenerated . PASS
+
+VERDICT: PASS
+
+Reasons:
+- 1. `./scripts/verify.sh` -> `PASS 15 checks` (was 13; +2 for linting and
+  format-checking `./tests`), this session. Scheduler 303, Node 280 / 1 skipped,
+  root E2E 73. No new tests: this change is gate configuration plus the violations
+  it found, so the evidence is the gate itself failing on reintroduced faults, not
+  new assertions.
+- 1a. Both new checks were verified by BREAKING them, not by watching them pass:
+  * added `Path("README.md").read_text()` to a test file -> `ruff check ./packages`
+    reports `PLW1514 ... without explicit encoding argument`, 1 error. Reverted.
+  * added `import os, sys` to `tests/test_installer_paths.py` -> the new
+    `ruff check (tests)` step reports 5 errors. Reverted.
+  Before this change, neither of those produced any failure anywhere.
+- 1b. `PLW1514` found 2 real violations, and ONE IS PRODUCTION CODE:
+  `node/core/telemetry.py` opened `/proc/meminfo` with the platform default
+  encoding on the Linux memory path. Fixed rather than suppressed. The other was a
+  test reading a file it had just written.
+- 2. Every box under "Done looks like" is ticked. Nothing under "Out of scope" was
+  built: `packages/website` is still unlinted, mypy still does not see `tests/`, and
+  no other preview rule was enabled.
+- 2a. A NUMBER I PREVIOUSLY REPORTED WAS WRONG AND IS CORRECTED. When filing 2.9 I
+  said `tests/` had 22 lint errors. It has 7. The 22 came from running ruff at its
+  default line length (88) instead of this repo's (100), so most were spurious
+  `E501` — the same mistake that made a stray `ruff format ./tests` reflow files
+  earlier in this session. The roadmap line and the spec now say 7.
+- 3. Unchanged: the fallback RSA public key and the two benign `AliasChoices`
+  env-var-name hits. No new secret or bypass; nothing about credentials changed.
+- 4. No new module, and no third copy of the `[tool.ruff]` block — `tests/` borrows
+  the scheduler package's config via `--config` precisely to avoid one.
+  `tests/test_source_parity.py` still passes (14 tests), so the two packages'
+  `[tool.ruff]` blocks remain byte-identical after being edited identically.
+- 5. `git ls-files | grep -iE "\.env$|..."` -> clean; `.env` ignored.
+- 6. Regenerated; counts (303/280/73) match step 1.
+
+Not claimed: this does NOT prove the Windows leg is fixed. The encoding fix in
+`39f4a1d` is still unverified — its CI run has been QUEUED for 37 minutes behind a
+GitHub Actions incident, and the run before it failed partly for that same reason
+("Failed to resolve action download info. Service Unavailable"). What is
+established is that the fault class now fails the local gate, which it did not
+before. Windows itself remains verifiable only by CI.
+
+---
+
+## Previous verdict — ROADMAP 2.6
+
+```
+Date:        2026-08-06
 Change:      ROADMAP 2.6 — the fleet-describing endpoints stop answering strangers.
 Spec:        specs/authenticate-the-read-surface.md
 

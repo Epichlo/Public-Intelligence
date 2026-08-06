@@ -4,7 +4,7 @@ import hashlib
 import os
 import shutil
 import tempfile
-from typing import Generator
+from collections.abc import Generator
 
 import pytest
 

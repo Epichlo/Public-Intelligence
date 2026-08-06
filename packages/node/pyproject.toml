@@ -76,7 +76,20 @@ line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "W", "F", "I", "N", "UP", "B", "A", "C4", "RET", "SIM", "ARG", "RUF"]
+# PLW1514 (unspecified-encoding) is preview-gated, and `explicit-preview-rules`
+# means ONLY the preview rules named here activate -- turning preview on wholesale
+# would enable every other preview rule in these categories, which can change
+# between ruff releases. One rule, one blast radius.
+#
+# It is here because ROADMAP 2.7 passed the local gate and failed CI on all three
+# Windows legs: `Path.read_text()` with no encoding resolves to the platform
+# default, UTF-8 here and cp1252 there. See specs/lint-the-tests-and-the-encodings.md.
+preview = true
+explicit-preview-rules = true
+select = [
+    "E", "W", "F", "I", "N", "UP", "B", "A", "C4", "RET", "SIM", "ARG", "RUF",
+    "PLW1514",
+]
 ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]

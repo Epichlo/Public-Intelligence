@@ -7,23 +7,18 @@ Requirements-Driven Dual-Track Testing:
 - Tier 4: Real-World Workload Simulation (requester prompt submission & host node start/stop lifecycle)
 """
 
-from datetime import UTC, datetime, timedelta
 import time
-from typing import AsyncGenerator, Any, Generator
+from collections.abc import AsyncGenerator, Generator
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
-
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
 
 import httpx
 import jwt
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
-
-# Scheduler imports
-from scheduler.core.rate_limiter import TokenBucketLimiter
-from scheduler.main import app as scheduler_app
-from scheduler.models.node import GPUInfo, Node as SchedulerNode
 
 # Node imports
 from node.core.configuration import Settings as NodeSettings
@@ -31,6 +26,11 @@ from node.core.configuration import get_settings as node_get_settings
 from node.core.runtime import sandbox_log_buffer
 from node.main import app as node_app
 
+# Scheduler imports
+from scheduler.core.rate_limiter import TokenBucketLimiter
+from scheduler.main import app as scheduler_app
+from scheduler.models.node import GPUInfo
+from scheduler.models.node import Node as SchedulerNode
 
 # -----------------------------------------------------------------------------
 # Fixtures & Helpers
@@ -704,9 +704,7 @@ def test_tier4_real_world_requester_prompt_and_node_lifecycle(
         async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
             pass
 
-    with patch.object(
-        httpx.AsyncClient, "stream", return_value=MockStreamContextManager()
-    ):
+    with patch.object(httpx.AsyncClient, "stream", return_value=MockStreamContextManager()):
         gateway_resp = scheduler_client.post(
             "/v1/chat/completions",
             json=request_payload,
@@ -762,9 +760,7 @@ def test_tier4_real_world_requester_prompt_and_node_lifecycle(
     # Step 7: Unregister node from Scheduler registry -> verify subsequent prompt returns 503
     scheduler_app.state.registry._nodes.clear()
 
-    with patch.object(
-        httpx.AsyncClient, "stream", return_value=MockStreamContextManager()
-    ):
+    with patch.object(httpx.AsyncClient, "stream", return_value=MockStreamContextManager()):
         stopped_gateway_resp = scheduler_client.post(
             "/v1/chat/completions",
             json=request_payload,

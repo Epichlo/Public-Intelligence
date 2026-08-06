@@ -22,17 +22,9 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-NODE_COPY = (
-    REPO_ROOT / "packages" / "node" / "src" / "node" / "core" / "mesh_protocol.py"
-)
+NODE_COPY = REPO_ROOT / "packages" / "node" / "src" / "node" / "core" / "mesh_protocol.py"
 SCHEDULER_COPY = (
-    REPO_ROOT
-    / "packages"
-    / "scheduler"
-    / "src"
-    / "scheduler"
-    / "core"
-    / "mesh_protocol.py"
+    REPO_ROOT / "packages" / "scheduler" / "src" / "scheduler" / "core" / "mesh_protocol.py"
 )
 
 NODE_ID = "node-parity"
@@ -54,10 +46,7 @@ def test_copies_are_byte_identical() -> None:
     node_bytes = NODE_COPY.read_bytes()
     scheduler_bytes = SCHEDULER_COPY.read_bytes()
 
-    assert (
-        hashlib.sha256(node_bytes).hexdigest()
-        == hashlib.sha256(scheduler_bytes).hexdigest()
-    ), (
+    assert hashlib.sha256(node_bytes).hexdigest() == hashlib.sha256(scheduler_bytes).hexdigest(), (
         "mesh_protocol.py has diverged between Node and Scheduler.\n"
         f"  {NODE_COPY.relative_to(REPO_ROOT)}: {len(node_bytes)} bytes\n"
         f"  {SCHEDULER_COPY.relative_to(REPO_ROOT)}: {len(scheduler_bytes)} bytes\n"
@@ -99,7 +88,8 @@ def test_a_request_signed_by_the_node_verifies_on_the_scheduler() -> None:
 
 def test_a_wrong_token_is_rejected_across_packages() -> None:
     """Guards against both copies degrading into an accept-everything check."""
-    from node.core.mesh_protocol import MeshRequestError, verify_request as node_verify
+    from node.core.mesh_protocol import MeshRequestError
+    from node.core.mesh_protocol import verify_request as node_verify
     from scheduler.core.mesh_protocol import encode_request as scheduler_encode
 
     payload = scheduler_encode(
@@ -154,9 +144,7 @@ def test_protocol_constants_agree_across_packages() -> None:
 # a message is authentic. If the two copies drift, the Scheduler silently stops
 # accepting real nodes -- a failure that looks like a network problem, not a bug.
 
-NODE_AUTH_COPY = (
-    REPO_ROOT / "packages" / "node" / "src" / "node" / "core" / "mesh_auth.py"
-)
+NODE_AUTH_COPY = REPO_ROOT / "packages" / "node" / "src" / "node" / "core" / "mesh_auth.py"
 SCHEDULER_AUTH_COPY = (
     REPO_ROOT / "packages" / "scheduler" / "src" / "scheduler" / "core" / "mesh_auth.py"
 )
@@ -189,9 +177,9 @@ def test_an_envelope_sealed_by_the_node_opens_on_the_scheduler() -> None:
 
     raw = seal({"cpu": 12.5}, node_id=NODE_ID, token=TOKEN, purpose=PURPOSE_TELEMETRY)
 
-    assert open_envelope(
-        raw, node_id=NODE_ID, token=TOKEN, purpose=PURPOSE_TELEMETRY
-    ) == {"cpu": 12.5}
+    assert open_envelope(raw, node_id=NODE_ID, token=TOKEN, purpose=PURPOSE_TELEMETRY) == {
+        "cpu": 12.5
+    }
 
 
 def test_the_scheduler_rejects_an_envelope_sealed_with_another_nodes_token() -> None:

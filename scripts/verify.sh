@@ -68,6 +68,20 @@ printf '\033[1mverify\033[0m  mode=%s  python=%s\n' "$MODE" "$("$PY" -V 2>&1)"
 run_step "ruff check"        "$PY" -m ruff check ./packages
 run_step "ruff format"       "$PY" -m ruff format --check ./packages
 
+# The root tests/ directory was linted by NOTHING until ROADMAP 2.9. This file is
+# "the only definition of does this pass", and a whole directory of cross-package
+# tests -- the wire contract, the parity ratchets, the installer checks -- sat
+# outside that definition while appearing to be inside it.
+#
+# It borrows the scheduler package's config rather than adding a third copy of the
+# [tool.ruff] block at the repo root; tests/test_source_parity.py exists to stop
+# exactly that kind of duplication drifting. It is also why a bare
+# `ruff format ./tests` reformats at ruff's default 88 columns instead of this
+# repo's 100 -- always pass --config.
+RUFF_CFG="packages/scheduler/pyproject.toml"
+run_step "ruff check (tests)"  "$PY" -m ruff check ./tests --config "$RUFF_CFG"
+run_step "ruff format (tests)" "$PY" -m ruff format --check ./tests --config "$RUFF_CFG"
+
 # The gate lints its own scripts. CI already installs shellcheck on Linux but
 # never ran it; a `[ "$x" != "PATTERN"* ]` comparison that silently never matched
 # sat in this very file until shellcheck was pointed at it.

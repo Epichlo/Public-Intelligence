@@ -19,12 +19,12 @@ This is still one process on loopback. Two machines behind two NATs is ROADMAP 1
 """
 
 import asyncio
+import contextlib
 from collections.abc import AsyncGenerator
 from typing import Any
 
 import pytest
 import zenoh
-
 from node.clients.mesh_inference_server import ZenohInferenceServer
 from node.core.configuration import Settings as NodeSettings
 from node.models import InferenceRequest, InferenceResponse
@@ -111,10 +111,8 @@ class MeshHarness:
             await self.server.wait_for_inflight(timeout=5.0)
         for session in (self.node_session, self.scheduler_session):
             if session is not None:
-                try:
+                with contextlib.suppress(Exception):
                     session.close()
-                except Exception:
-                    pass
         await asyncio.sleep(0.1)
 
     def client(self, **kwargs: Any) -> MeshInferenceClient:
@@ -241,9 +239,7 @@ async def test_a_missing_model_comes_back_as_404_over_a_real_router() -> None:
 
     async with MeshHarness(ollama) as harness:
         with pytest.raises(MeshNodeError) as excinfo:
-            await harness.client().infer(
-                node_id=NODE_ID, token=TOKEN, model="ghost", prompt="hi"
-            )
+            await harness.client().infer(node_id=NODE_ID, token=TOKEN, model="ghost", prompt="hi")
 
     assert excinfo.value.status == 404
 

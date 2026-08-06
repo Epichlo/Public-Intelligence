@@ -4,16 +4,16 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-06 17:19 UTC
+**Generated:** 2026-08-06 17:25 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 303 | 0 | 0 | 12.71s |
-| Node | PASS | 280 | 0 | 1 | 3.30s |
-| Root E2E | PASS | 73 | 0 | 0 | 22.14s |
+| Scheduler | PASS | 303 | 0 | 0 | 14.82s |
+| Node | PASS | 280 | 0 | 1 | 3.47s |
+| Root E2E | PASS | 73 | 0 | 0 | 22.17s |
 | **Total** | **PASSING** | **656** | **0** | **1** | |
 
 Reproduce:
@@ -26,22 +26,24 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `39f4a1d` fix: read files as utf-8, not as whatever the platform defaults to
-- **Author / date:** Atharv Deshpande — 2026-08-06 22:16:58 +0530
+- **Last commit:** `6a839ee` feat: authenticate the read surface (roadmap 2.6)
+- **Author / date:** Atharv Deshpande — 2026-08-06 22:49:51 +0530
 - **Branch:** main
-- **Total commits:** 204
+- **Total commits:** 205
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence.git (fetch)
-- **Working tree:** 8 uncommitted change(s)
+- **Working tree:** 14 uncommitted change(s)
 
 ```
   M ROADMAP.md
-   M packages/scheduler/src/scheduler/api/health.py
-   M packages/scheduler/src/scheduler/api/nodes.py
-   M packages/scheduler/src/scheduler/api/telemetry.py
-   M packages/scheduler/src/scheduler/api/webhooks.py
-   M packages/website/src/app/api/telemetry/all/route.ts
-  ?? packages/scheduler/tests/test_read_surface_auth.py
-  ?? specs/authenticate-the-read-surface.md
+   M packages/node/pyproject.toml
+   M packages/node/src/node/core/telemetry.py
+   M packages/node/tests/test_worktree_manager.py
+   M packages/scheduler/pyproject.toml
+   M scripts/verify.sh
+   M tests/test_artifact_store.py
+   M tests/test_declared_dependencies.py
+   M tests/test_mesh_inference_e2e.py
+   M tests/test_mesh_protocol_parity.py
 ```
 
 ## CI

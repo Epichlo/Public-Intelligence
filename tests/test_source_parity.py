@@ -77,7 +77,9 @@ def _drift(a: Path, b: Path) -> int:
     import difflib
 
     diff = difflib.unified_diff(_significant_lines(a), _significant_lines(b), lineterm="", n=0)
-    return sum(1 for line in diff if line.startswith(("+", "-")) and not line.startswith(("+++", "---")))
+    return sum(
+        1 for line in diff if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
+    )
 
 
 @pytest.mark.parametrize("name", sorted(DUPLICATE_PAIRS))
@@ -175,13 +177,14 @@ def test_both_packages_pin_the_same_tool_versions() -> None:
     """
     pins = {}
     for pkg in ("Node", "Scheduler"):
-        data = tomllib.loads((REPO_ROOT / "packages" / pkg.lower() / "pyproject.toml").read_text(encoding="utf-8"))
+        data = tomllib.loads(
+            (REPO_ROOT / "packages" / pkg.lower() / "pyproject.toml").read_text(encoding="utf-8")
+        )
         dev = data["project"]["optional-dependencies"]["dev"]
         pins[pkg] = sorted(d for d in dev if "==" in d)
 
     assert pins["Node"] == pins["Scheduler"], (
-        f"Pinned dev tools differ:\n  Node:      {pins['Node']}\n"
-        f"  Scheduler: {pins['Scheduler']}"
+        f"Pinned dev tools differ:\n  Node:      {pins['Node']}\n  Scheduler: {pins['Scheduler']}"
     )
     assert pins["Node"], "dev tools must be pinned exactly (==), not floored (>=)"
 

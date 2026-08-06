@@ -126,7 +126,7 @@ async def test_execute_in_sandbox_integration() -> None:
         # Verify the file was written to the isolated worktree on host filesystem
         host_file_path = os.path.join(path, "sandbox_file.txt")
         assert os.path.exists(host_file_path)
-        with open(host_file_path) as f:
+        with open(host_file_path, encoding="utf-8") as f:
             assert f.read() == "hello from sandbox"
 
         # 2. Verify that network is blocked (--network none)

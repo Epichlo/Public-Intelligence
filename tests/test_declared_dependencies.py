@@ -47,7 +47,9 @@ def declared_dependencies(package: str) -> set[str]:
     at `uvicorn[standard]`, reporting six false positives -- so the real state was
     briefly hidden behind a broken measurement of it.
     """
-    data = tomllib.loads((REPO_ROOT / "packages" / package / "pyproject.toml").read_text(encoding="utf-8"))
+    data = tomllib.loads(
+        (REPO_ROOT / "packages" / package / "pyproject.toml").read_text(encoding="utf-8")
+    )
     return {
         spec.split(">")[0].split("<")[0].split("=")[0].split("[")[0].strip().lower()
         for spec in data["project"]["dependencies"]

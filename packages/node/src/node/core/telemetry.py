@@ -71,7 +71,10 @@ def get_ram_usage_bytes() -> int:
             return 8 * 1024 * 1024 * 1024
     elif sys.platform == "linux":
         try:
-            with open("/proc/meminfo") as f:
+            # Explicit encoding: without it this reads in the platform default, which
+            # is not UTF-8 under every locale. /proc/meminfo is ASCII, but relying on
+            # the default is the exact fault that broke ROADMAP 2.7 on Windows CI.
+            with open("/proc/meminfo", encoding="utf-8") as f:
                 lines = f.readlines()
             mem_total = 0
             mem_free = 0
