@@ -93,7 +93,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("scheduler_stopped")
 
 
-def create_app(store: SchedulerStore | None = None) -> FastAPI:
+def create_app(
+    store: SchedulerStore | None = None,
+    cors_origins: list[str] | None = None,
+) -> FastAPI:
     """Create and configure the FastAPI application.
 
     Args:
@@ -101,6 +104,12 @@ def create_app(store: SchedulerStore | None = None) -> FastAPI:
             only, and is what every existing test gets. The deployed app is built
             at the bottom of this module with `build_store()`; see its docstring
             for why the settings lookup lives there and not here.
+        cors_origins: Browser origins allowed to read this service's responses
+            cross-origin. `None` or empty installs no CORS middleware at all.
+            Injected for the same reason `store` is: middleware is constructed
+            here, at app-construction time, so a `dependency_overrides` entry would
+            arrive too late to affect it and reading the environment here would let
+            an ambient `.env` change what the test suite exercises.
     """
     app = FastAPI(
         title="Public Intelligence Scheduler",
@@ -109,13 +118,26 @@ def create_app(store: SchedulerStore | None = None) -> FastAPI:
         lifespan=lifespan,
     )
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # No origins means the middleware is NOT installed, rather than installed with
+    # an empty list. No CORS headers at all is the honest expression of "no
+    # cross-origin access"; an empty allow_origins still answers preflights and
+    # invites a reader to think something is configured.
+    #
+    # What was here before was `allow_origins=["*"]` with `allow_credentials=True`,
+    # which does NOT send a wildcard -- Starlette reflects the caller's own Origin
+    # and sets allow-credentials, so every origin on the internet could read these
+    # responses. See specs/close-the-open-http-surface.md.
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_credentials=True,
+            # Named rather than `*`: with an exact origin list a wildcard is far
+            # less dangerous, but it leaves the next reader unable to tell which
+            # was reasoned about. These are the three headers the API accepts.
+            allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type", "X-Network-Auth-Token"],
+        )
 
     app.state.store = store
     app.state.registry = NodeRegistry(store=store)
@@ -143,4 +165,4 @@ def create_app(store: SchedulerStore | None = None) -> FastAPI:
     return app
 
 
-app = create_app(store=build_store())
+app = create_app(store=build_store(), cors_origins=get_settings().cors_allow_origins)

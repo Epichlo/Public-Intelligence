@@ -34,7 +34,7 @@ class TaskSubmission(BaseModel):
     )
 
 
-def verify_jwt(request: Request, authorization: str = Header(...)) -> dict[str, Any]:
+def verify_jwt(request: Request, authorization: str | None = Header(None)) -> dict[str, Any]:
     """Dependency injection validator to check asymmetric JWT signature.
 
     Args:
@@ -46,7 +46,18 @@ def verify_jwt(request: Request, authorization: str = Header(...)) -> dict[str, 
 
     Raises:
         HTTPException (401) on validation error.
+
+    The header is optional *to FastAPI* and required by this function. With
+    `Header(...)` FastAPI rejected a request carrying no `Authorization` before this
+    ran, answering **422 Unprocessable Entity** -- a validation error -- for what is
+    plainly an authentication failure. Every route depending on this was affected,
+    including `/v1/chat/completions`. See specs/close-the-open-http-surface.md.
     """
+    if authorization is None:
+        raise HTTPException(
+            status_code=401, detail="Missing Authorization header. Must be Bearer <JWT>."
+        )
+
     if not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=401, detail="Invalid Authorization header format. Must be Bearer <JWT>."

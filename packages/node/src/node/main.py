@@ -31,24 +31,46 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await runtime.stop()
 
 
-app = FastAPI(
-    title="Public Intelligence Node",
-    description="Compute worker for the Public Intelligence network.",
-    version="0.1.0",
-    lifespan=lifespan,
-)
+def create_app(cors_origins: list[str] | None = None) -> FastAPI:
+    """Build the Node's FastAPI application.
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    Args:
+        cors_origins: Browser origins allowed to read this Node's responses
+            cross-origin. `None` or empty installs no CORS middleware at all.
+            Injected rather than read from settings here, so a value in a host's
+            `.env` cannot change what the test suite exercises.
 
-# Mount the routes
-app.include_router(router)
-app.include_router(control_router)
+    Extracted from module scope by ROADMAP 2.3. What was here before was
+    `allow_origins=["*"]` with `allow_credentials=True`, which does NOT send a
+    wildcard -- Starlette reflects the caller's own Origin back and sets
+    allow-credentials. A Node runs on a host's own machine, usually on localhost,
+    so that made it readable from any page that host visited in a browser.
+    See specs/close-the-open-http-surface.md.
+    """
+    application = FastAPI(
+        title="Public Intelligence Node",
+        description="Compute worker for the Public Intelligence network.",
+        version="0.1.0",
+        lifespan=lifespan,
+    )
+
+    # Not installed at all when there are no origins -- see the Scheduler's
+    # create_app for why that is different from installing it with an empty list.
+    if cors_origins:
+        application.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type", "X-Network-Auth-Token"],
+        )
+
+    application.include_router(router)
+    application.include_router(control_router)
+    return application
+
+
+app = create_app(cors_origins=settings.cors_allow_origins)
 
 
 def cli_main() -> None:

@@ -147,6 +147,20 @@ class Settings(BaseSettings):
         default=True,
         description="Enable/disable local LAN multicast scouting.",
     )
+    # Mirrored by `scheduler.core.config.Settings.cors_allow_origins` -- two FastAPI
+    # apps with separate settings classes, so there is no shared module to change.
+    # If this field or its validator changes, change that one too.
+    cors_allow_origins: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("NODE_CORS_ALLOW_ORIGINS", "CORS_ALLOW_ORIGINS"),
+        description=(
+            "Browser origins permitted to read this Node's responses cross-origin. "
+            "Empty (the default) installs no CORS middleware at all, which is correct "
+            "for every deployment today: the dashboard reaches this service through "
+            "the website's server-side proxy, never from the browser. "
+            "See specs/close-the-open-http-surface.md."
+        ),
+    )
 
     model_config = SettingsConfigDict(
         env_prefix="NODE_",
@@ -217,7 +231,32 @@ class Settings(BaseSettings):
             raise ValueError("Model refresh interval must be between 1 and 3600 seconds inclusive.")
         return v
 
-    @field_validator("zenoh_peer_endpoints", "bootstrap_routers", mode="before")
+    @field_validator("cors_allow_origins")
+    @classmethod
+    def reject_wildcard_origin(cls, v: list[str]) -> list[str]:
+        """Refuse `*`, which does not mean what an operator setting it expects.
+
+        Starlette does not send `Access-Control-Allow-Origin: *` when credentials
+        are enabled -- it **reflects the caller's own Origin** and sets
+        `Access-Control-Allow-Credentials: true`. So `*` is not a permissive-but-
+        anonymous setting; it is "every origin, individually, with credentials",
+        which is the exact defect ROADMAP 2.3 exists to remove. Failing at boot with
+        this message beats a service that reads as configured and answers everyone.
+
+        Mirrored by `scheduler.core.config.Settings.reject_wildcard_origin`.
+        """
+        if any(origin.strip() == "*" for origin in v):
+            msg = (
+                "cors_allow_origins must not contain '*': with credentials enabled "
+                "Starlette does not send a wildcard, it reflects the caller's Origin "
+                "back, allowing every origin individually. List the origins instead."
+            )
+            raise ValueError(msg)
+        return v
+
+    @field_validator(
+        "zenoh_peer_endpoints", "bootstrap_routers", "cors_allow_origins", mode="before"
+    )
     @classmethod
     def parse_zenoh_peer_endpoints(cls, v: Any) -> list[str]:
         """Parse list of peer endpoints/bootstrap routers from string, JSON, or list.
@@ -274,6 +313,7 @@ class Settings(BaseSettings):
                 if field_name in (
                     "zenoh_peer_endpoints",
                     "bootstrap_routers",
+                    "cors_allow_origins",
                 ):
                     try:
                         return json.loads(value)
@@ -291,6 +331,7 @@ class Settings(BaseSettings):
                 if field_name in (
                     "zenoh_peer_endpoints",
                     "bootstrap_routers",
+                    "cors_allow_origins",
                 ):
                     try:
                         return json.loads(value)

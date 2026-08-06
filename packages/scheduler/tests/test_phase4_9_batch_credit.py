@@ -1,6 +1,11 @@
 """Unit and integration tests for Phase 4.9 Asynchronous Batch Processing and Credit Ledger."""
 
+from datetime import UTC, datetime, timedelta
+
+import jwt
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 
 from scheduler.core.credit_ledger import CreditLedger
@@ -31,8 +36,31 @@ async def test_credit_ledger_accrual_and_deduction() -> None:
 
 
 def test_batch_processing_api_endpoints() -> None:
-    """Verify POST /v1/batch submission and GET /v1/batch/{batch_id} status lookup."""
+    """Verify POST /v1/batch submission and GET /v1/batch/{batch_id} status lookup.
+
+    Now carries a credential. Both routes had no auth dependency when this test was
+    written, so it passed anonymously; ROADMAP 2.4 closed that. See
+    specs/close-the-open-http-surface.md. What this test covers that
+    `test_batch_auth.py` does not is the response shape for a multi-item batch.
+    """
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    public_pem = (
+        private_key.public_key()
+        .public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        .decode()
+    )
+    token = jwt.encode(
+        {"tenant_id": "tenant-batch", "exp": datetime.now(UTC) + timedelta(hours=1)},
+        private_key,
+        algorithm="RS256",
+    )
+    auth = {"Authorization": f"Bearer {token}"}
+
     app = create_app()
+    app.state.jwt_public_key = public_pem
     client = TestClient(app)
 
     payload = {
@@ -54,7 +82,7 @@ def test_batch_processing_api_endpoints() -> None:
     }
 
     # Submit batch job
-    response = client.post("/v1/batch", json=payload)
+    response = client.post("/v1/batch", json=payload, headers=auth)
     assert response.status_code == 202
     data = response.json()
 
@@ -65,7 +93,7 @@ def test_batch_processing_api_endpoints() -> None:
     batch_id = data["batch_id"]
 
     # Query status
-    status_resp = client.get(f"/v1/batch/{batch_id}")
+    status_resp = client.get(f"/v1/batch/{batch_id}", headers=auth)
     assert status_resp.status_code == 200
     status_data = status_resp.json()
 

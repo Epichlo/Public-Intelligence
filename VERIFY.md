@@ -83,21 +83,25 @@ let them mask a *new* one, and do not report them as clean:
 
 | Location | Issue |
 |---|---|
-| `packages/node/src/node/core/telemetry.py:189`, `packages/scheduler/src/scheduler/core/zenoh_router.py:278` | `TELEMETRY_SECRET_KEY` defaults to a constant published in this repo (ROADMAP 2.2) |
+| `packages/node/src/node/core/telemetry.py:189`, `packages/scheduler/src/scheduler/core/zenoh_router.py:278` | `TELEMETRY_SECRET_KEY` defaults to a constant published in this repo. **ROADMAP 2.7**, not 2.2 — 2.2 said "rotate it", which closes nothing, because the mesh heartbeat path beside it takes no authentication at all and reaches the same registry state, and the key is fleet-wide symmetric so any participant can forge for any other node regardless. |
 | `packages/scheduler/src/scheduler/api/ingress.py:16` | hardcoded fallback RSA public key |
-| `packages/scheduler/src/scheduler/main.py:114`, `packages/node/src/node/main.py:43` | `allow_origins=["*"]` with `allow_credentials=True` (ROADMAP 2.3) |
 
-Two rows previously listed here were **removed on 2026-08-03 because they are fixed**,
-verified by the greps in this step returning no hit for either:
+Rows previously listed here that were **removed because they are fixed**, each verified
+by the greps in this step returning no hit:
 
-- `ingress.py:56` `Bearer dev_*` → `tenant-dev`, and the website proxy's default
-  `Bearer dev_token`. Both were removed in commit `9f2c264`; `ingress.py` now verifies
+- **2026-08-03** — `ingress.py:56` `Bearer dev_*` → `tenant-dev`, and the website proxy's
+  default `Bearer dev_token`. Both removed in commit `9f2c264`; `ingress.py` now verifies
   RS256 with no bypass branch, and the proxy rejects an unauthenticated request rather
   than synthesising a credential.
+- **2026-08-06** — `allow_origins=["*"]` with `allow_credentials=True` in both services
+  (ROADMAP 2.3). The CORS grep in this step now returns only the replacement code and its
+  comments; there is no `allow_origins=["*"]` left in either package. Worth recording *why*
+  this sat here so long as a low-priority row: it was described as "rejected by browsers",
+  i.e. as failing safe. It did not. Starlette reflects the caller's `Origin` rather than
+  sending a wildcard when credentials are on, so it worked for every origin that asked.
 
-The `zenoh_router.py` line number moved from 255 to 280 and then to 278; `scheduler/main.py`
-moved from 76 to 114 when persistence wiring was added above it. Both issues are unchanged —
-only the lines they sit on moved.
+The `zenoh_router.py` line number moved from 255 to 280 and then to 278. The issue is
+unchanged — only the line it sits on moved.
 
 ## 4. Check for duplicated logic before adding new files
 
@@ -158,6 +162,105 @@ the code — not the file.
 ## Verdict
 
 Fill this in. It is the whole point of the file.
+
+```
+Date:        2026-08-06
+Change:      ROADMAP 2.3 + 2.4 — close the open HTTP surface. CORS stops handing
+             responses to every origin that asks; /v1/batch stops being anonymous.
+Spec:        specs/close-the-open-http-surface.md
+
+  1. Test suite ......... PASS
+  2. Spec match ......... PASS
+  3. Secrets & bypasses . PASS
+  4. Duplication ........ PASS
+  5. Nothing tracked .... PASS
+  6. STATUS regenerated . PASS
+
+VERDICT: PASS
+
+Reasons:
+- 1. `./scripts/verify.sh` → `PASS 12 checks`, this session. Scheduler 272 passed,
+  Node 280 passed / 1 skipped, root E2E 57 passed. +18 Scheduler (9 CORS, 9 batch
+  auth), +7 Node (CORS). Two existing tests were edited because the behaviour they
+  asserted changed: `test_phase4_9_batch_credit.py::test_batch_processing_api_endpoints`
+  now carries a JWT (it passed anonymously, which was the bug), and one of my own
+  new tests was corrected — see 1b.
+- 1a. Red observed first and for the right reasons: 15 of the 18 new Scheduler
+  tests failed against pre-change code. The 3 that passed are guards, not evidence,
+  and are named rather than counted as reds:
+    * `test_the_starlette_behaviour_this_fix_assumes_is_still_true` deliberately
+      pins the *old* middleware's behaviour, so it must pass before and after. It
+      exists so a Starlette upgrade that changed the reflection behaviour fails the
+      suite instead of quietly invalidating this spec's reasoning.
+    * `test_a_valid_token_can_submit` and
+      `test_the_submitting_tenant_can_read_its_own_batch` passed because there was
+      no auth at all, so every request succeeded. Regression protection.
+  The Node's 7 could not go red as a suite: `node.main` had no `create_app` to call.
+  Covered by mutation instead, below.
+- 1b. Mutation-tested, 9 mutations. 7 went red first time; the two that did not are
+  recorded because one was a real weakness and one was my own bad mutation:
+    * `allow_headers` back to `["*"]` → **STILL GREEN**. Genuinely weak test. It
+      asserted on the `access-control-allow-headers` response header, which cannot
+      distinguish the two: with an explicit list Starlette returns the list, with
+      `*` it echoes whatever was requested, so both look reasonable. Rewritten to
+      preflight a header that is NOT on the list and require a 400. Then red.
+    * `verify_jwt` back to 422 → **STILL GREEN**, and that was the mutation's
+      fault: it set `authorization = ''` inside the function, which still fails the
+      Bearer check and 401s. The original behaviour was FastAPI rejecting the
+      request *before* the function ran, which needs the `Header(...)` signature
+      back. Re-run correctly, 3 tests failed.
+  The other seven, all red: wildcard CORS restored; `*` accepted by the settings
+  validator; batch ownership check removed; 403 instead of 404; batch store back to
+  module scope; and the two above once corrected.
+- 2. Every box under "Done looks like" is ticked. Nothing under "Out of scope" was
+  built: the other unauthenticated reads are untouched, batch jobs are still not
+  persisted, `/v1/batch` still fabricates its results and dispatches nothing, batch
+  is still not rate-limited, and the fallback RSA key is still there.
+- 2a. Scope grew past the two roadmap lines in three places, each recorded in the
+  spec BEFORE the code was written, not retrofitted:
+    * batch **ownership**, because authentication alone gives "any valid token
+      reads every batch", which is not what 2.4 is for;
+    * `_BATCH_TASKS` → `app.state`, required for that ownership check to be
+      per-app, and the specific blocker 2.1 recorded against batch persistence;
+    * `verify_jwt`'s 422, because 2.4's own rejection test would otherwise have had
+      to assert the wrong status code.
+- 2b. The roadmap's premise for 2.3 was WRONG and is corrected in the roadmap
+  itself. It said the config was "rejected by browsers" — failing safe. Measured
+  against the real middleware this session, Starlette reflects the caller's Origin
+  instead of sending a wildcard, so it worked for every origin that asked. A
+  config that fails open was sitting behind a line describing one that fails shut.
+- 3. Three hits, all pre-existing and all tabled in step 3: the two
+  `TELEMETRY_SECRET_KEY` defaults and the fallback RSA public key, plus the two
+  benign `AliasChoices` env-var-name hits. **The CORS row is gone from that table**
+  — the grep returns no `allow_origins=["*"]` in either package, only the
+  replacement and its comments. The auth-bypass grep returns one hit, prose in a
+  website page. No new secret, credential, or bypass; this change only removes
+  access.
+- 3a. Recorded, not fixed, and filed as ROADMAP 2.6: `GET /nodes`,
+  `GET /nodes/{id}`, `GET /v1/models`, `GET /v1/models/{id}` and `GET /status` take
+  no auth dependency. Closing CORS cut the blast radius from "any page an operator
+  visits" to "anyone who can reach the host". It did not close it.
+- 4. No new duplicate module. The CORS config is necessarily near-identical in
+  `node/main.py` and `scheduler/main.py`, and the two settings fields and validators
+  likewise — these are two FastAPI apps with separate settings classes, not one of
+  the six known pairs, and there is no shared module to change. Each of the four
+  sites carries a comment naming its twin. `tests/test_source_parity.py` → 14
+  passed, budgets unchanged.
+- 5. `git ls-files | grep -iE "\.env$|..."` → clean; `.env` ignored. Both
+  `.env.example` files gained documentation, no values.
+- 6. Regenerated by `scripts/generate_status.py`; its counts (272/280/57) match
+  step 1 exactly.
+
+Not claimed: nothing here was exercised against a real browser. CORS behaviour is
+asserted against Starlette's middleware through the ASGI test client, which is
+where the policy is decided — but "Chrome actually refuses to read this" is
+inferred from the spec, not observed. The JWT path uses a locally generated RSA key
+pair, not a real issued credential, because there is no way to issue one yet (3.1).
+```
+
+---
+
+## Previous verdict — ROADMAP 2.1
 
 ```
 Date:        2026-08-06

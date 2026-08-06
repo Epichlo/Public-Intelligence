@@ -4,17 +4,17 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-06 11:01 UTC
+**Generated:** 2026-08-06 11:39 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 254 | 0 | 0 | 12.41s |
-| Node | PASS | 273 | 0 | 1 | 3.36s |
-| Root E2E | PASS | 57 | 0 | 0 | 22.08s |
-| **Total** | **PASSING** | **584** | **0** | **1** | |
+| Scheduler | PASS | 272 | 0 | 0 | 12.63s |
+| Node | PASS | 280 | 0 | 1 | 3.41s |
+| Root E2E | PASS | 57 | 0 | 0 | 22.07s |
+| **Total** | **PASSING** | **609** | **0** | **1** | |
 
 Reproduce:
 
@@ -26,24 +26,24 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `f98d432` feat: node survives a Scheduler outage (roadmap 1.6)
-- **Author / date:** Atharv Deshpande — 2026-08-05 16:49:39 +0530
+- **Last commit:** `1250c0b` feat: Scheduler state survives a restart (roadmap 2.1)
+- **Author / date:** Atharv Deshpande — 2026-08-06 16:34:12 +0530
 - **Branch:** main
-- **Total commits:** 199
+- **Total commits:** 200
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence.git (fetch)
-- **Working tree:** 14 uncommitted change(s)
+- **Working tree:** 15 uncommitted change(s)
 
 ```
   M ROADMAP.md
    M VERIFY.md
+   M packages/node/.env.example
+   M packages/node/src/node/core/configuration.py
+   M packages/node/src/node/main.py
    M packages/scheduler/.env.example
-   M packages/scheduler/src/scheduler/api/nodes.py
+   M packages/scheduler/src/scheduler/api/batch.py
+   M packages/scheduler/src/scheduler/api/ingress.py
    M packages/scheduler/src/scheduler/core/config.py
-   M packages/scheduler/src/scheduler/core/credit_ledger.py
    M packages/scheduler/src/scheduler/main.py
-   M packages/scheduler/src/scheduler/registry/node_registry.py
-   M packages/scheduler/tests/test_mesh_dispatch_routing.py
-   M packages/scheduler/tests/test_phase4_9_batch_credit.py
 ```
 
 ## CI
