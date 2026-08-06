@@ -83,7 +83,6 @@ let them mask a *new* one, and do not report them as clean:
 
 | Location | Issue |
 |---|---|
-| `packages/node/src/node/core/telemetry.py:189`, `packages/scheduler/src/scheduler/core/zenoh_router.py:278` | `TELEMETRY_SECRET_KEY` defaults to a constant published in this repo. **ROADMAP 2.7**, not 2.2 — 2.2 said "rotate it", which closes nothing, because the mesh heartbeat path beside it takes no authentication at all and reaches the same registry state, and the key is fleet-wide symmetric so any participant can forge for any other node regardless. |
 | `packages/scheduler/src/scheduler/api/ingress.py:16` | hardcoded fallback RSA public key |
 
 Rows previously listed here that were **removed because they are fixed**, each verified
@@ -100,8 +99,15 @@ by the greps in this step returning no hit:
   i.e. as failing safe. It did not. Starlette reflects the caller's `Origin` rather than
   sending a wildcard when credentials are on, so it worked for every origin that asked.
 
-The `zenoh_router.py` line number moved from 255 to 280 and then to 278. The issue is
-unchanged — only the line it sits on moved.
+- **2026-08-06** — `TELEMETRY_SECRET_KEY` defaulting to a constant published in this repo
+  (ROADMAP 2.7, which superseded 2.2's "rotate it"). Rotating would have closed nothing:
+  the mesh heartbeat path beside it took no authentication at all and reached the same
+  registry state, and the key was fleet-wide symmetric so any participant could forge for
+  any other node regardless. Both services now key mesh envelopes on each node's own
+  per-install credential, and the setting is gone from the services and every install path.
+  Pinned by `test_the_fleet_wide_secret_is_no_longer_used_anywhere`, which matches USE
+  (`"TELEMETRY_SECRET_KEY"` or `TELEMETRY_SECRET_KEY=`) rather than mention, so the files
+  explaining what it used to be keep their explanation.
 
 ## 4. Check for duplicated logic before adding new files
 
@@ -132,6 +138,7 @@ needs the same change:
 | `packages/node/src/node/core/transport.py` ↔ `packages/scheduler/.../transport.py` | ~508 lines, formatting drift |
 | `packages/node/src/node/core/autonomous_orchestrator.py` ↔ `packages/scheduler/.../autonomous_orchestrator.py` | **already diverged** (`Enum` vs `StrEnum`) |
 | `src/shared/storage/` ↔ `packages/node/src/shared/storage/` | third copy of the artifact store |
+| `packages/node/src/node/core/mesh_auth.py` ↔ `packages/scheduler/.../mesh_auth.py` | **byte-identical, budget 0** — added deliberately by 2.7. Held by `tests/test_mesh_protocol_parity.py`, which also round-trips a real envelope sealed by one copy through the other. If these drift, the Scheduler silently stops accepting real nodes. |
 
 ## 5. Confirm no secrets or .env files are tracked
 
@@ -162,6 +169,108 @@ the code — not the file.
 ## Verdict
 
 Fill this in. It is the whole point of the file.
+
+```
+Date:        2026-08-06
+Change:      ROADMAP 2.7 (absorbing 2.5) — nothing unauthenticated may change
+             registry state from the Zenoh mesh.
+Spec:        specs/authenticated-mesh-ingress.md
+
+  1. Test suite ......... PASS
+  2. Spec match ......... PASS
+  3. Secrets & bypasses . PASS
+  4. Duplication ........ PASS
+  5. Nothing tracked .... PASS
+  6. STATUS regenerated . PASS
+
+VERDICT: PASS
+
+Reasons:
+- 1. `./scripts/verify.sh` -> `PASS 13 checks`, this session. Scheduler 286 passed
+  (+14, all in `test_mesh_ingress_auth.py`), Node 280 passed / 1 skipped, root E2E
+  73 passed (+5 in `test_mesh_protocol_parity.py`). Seven pre-existing tests were
+  rewritten because the behaviour they asserted changed, not because they broke:
+  three in `test_zenoh_mesh_reachability.py`, two in `test_zenoh_integration.py`,
+  and one each in `test_runtime.py` and `test_zenoh_client.py`.
+- 1a. Red observed first: 9 of the 14 new tests failed against pre-change code.
+  The 5 that passed did so VACUOUSLY -- the old handlers did not understand the new
+  envelope shape, so they rejected it for the wrong reason -- and are named here
+  rather than counted as evidence. Everything below is mutation evidence instead.
+- 1b. THE MUTATION RUN CHANGED THE DESIGN, which is the main thing to know about
+  this pass. Three mutations of the crypto stayed green. Investigating each:
+    * removing the HMAC verification changed nothing, because AES-GCM is an AEAD
+      and its own tag already rejected the same envelopes. The separate SHA-256
+      HMAC I had ported from the old envelope was doing NO WORK.
+    * dropping `node_id` from the signature changed nothing, because an explicit
+      field check caught it first.
+    * dropping `purpose` from key derivation changed nothing, for a while, because
+      of a *different* bug in my mutation harness (below).
+  Rather than ship redundant crypto that no test could distinguish, the module was
+  rewritten: the HMAC is gone, and `node_id` and `purpose` are now AES-GCM
+  ASSOCIATED DATA, so the binding is enforced by the cipher. Re-mutated after:
+  removing purpose from BOTH the key and the associated data -> RED; replacing the
+  per-node key with a constant -> RED; and the three behavioural mutations
+  (liveliness marks reachable again, deathrattle unregisters directly, sweep does
+  nothing) -> RED.
+- 1c. HONEST NOTE, and it matters more than the rest. Cross-topic replay is stopped
+  by the KEY LOOKUP -- the Scheduler derives the key from the node owning the topic
+  -- not by anything this change added. Removing BOTH the associated-data binding
+  and the explicit field check still leaves that test green. The binding is defence
+  in depth against a future change that reintroduced shared keys. The test's
+  docstring originally claimed otherwise and was corrected rather than left
+  overstating what protects what.
+- 1d. HARNESS BUG, recorded because it briefly produced a false result: my first
+  mutation script rewrote a source file and ran pytest within the same second, so
+  `__pycache__` served bytecode compiled from the PRE-mutation source and three
+  mutations reported "still green" when they were never applied. Re-run with
+  `-B`, `PYTHONDONTWRITEBYTECODE=1`, a cleared `__pycache__` and a 1.1s pause, the
+  purpose mutation went red. Any mutation result in this session that came back
+  green was re-checked this way.
+- 2. Every box under "Done looks like" is ticked. Nothing under "Out of scope" was
+  built: the Zenoh transport itself is still plaintext, there is still no online
+  rekey, replay inside the 30s freshness window is still possible, `packages/shared/`
+  still does not exist, and the observability half of 2.5 is untouched.
+- 2a. Scope grew, deliberately and recorded in the spec BEFORE the code:
+    * **liveliness**, not in 2.2's framing at all, was the worst of the three holes
+      -- a DELETE took the node id from a key expression the publisher chose and
+      called `unregister_node`, so anyone on the mesh could evict any host;
+    * **the core of 2.5**, because removing that write with no time-based
+      replacement would have traded an eviction hole for dead hosts advertised
+      forever. Verified that stale-eviction did NOT exist before claiming it: no
+      sweep, no `last_seen` on nodes anywhere in the Scheduler. ROADMAP 2.5's own
+      text asserted otherwise and is corrected.
+- 2b. Design reversal, stated because I recommended the opposite when scoping this:
+  I argued the shared crypto should force `packages/shared/` into existence. ROADMAP
+  2.8 changed the facts -- `verify_install.sh` now really runs
+  `pip install -e packages/node`, so a `pi-shared` dependency pip cannot resolve
+  from a path would break a property that is now tested. Two byte-identical copies
+  instead, at drift budget 0 in `tests/test_mesh_protocol_parity.py`, which also
+  round-trips a real envelope sealed by one copy through the other.
+- 3. Two hits, both pre-existing, and **the `TELEMETRY_SECRET_KEY` row is now GONE
+  from the table in step 3** -- the published constant is removed from both
+  services, `install.sh`, `install.ps1` and `docker-compose.test.yml`, pinned by a
+  test that matches USE rather than mention. What remains is the fallback RSA public
+  key and the two benign `AliasChoices` hits. No new secret or bypass; this change
+  only removes trust.
+- 4. Adds `mesh_auth.py` as a SIXTH duplicated pair, deliberately, at budget 0 --
+  stricter than any existing pair. It also removes the old `derive_keys` /
+  `encrypt_payload` from `telemetry.py` rather than leaving them beside it.
+  `tests/test_source_parity.py` passes with budgets unchanged.
+- 5. `git ls-files | grep -iE "\.env$|..."` -> clean; `.env` ignored.
+- 6. Regenerated; counts (286/280/73) match step 1.
+
+Not claimed: no test runs two machines, and none of this was exercised against a
+hostile publisher on a real Zenoh network -- forgery is simulated by sealing with
+the wrong key and by publishing on the wrong topic, in-process. What is proven is
+that the Scheduler's handlers reject those inputs and that the node's real
+serialiser round-trips through the Scheduler's real verifier. Replay of a captured
+VALID envelope inside the 30s freshness window is still accepted, by design, and is
+recorded as out of scope rather than tested.
+```
+
+---
+
+## Previous verdict — ROADMAP 2.8
 
 ```
 Date:        2026-08-06

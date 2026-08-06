@@ -242,7 +242,6 @@ configure_environment() {
     fi
 
     local NODE_ID_VAL="node-host-${HOSTNAME_RAW}"
-    local TELEMETRY_KEY_VAL="pi_telemetry_secure_default_secret_key"
 
     # Per-install credential for the node's control API. The node binds 0.0.0.0,
     # so without this every machine on the LAN could stop the node or spend its
@@ -263,7 +262,6 @@ configure_environment() {
         log_dry_run "  NODE_BOOTSTRAP_ROUTERS=[\"tcp/bootstrap.public-intelligence.net:7447\"]"
         log_dry_run "  NODE_ZENOH_GOSSIP_SCOUTING=true"
         log_dry_run "  NODE_ZENOH_MULTICAST_SCOUTING=true"
-        log_dry_run "  TELEMETRY_SECRET_KEY=${TELEMETRY_KEY_VAL}"
         log_dry_run "  NODE_NETWORK_AUTH_TOKEN=<64-char random hex, generated per install>"
         return 0
     fi
@@ -282,7 +280,6 @@ NODE_OLLAMA_HOST=http://localhost:11434
 NODE_BOOTSTRAP_ROUTERS=["tcp/bootstrap.public-intelligence.net:7447"]
 NODE_ZENOH_GOSSIP_SCOUTING=true
 NODE_ZENOH_MULTICAST_SCOUTING=true
-TELEMETRY_SECRET_KEY=${TELEMETRY_KEY_VAL}
 NODE_NETWORK_AUTH_TOKEN=${AUTH_TOKEN_VAL}
 EOF
         chmod 600 "$ENV_FILE" 2>/dev/null || true

@@ -34,7 +34,6 @@ services:
       # Both services must agree on this or telemetry envelopes fail to
       # decrypt. It otherwise defaults to a value published in this repo
       # (ROADMAP 2.2), so local runs are kept off that default.
-      - TELEMETRY_SECRET_KEY=local-dev-telemetry-key
     networks:
       - pi-test-net
     healthcheck:
@@ -57,7 +56,6 @@ services:
       - NODE_PORT=8080
       - NODE_SCHEDULER_URL=http://scheduler:8000
       - NODE_NETWORK_AUTH_TOKEN=local-dev-token
-      - TELEMETRY_SECRET_KEY=local-dev-telemetry-key
       - NODE_ZENOH_LISTEN_ENDPOINTS=["tcp/0.0.0.0:7448"]
       - NODE_BOOTSTRAP_ROUTERS=["tcp/scheduler:7447"]
     depends_on:
@@ -79,7 +77,6 @@ services:
       - NODE_PORT=8080
       - NODE_SCHEDULER_URL=http://scheduler:8000
       - NODE_NETWORK_AUTH_TOKEN=local-dev-token
-      - TELEMETRY_SECRET_KEY=local-dev-telemetry-key
       - NODE_ZENOH_LISTEN_ENDPOINTS=["tcp/0.0.0.0:7449"]
       - NODE_BOOTSTRAP_ROUTERS=["tcp/scheduler:7447"]
     depends_on:

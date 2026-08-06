@@ -1,12 +1,14 @@
 """Integration tests for the Zenoh router heartbeat transport."""
 
 import asyncio
+import base64
 import json
 from datetime import UTC, datetime
 
 import pytest
 import zenoh
 
+from scheduler.core.mesh_auth import PURPOSE_HEARTBEAT, PURPOSE_TELEMETRY, seal
 from scheduler.core.zenoh_router import ZenohRouter
 from scheduler.models.node import GPUInfo, Node
 from scheduler.registry.node_registry import NodeRegistry
@@ -15,6 +17,12 @@ from scheduler.registry.node_registry import NodeRegistry
 @pytest.fixture()
 def node_id() -> str:
     return "test-node-zenoh"
+
+
+# Each node signs with its OWN credential since ROADMAP 2.7. These tests used to
+# build envelopes from a fleet-wide TELEMETRY_SECRET_KEY whose default is a
+# constant published in this repository.
+MESH_TOKEN = "per-install-credential-for-tests"
 
 
 @pytest.fixture()
@@ -35,6 +43,7 @@ def test_node(node_id: str) -> Node:
 async def test_zenoh_heartbeat_routing(test_node: Node, node_id: str) -> None:
     # 1. Create registry and register node
     registry = NodeRegistry()
+    await registry.set_node_token(node_id, MESH_TOKEN)
     await registry.register(test_node)
 
     # Configure Router session to listen on TCP loopback and disable multicast scouting
@@ -71,7 +80,17 @@ async def test_zenoh_heartbeat_routing(test_node: Node, node_id: str) -> None:
                 "vram_available_gb": 8.0,
             }
 
-            publisher.put(json.dumps(heartbeat_data))
+            # Sealed since ROADMAP 2.7. Publishing `json.dumps(heartbeat_data)`
+            # here -- which is what this test did, and what the node did -- is now
+            # dropped by the router as unauthenticated.
+            publisher.put(
+                seal(
+                    heartbeat_data,
+                    node_id=node_id,
+                    token=MESH_TOKEN,
+                    purpose=PURPOSE_HEARTBEAT,
+                )
+            )
             publisher.undeclare()  # type: ignore[no-untyped-call]
 
         # 4. Wait for the background Zenoh threads to deliver and process the heartbeat
@@ -105,6 +124,7 @@ async def test_zenoh_heartbeat_routing(test_node: Node, node_id: str) -> None:
 async def test_zenoh_liveliness_deathrattle(test_node: Node, node_id: str) -> None:
     # 1. Create registry and register node
     registry = NodeRegistry()
+    await registry.set_node_token(node_id, MESH_TOKEN)
     await registry.register(test_node)
     assert await registry.exists(node_id) is True
 
@@ -154,6 +174,7 @@ async def test_zenoh_liveliness_deathrattle(test_node: Node, node_id: str) -> No
 async def test_zenoh_telemetry_mapping(test_node: Node, node_id: str) -> None:
     # 1. Create registry and register node
     registry = NodeRegistry()
+    await registry.set_node_token(node_id, MESH_TOKEN)
     await registry.register(test_node)
 
     # Configure Router session to listen on TCP loopback
@@ -187,37 +208,14 @@ async def test_zenoh_telemetry_mapping(test_node: Node, node_id: str) -> None:
                 "gpu_utilization": 20.0,
                 "vram_usage_bytes": 4294967296,
             }
-            plaintext = json.dumps(telemetry_data)
+            sealed = seal(
+                telemetry_data,
+                node_id=node_id,
+                token=MESH_TOKEN,
+                purpose=PURPOSE_TELEMETRY,
+            )
 
-            # Encrypt and sign using pre-shared key
-            import base64
-            import hashlib
-            import hmac
-
-            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-            secret_key = "pi_telemetry_secure_default_secret_key"
-            secret_bytes = secret_key.encode("utf-8")
-            enc_key = hashlib.sha256(secret_bytes + b"-encryption").digest()
-            hmac_key = hashlib.sha256(secret_bytes + b"-hmac").digest()
-
-            aesgcm = AESGCM(enc_key)
-            iv = b"\x00" * 12
-            ciphertext = aesgcm.encrypt(iv, plaintext.encode("utf-8"), None)
-
-            iv_b64 = base64.b64encode(iv).decode("utf-8")
-            ciphertext_b64 = base64.b64encode(ciphertext).decode("utf-8")
-
-            message_to_sign = f"{iv_b64}:{ciphertext_b64}".encode()
-            sig = hmac.new(hmac_key, message_to_sign, hashlib.sha256).hexdigest()
-
-            envelope = {
-                "iv": iv_b64,
-                "ciphertext": ciphertext_b64,
-                "signature": sig,
-            }
-
-            publisher.put(json.dumps(envelope))
+            publisher.put(sealed)
             publisher.undeclare()  # type: ignore[no-untyped-call]
 
         # 4. Wait for background delivery
@@ -243,6 +241,7 @@ async def test_zenoh_telemetry_mapping(test_node: Node, node_id: str) -> None:
 async def test_zenoh_telemetry_tampered_payload_rejection(test_node: Node, node_id: str) -> None:
     # 1. Create registry and register node
     registry = NodeRegistry()
+    await registry.set_node_token(node_id, MESH_TOKEN)
     await registry.register(test_node)
 
     # Configure Router session to listen on TCP loopback
@@ -273,34 +272,21 @@ async def test_zenoh_telemetry_tampered_payload_rejection(test_node: Node, node_
                 "timestamp": datetime.now(UTC).isoformat(),
                 "cpu_utilization": 99.9,
             }
-            plaintext = json.dumps(telemetry_data)
-
-            # Encrypt and sign using pre-shared key
-            import base64
-            import hashlib
-
-            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-            secret_key = "pi_telemetry_secure_default_secret_key"
-            secret_bytes = secret_key.encode("utf-8")
-            enc_key = hashlib.sha256(secret_bytes + b"-encryption").digest()
-            hashlib.sha256(secret_bytes + b"-hmac").digest()
-
-            aesgcm = AESGCM(enc_key)
-            iv = b"\x00" * 12
-            ciphertext = aesgcm.encrypt(iv, plaintext.encode("utf-8"), None)
-
-            iv_b64 = base64.b64encode(iv).decode("utf-8")
-            ciphertext_b64 = base64.b64encode(ciphertext).decode("utf-8")
-
-            # Tampered signature
-            sig = "invalidhmacsignaturetoken12345"
-
-            envelope = {
-                "iv": iv_b64,
-                "ciphertext": ciphertext_b64,
-                "signature": sig,
-            }
+            # Seal it properly, THEN flip bytes in the ciphertext. Sealing with the
+            # wrong key would also be rejected, but by the key lookup -- this pins
+            # that a genuine envelope ALTERED IN FLIGHT is caught, which is the
+            # AES-GCM authentication tag doing its job.
+            envelope = json.loads(
+                seal(
+                    telemetry_data,
+                    node_id=node_id,
+                    token=MESH_TOKEN,
+                    purpose=PURPOSE_TELEMETRY,
+                )
+            )
+            tampered = bytearray(base64.b64decode(envelope["ciphertext"]))
+            tampered[0] ^= 0xFF
+            envelope["ciphertext"] = base64.b64encode(bytes(tampered)).decode()
 
             publisher.put(json.dumps(envelope))
             publisher.undeclare()  # type: ignore[no-untyped-call]
@@ -320,6 +306,7 @@ async def test_zenoh_telemetry_stale_timestamp_rejection(test_node: Node, node_i
     from datetime import timedelta
 
     registry = NodeRegistry()
+    await registry.set_node_token(node_id, MESH_TOKEN)
     await registry.register(test_node)
 
     router_config = zenoh.Config()
@@ -346,36 +333,14 @@ async def test_zenoh_telemetry_stale_timestamp_rejection(test_node: Node, node_i
                 "timestamp": stale_time.isoformat(),
                 "cpu_utilization": 50.0,
             }
-            plaintext = json.dumps(telemetry_data)
+            sealed = seal(
+                telemetry_data,
+                node_id=node_id,
+                token=MESH_TOKEN,
+                purpose=PURPOSE_TELEMETRY,
+            )
 
-            import base64
-            import hashlib
-            import hmac
-
-            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-            secret_key = "pi_telemetry_secure_default_secret_key"
-            secret_bytes = secret_key.encode("utf-8")
-            enc_key = hashlib.sha256(secret_bytes + b"-encryption").digest()
-            hmac_key = hashlib.sha256(secret_bytes + b"-hmac").digest()
-
-            aesgcm = AESGCM(enc_key)
-            iv = b"\x00" * 12
-            ciphertext = aesgcm.encrypt(iv, plaintext.encode("utf-8"), None)
-
-            iv_b64 = base64.b64encode(iv).decode("utf-8")
-            ciphertext_b64 = base64.b64encode(ciphertext).decode("utf-8")
-
-            message_to_sign = f"{iv_b64}:{ciphertext_b64}".encode()
-            sig = hmac.new(hmac_key, message_to_sign, hashlib.sha256).hexdigest()
-
-            envelope = {
-                "iv": iv_b64,
-                "ciphertext": ciphertext_b64,
-                "signature": sig,
-            }
-
-            publisher.put(json.dumps(envelope))
+            publisher.put(sealed)
             publisher.undeclare()  # type: ignore[no-untyped-call]
 
         await asyncio.sleep(0.5)
@@ -391,6 +356,7 @@ async def test_zenoh_telemetry_future_timestamp_rejection(test_node: Node, node_
     from datetime import timedelta
 
     registry = NodeRegistry()
+    await registry.set_node_token(node_id, MESH_TOKEN)
     await registry.register(test_node)
 
     router_config = zenoh.Config()
@@ -417,36 +383,14 @@ async def test_zenoh_telemetry_future_timestamp_rejection(test_node: Node, node_
                 "timestamp": future_time.isoformat(),
                 "cpu_utilization": 50.0,
             }
-            plaintext = json.dumps(telemetry_data)
+            sealed = seal(
+                telemetry_data,
+                node_id=node_id,
+                token=MESH_TOKEN,
+                purpose=PURPOSE_TELEMETRY,
+            )
 
-            import base64
-            import hashlib
-            import hmac
-
-            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-            secret_key = "pi_telemetry_secure_default_secret_key"
-            secret_bytes = secret_key.encode("utf-8")
-            enc_key = hashlib.sha256(secret_bytes + b"-encryption").digest()
-            hmac_key = hashlib.sha256(secret_bytes + b"-hmac").digest()
-
-            aesgcm = AESGCM(enc_key)
-            iv = b"\x00" * 12
-            ciphertext = aesgcm.encrypt(iv, plaintext.encode("utf-8"), None)
-
-            iv_b64 = base64.b64encode(iv).decode("utf-8")
-            ciphertext_b64 = base64.b64encode(ciphertext).decode("utf-8")
-
-            message_to_sign = f"{iv_b64}:{ciphertext_b64}".encode()
-            sig = hmac.new(hmac_key, message_to_sign, hashlib.sha256).hexdigest()
-
-            envelope = {
-                "iv": iv_b64,
-                "ciphertext": ciphertext_b64,
-                "signature": sig,
-            }
-
-            publisher.put(json.dumps(envelope))
+            publisher.put(sealed)
             publisher.undeclare()  # type: ignore[no-untyped-call]
 
         await asyncio.sleep(0.5)

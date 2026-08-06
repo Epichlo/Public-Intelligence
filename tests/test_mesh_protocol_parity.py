@@ -22,8 +22,18 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-NODE_COPY = REPO_ROOT / "packages" / "node" / "src" / "node" / "core" / "mesh_protocol.py"
-SCHEDULER_COPY = REPO_ROOT / "packages" / "scheduler" / "src" / "scheduler" / "core" / "mesh_protocol.py"
+NODE_COPY = (
+    REPO_ROOT / "packages" / "node" / "src" / "node" / "core" / "mesh_protocol.py"
+)
+SCHEDULER_COPY = (
+    REPO_ROOT
+    / "packages"
+    / "scheduler"
+    / "src"
+    / "scheduler"
+    / "core"
+    / "mesh_protocol.py"
+)
 
 NODE_ID = "node-parity"
 TOKEN = "parity-token"
@@ -44,7 +54,10 @@ def test_copies_are_byte_identical() -> None:
     node_bytes = NODE_COPY.read_bytes()
     scheduler_bytes = SCHEDULER_COPY.read_bytes()
 
-    assert hashlib.sha256(node_bytes).hexdigest() == hashlib.sha256(scheduler_bytes).hexdigest(), (
+    assert (
+        hashlib.sha256(node_bytes).hexdigest()
+        == hashlib.sha256(scheduler_bytes).hexdigest()
+    ), (
         "mesh_protocol.py has diverged between Node and Scheduler.\n"
         f"  {NODE_COPY.relative_to(REPO_ROOT)}: {len(node_bytes)} bytes\n"
         f"  {SCHEDULER_COPY.relative_to(REPO_ROOT)}: {len(scheduler_bytes)} bytes\n"
@@ -58,7 +71,11 @@ def test_a_request_signed_by_the_scheduler_verifies_on_the_node() -> None:
     from scheduler.core.mesh_protocol import encode_request as scheduler_encode
 
     payload = scheduler_encode(
-        node_id=NODE_ID, model="llama3", prompt="cross-package", stream=False, token=TOKEN
+        node_id=NODE_ID,
+        model="llama3",
+        prompt="cross-package",
+        stream=False,
+        token=TOKEN,
     )
     verified = node_verify(payload, node_id=NODE_ID, token=TOKEN)
 
@@ -86,7 +103,11 @@ def test_a_wrong_token_is_rejected_across_packages() -> None:
     from scheduler.core.mesh_protocol import encode_request as scheduler_encode
 
     payload = scheduler_encode(
-        node_id=NODE_ID, model="llama3", prompt="p", stream=False, token="a-different-token"
+        node_id=NODE_ID,
+        model="llama3",
+        prompt="p",
+        stream=False,
+        token="a-different-token",
     )
 
     with pytest.raises(MeshRequestError):
@@ -95,7 +116,12 @@ def test_a_wrong_token_is_rejected_across_packages() -> None:
 
 def test_reply_encoders_agree_across_packages() -> None:
     """The node encodes replies; the Scheduler decodes them."""
-    from node.core.mesh_protocol import encode_chunk, encode_done, encode_error, encode_result
+    from node.core.mesh_protocol import (
+        encode_chunk,
+        encode_done,
+        encode_error,
+        encode_result,
+    )
     from scheduler.core.mesh_protocol import decode_reply
 
     assert decode_reply(encode_result("llama3", "hi"))["response"] == "hi"
@@ -120,3 +146,75 @@ def test_protocol_constants_agree_across_packages() -> None:
     assert node_proto.PROTOCOL_VERSION == scheduler_proto.PROTOCOL_VERSION
     assert node_proto.MAX_CLOCK_SKEW_SECONDS == scheduler_proto.MAX_CLOCK_SKEW_SECONDS
     assert node_proto.INFER_KEY_TEMPLATE == scheduler_proto.INFER_KEY_TEMPLATE
+
+
+# --- mesh_auth.py: the second byte-identical pair (ROADMAP 2.7) ---------------
+#
+# Same argument as `mesh_protocol.py`, and a sharper one: this pair decides whether
+# a message is authentic. If the two copies drift, the Scheduler silently stops
+# accepting real nodes -- a failure that looks like a network problem, not a bug.
+
+NODE_AUTH_COPY = (
+    REPO_ROOT / "packages" / "node" / "src" / "node" / "core" / "mesh_auth.py"
+)
+SCHEDULER_AUTH_COPY = (
+    REPO_ROOT / "packages" / "scheduler" / "src" / "scheduler" / "core" / "mesh_auth.py"
+)
+
+
+def test_both_mesh_auth_copies_exist() -> None:
+    assert NODE_AUTH_COPY.is_file(), f"missing {NODE_AUTH_COPY}"
+    assert SCHEDULER_AUTH_COPY.is_file(), f"missing {SCHEDULER_AUTH_COPY}"
+
+
+def test_mesh_auth_copies_are_byte_identical() -> None:
+    """Budget 0. Fix by making them identical, never by relaxing this."""
+    node_digest = hashlib.sha256(NODE_AUTH_COPY.read_bytes()).hexdigest()
+    scheduler_digest = hashlib.sha256(SCHEDULER_AUTH_COPY.read_bytes()).hexdigest()
+
+    assert node_digest == scheduler_digest, (
+        "mesh_auth.py copies have diverged. A change landed on one side only, and "
+        "the two ends of the mesh no longer agree on what a valid envelope is."
+    )
+
+
+def test_an_envelope_sealed_by_the_node_opens_on_the_scheduler() -> None:
+    """Byte equality would be satisfied by two identical, broken files.
+
+    This is the direction that matters in production: the node seals, the Scheduler
+    opens.
+    """
+    from node.core.mesh_auth import PURPOSE_TELEMETRY, seal
+    from scheduler.core.mesh_auth import open_envelope
+
+    raw = seal({"cpu": 12.5}, node_id=NODE_ID, token=TOKEN, purpose=PURPOSE_TELEMETRY)
+
+    assert open_envelope(
+        raw, node_id=NODE_ID, token=TOKEN, purpose=PURPOSE_TELEMETRY
+    ) == {"cpu": 12.5}
+
+
+def test_the_scheduler_rejects_an_envelope_sealed_with_another_nodes_token() -> None:
+    """The property the whole change rests on, checked across the real pair."""
+    from node.core.mesh_auth import PURPOSE_HEARTBEAT, seal
+    from scheduler.core.mesh_auth import MeshAuthError, open_envelope
+
+    raw = seal(
+        {"x": 1},
+        node_id=NODE_ID,
+        token="someone-elses-token",
+        purpose=PURPOSE_HEARTBEAT,
+    )
+
+    with pytest.raises(MeshAuthError):
+        open_envelope(raw, node_id=NODE_ID, token=TOKEN, purpose=PURPOSE_HEARTBEAT)
+
+
+def test_mesh_auth_constants_agree_across_packages() -> None:
+    """A version or purpose-string skew makes one side reject everything."""
+    from node.core import mesh_auth as node_auth
+    from scheduler.core import mesh_auth as scheduler_auth
+
+    assert node_auth.ENVELOPE_VERSION == scheduler_auth.ENVELOPE_VERSION
+    assert node_auth.PURPOSE_TELEMETRY == scheduler_auth.PURPOSE_TELEMETRY
+    assert node_auth.PURPOSE_HEARTBEAT == scheduler_auth.PURPOSE_HEARTBEAT

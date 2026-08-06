@@ -8,6 +8,7 @@ import pytest
 
 from node.clients.zenoh_heartbeat import ZenohHeartbeatClient
 from node.core.configuration import Settings
+from node.core.mesh_auth import PURPOSE_HEARTBEAT, open_envelope
 from node.models import Heartbeat
 
 
@@ -18,6 +19,10 @@ def settings() -> Settings:
         hostname="localhost",
         region="local",
         heartbeat_interval_seconds=1,
+        # Heartbeats are sealed with a key derived from this since ROADMAP 2.7. The
+        # client refuses to publish without one, because the Scheduler would drop
+        # an unsigned frame and publishing it would only look like it worked.
+        network_auth_token="per-install-credential-for-tests",
     )
 
 
@@ -79,9 +84,16 @@ def test_zenoh_client_publish(settings: Settings) -> None:
         client.publish(hb)
 
         mock_publisher.put.assert_called_once()
-        # Verify JSON contains expected fields
+        # The payload is a SEALED envelope since ROADMAP 2.7, not plain JSON --
+        # opened here with the same credential the client signed it with, which is
+        # also what proves the two ends agree.
         put_arg = mock_publisher.put.call_args[0][0]
-        payload = json.loads(put_arg)
+        payload = open_envelope(
+            put_arg,
+            node_id=settings.node_id,
+            token=settings.network_auth_token or "",
+            purpose=PURPOSE_HEARTBEAT,
+        )
         assert payload["node_id"] == "test-node-zenoh"
         assert payload["status"] == "online"
         assert payload["queue_length"] == 2

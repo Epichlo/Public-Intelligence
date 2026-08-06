@@ -72,6 +72,24 @@ class Settings(BaseSettings):
         ),
     )
 
+    node_stale_after_seconds: float = Field(
+        default=90.0,
+        validation_alias=AliasChoices("SCHEDULER_NODE_STALE_AFTER", "NODE_STALE_AFTER"),
+        description=(
+            "Evict a node whose last VERIFIED heartbeat is older than this. Default is "
+            "three missed heartbeats at the node's 30s default interval. This is the "
+            "only thing that ages nodes out: a dropped Zenoh liveliness token no longer "
+            "unregisters anything, because a liveliness token carries no payload to sign "
+            "and its node id comes from a key expression the publisher chose. "
+            "See specs/authenticated-mesh-ingress.md."
+        ),
+    )
+    stale_sweep_interval_seconds: float = Field(
+        default=30.0,
+        validation_alias=AliasChoices("SCHEDULER_STALE_SWEEP_INTERVAL", "STALE_SWEEP_INTERVAL"),
+        description="How often to look for nodes that have gone quiet.",
+    )
+
     # Mirrored by `node.core.configuration.Settings.cors_allow_origins` -- two FastAPI
     # apps with separate settings classes, so there is no shared module to change.
     # If this field or its validator changes, change that one too.

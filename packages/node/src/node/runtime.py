@@ -162,7 +162,9 @@ class Runtime:
             # 3.6. Start telemetry emitter
             if self.zenoh_client.session is not None:
                 self.telemetry_emitter = TelemetryEmitter(
-                    self.settings.node_id, self.zenoh_client.session
+                    self.settings.node_id,
+                    self.zenoh_client.session,
+                    self.settings.network_auth_token,
                 )
                 self.telemetry_emitter.start()
                 self._setup_split_stage_listener()

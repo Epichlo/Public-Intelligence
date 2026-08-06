@@ -9,23 +9,22 @@ telemetry emitter failed, or one seen only via its liveliness token, is still re
 """
 
 import asyncio
-import base64
-import hashlib
-import hmac
 import json
-import os
 from datetime import UTC, datetime
 from typing import Any
 
 import pytest
 import zenoh
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+from scheduler.core.mesh_auth import PURPOSE_HEARTBEAT, PURPOSE_TELEMETRY, seal
 from scheduler.core.zenoh_router import ZenohRouter
 from scheduler.models.node import GPUInfo, Node
 from scheduler.registry.node_registry import NodeRegistry
 
 NODE_ID = "node-on-the-mesh"
+
+
+TOKEN = "per-install-credential-for-tests"
 
 
 def _node(node_id: str = NODE_ID) -> Node:
@@ -48,21 +47,19 @@ def _router(registry: NodeRegistry) -> ZenohRouter:
     return ZenohRouter(registry, config=config)
 
 
-def _telemetry_envelope(node_id: str) -> str:
-    """Build a telemetry envelope the router will accept, as the Node emitter does."""
-    secret = os.environ.get("TELEMETRY_SECRET_KEY", "pi_telemetry_secure_default_secret_key")
-    enc_key = hashlib.sha256(secret.encode() + b"-encryption").digest()
-    hmac_key = hashlib.sha256(secret.encode() + b"-hmac").digest()
+def _telemetry_envelope(node_id: str, token: str = TOKEN) -> str:
+    """Build a telemetry envelope the router will accept, as the Node emitter does.
 
-    plaintext = json.dumps(
-        {"node_id": node_id, "timestamp": datetime.now(UTC).isoformat(), "gpu_utilization": 12.0}
+    Sealed with the node's OWN credential since ROADMAP 2.7. This used to derive
+    keys from a fleet-wide `TELEMETRY_SECRET_KEY` whose default was a constant
+    published in this repository.
+    """
+    return seal(
+        {"node_id": node_id, "timestamp": datetime.now(UTC).isoformat(), "gpu_utilization": 12.0},
+        node_id=node_id,
+        token=token,
+        purpose=PURPOSE_TELEMETRY,
     )
-    iv = os.urandom(12)
-    ciphertext = AESGCM(enc_key).encrypt(iv, plaintext.encode(), None)
-    iv_b64 = base64.b64encode(iv).decode()
-    ct_b64 = base64.b64encode(ciphertext).decode()
-    sig = hmac.new(hmac_key, f"{iv_b64}:{ct_b64}".encode(), hashlib.sha256).hexdigest()
-    return json.dumps({"iv": iv_b64, "ciphertext": ct_b64, "signature": sig})
 
 
 class FakeLivelinessSample:
@@ -77,10 +74,14 @@ class FakeLivelinessSample:
 async def test_zenoh_heartbeat_marks_the_node_reachable() -> None:
     """A heartbeat arriving over Zenoh proves the node holds a live session."""
     registry = NodeRegistry()
+    await registry.set_node_token(NODE_ID, TOKEN)
     await registry.register(_node())
     router = _router(registry)
 
-    payload = json.dumps(
+    # Sealed with the node's own credential since ROADMAP 2.7. A plain-JSON
+    # heartbeat -- which is what this test used to send, and what the node used to
+    # publish -- is now dropped.
+    payload = seal(
         {
             "node_id": NODE_ID,
             "timestamp": datetime.now(UTC).isoformat(),
@@ -90,7 +91,10 @@ async def test_zenoh_heartbeat_marks_the_node_reachable() -> None:
             "ram_available_gb": 8.0,
             "gpu_utilization": 0.0,
             "vram_available_gb": 4.0,
-        }
+        },
+        node_id=NODE_ID,
+        token=TOKEN,
+        purpose=PURPOSE_HEARTBEAT,
     )
     await router._process_heartbeat(payload, f"public-intelligence/net/{NODE_ID}/heartbeat")
 
@@ -101,6 +105,7 @@ async def test_zenoh_heartbeat_marks_the_node_reachable() -> None:
 async def test_telemetry_marks_the_node_reachable() -> None:
     """Telemetry is a second independent signal, for a node whose heartbeat path failed."""
     registry = NodeRegistry()
+    await registry.set_node_token(NODE_ID, TOKEN)
     await registry.register(_node())
     router = _router(registry)
 
@@ -126,20 +131,26 @@ async def test_rejected_telemetry_does_not_mark_the_node_reachable() -> None:
 
 
 @pytest.mark.asyncio
-async def test_liveliness_token_marks_the_node_reachable() -> None:
-    """A liveliness PUT is the earliest signal, arriving before the first heartbeat."""
+async def test_liveliness_alone_no_longer_marks_the_node_reachable() -> None:
+    """Reversed by ROADMAP 2.7, deliberately. This test used to assert the opposite.
+
+    A liveliness token carries NO PAYLOAD, so there is nothing to sign, and the node
+    id comes from a key expression the publisher chose. Marking reachability from it
+    let anyone on the mesh point dispatch at a queryable that does not exist, costing
+    `mesh_inference_first_reply_timeout_seconds` on every request before the HTTP
+    fallback. Reachability now comes only from a VERIFIED heartbeat or telemetry,
+    which arrives within one interval and actually proves the session.
+    """
     registry = NodeRegistry()
+    await registry.set_node_token(NODE_ID, TOKEN)
     await registry.register(_node())
     router = _router(registry)
     router._loop = asyncio.get_running_loop()
 
     router._on_liveliness(FakeLivelinessSample(NODE_ID, zenoh.SampleKind.PUT))
-    for _ in range(20):
-        if registry.is_mesh_reachable(NODE_ID):
-            break
-        await asyncio.sleep(0.01)
+    await asyncio.sleep(0.05)
 
-    assert registry.is_mesh_reachable(NODE_ID) is True
+    assert registry.is_mesh_reachable(NODE_ID) is False
 
 
 @pytest.mark.asyncio

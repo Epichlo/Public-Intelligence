@@ -142,7 +142,6 @@ NODE_OLLAMA_HOST=http://localhost:11434
 NODE_BOOTSTRAP_ROUTERS=["tcp/bootstrap.public-intelligence.net:7447"]
 NODE_ZENOH_GOSSIP_SCOUTING=true
 NODE_ZENOH_MULTICAST_SCOUTING=true
-TELEMETRY_SECRET_KEY=pi_telemetry_secure_default_secret_key
 NODE_NETWORK_AUTH_TOKEN=$AuthToken
 "@
     Set-Content -Path $EnvFile -Value $EnvContent -Encoding UTF8

@@ -1,12 +1,7 @@
 """Telemetry metrics emitter module for Node with AES-256-GCM encryption."""
 
 import asyncio
-import base64
-import hashlib
-import hmac
-import json
 import logging
-import os
 import subprocess
 import sys
 from contextlib import suppress
@@ -14,51 +9,10 @@ from datetime import UTC, datetime
 from typing import Any
 
 import psutil
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+from node.core.mesh_auth import PURPOSE_TELEMETRY, seal
 
 logger = logging.getLogger(__name__)
-
-
-def derive_keys(secret_str: str) -> tuple[bytes, bytes]:
-    """Derive 32-byte encryption and HMAC keys from a pre-shared secret string.
-
-    Args:
-        secret_str: Pre-shared key string.
-
-    Returns:
-        A tuple of (encryption_key, hmac_key) as bytes.
-    """
-    secret_bytes = secret_str.encode("utf-8")
-    enc_key = hashlib.sha256(secret_bytes + b"-encryption").digest()
-    hmac_key = hashlib.sha256(secret_bytes + b"-hmac").digest()
-    return enc_key, hmac_key
-
-
-def encrypt_payload(payload_str: str, secret_str: str) -> dict[str, str]:
-    """Encrypt a plaintext payload string using AES-256-GCM and sign with SHA-256 HMAC.
-
-    Args:
-        payload_str: Plaintext payload string.
-        secret_str: Pre-shared key string.
-
-    Returns:
-        A dictionary representation of the authenticated envelope.
-    """
-    enc_key, hmac_key = derive_keys(secret_str)
-
-    # 1. AESGCM Encryption
-    aesgcm = AESGCM(enc_key)
-    iv = os.urandom(12)  # Standard 12-byte IV for GCM
-    ciphertext = aesgcm.encrypt(iv, payload_str.encode("utf-8"), None)
-
-    iv_b64 = base64.b64encode(iv).decode("utf-8")
-    ciphertext_b64 = base64.b64encode(ciphertext).decode("utf-8")
-
-    # 2. SHA-256 HMAC Signature
-    message_to_sign = f"{iv_b64}:{ciphertext_b64}".encode()
-    sig = hmac.new(hmac_key, message_to_sign, hashlib.sha256).hexdigest()
-
-    return {"iv": iv_b64, "ciphertext": ciphertext_b64, "signature": sig}
 
 
 def get_cpu_utilization() -> float:
@@ -150,15 +104,22 @@ class TelemetryEmitter:
     Runs every 5 seconds.
     """
 
-    def __init__(self, node_id: str, zenoh_session: Any, interval: float = 5.0) -> None:
+    def __init__(
+        self, node_id: str, zenoh_session: Any, auth_token: str | None, interval: float = 5.0
+    ) -> None:
         """Initialize the TelemetryEmitter.
 
         Args:
             node_id: Unique identifier for this node.
             zenoh_session: Active Zenoh session.
+            auth_token: This node's own NODE_NETWORK_AUTH_TOKEN, from which the
+                telemetry signing key is derived. Without one the emitter runs but
+                publishes nothing -- the Scheduler could not verify it anyway, and
+                emitting unsigned frames would only look like it worked.
             interval: Loop iteration duration in seconds.
         """
         self.node_id = node_id
+        self.auth_token = auth_token
         self.zenoh_session = zenoh_session
         self.interval = interval
         self.task: asyncio.Task[None] | None = None
@@ -184,10 +145,20 @@ class TelemetryEmitter:
             self.task = None
 
     async def _loop(self) -> None:
-        """Background loop executing every interval."""
-        secret_key = os.environ.get(
-            "TELEMETRY_SECRET_KEY", "pi_telemetry_secure_default_secret_key"
-        )
+        """Background loop executing every interval.
+
+        Signed with a key derived from this node's own credential. It used to be a
+        fleet-wide `TELEMETRY_SECRET_KEY` defaulting to a constant published in this
+        repository, so anyone could forge telemetry for any node and steer
+        matchmaking. See specs/authenticated-mesh-ingress.md.
+        """
+        if not self.auth_token:
+            logger.error(
+                "No NODE_NETWORK_AUTH_TOKEN configured; telemetry cannot be signed and "
+                "will not be published. The Scheduler drops unsigned frames."
+            )
+            return
+
         while self.is_running:
             try:
                 metrics = {
@@ -198,10 +169,12 @@ class TelemetryEmitter:
                     "gpu_utilization": 0.0,
                     "vram_usage_bytes": 0,
                 }
-                plaintext = json.dumps(metrics)
-                # Encrypt and package inside envelope
-                envelope = encrypt_payload(plaintext, secret_key)
-                payload = json.dumps(envelope)
+                payload = seal(
+                    metrics,
+                    node_id=self.node_id,
+                    token=self.auth_token,
+                    purpose=PURPOSE_TELEMETRY,
+                )
 
                 if self.zenoh_session is not None:
                     self.zenoh_session.put(self.topic, payload)

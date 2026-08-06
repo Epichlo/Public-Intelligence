@@ -4,17 +4,17 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-06 15:23 UTC
+**Generated:** 2026-08-06 16:24 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 272 | 0 | 0 | 12.63s |
-| Node | PASS | 280 | 0 | 1 | 3.39s |
-| Root E2E | PASS | 68 | 0 | 0 | 22.10s |
-| **Total** | **PASSING** | **620** | **0** | **1** | |
+| Scheduler | PASS | 286 | 0 | 0 | 14.22s |
+| Node | PASS | 280 | 0 | 1 | 3.32s |
+| Root E2E | PASS | 73 | 0 | 0 | 22.12s |
+| **Total** | **PASSING** | **639** | **0** | **1** | |
 
 Reproduce:
 
@@ -26,24 +26,24 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `4ff1184` feat: close the open HTTP surface (roadmap 2.3 + 2.4)
-- **Author / date:** Atharv Deshpande — 2026-08-06 17:11:57 +0530
+- **Last commit:** `4ff2125` fix: the installer actually installs (roadmap 2.8)
+- **Author / date:** Atharv Deshpande — 2026-08-06 20:54:16 +0530
 - **Branch:** main
-- **Total commits:** 201
+- **Total commits:** 202
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence.git (fetch)
-- **Working tree:** 12 uncommitted change(s)
+- **Working tree:** 20 uncommitted change(s)
 
 ```
-  M ROADMAP.md
-   M install.ps1
-   M install.sh
-  D  packages/node/install.ps1
-   M packages/node/pyproject.toml
-   M packages/scheduler/pyproject.toml
-   M scripts/launch_host_node.sh
-   M scripts/verify.sh
-  ?? scripts/verify_install.sh
-  ?? specs/installer-actually-installs.md
+  M  ROADMAP.md
+  M  STATUS.md
+  MM VERIFY.md
+  M  docker-compose.test.yml
+  M  install.ps1
+  M  install.sh
+  M  packages/node/src/node/clients/zenoh_heartbeat.py
+  A  packages/node/src/node/core/mesh_auth.py
+  M  packages/node/src/node/core/telemetry.py
+  M  packages/node/src/node/runtime.py
 ```
 
 ## CI

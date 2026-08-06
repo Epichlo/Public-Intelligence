@@ -10,6 +10,10 @@ from node.core.configuration import Settings
 from node.models import ModelInfo
 from node.runtime import Runtime
 
+# This node's own credential. Since ROADMAP 2.7 telemetry is sealed with a key
+# derived from it, not from a fleet-wide secret.
+TELEMETRY_TEST_TOKEN = "per-install-credential-for-tests"
+
 
 @pytest.fixture
 def settings() -> Settings:
@@ -190,7 +194,6 @@ async def test_graceful_shutdown_unregister_failure(
 @pytest.mark.anyio
 async def test_telemetry_emitter_lifecycle() -> None:
     """Verify that TelemetryEmitter collects and publishes data, and can be stopped."""
-    import json
 
     import zenoh
 
@@ -214,6 +217,7 @@ async def test_telemetry_emitter_lifecycle() -> None:
         emitter = TelemetryEmitter(
             node_id="test-node-telemetry",
             zenoh_session=session,
+            auth_token=TELEMETRY_TEST_TOKEN,
             interval=0.1,
         )
 
@@ -238,44 +242,23 @@ async def test_telemetry_emitter_lifecycle() -> None:
         await emitter.stop()
 
         assert len(received_payloads) > 0
-        envelope = json.loads(received_payloads[0])
-        assert "iv" in envelope
-        assert "ciphertext" in envelope
-        assert "signature" in envelope
 
-        # Decrypt and verify using pre-shared key
-        import base64
-        import hashlib
-        import hmac
+        # Opened with the node's OWN credential. This used to derive keys from a
+        # fleet-wide TELEMETRY_SECRET_KEY defaulting to a constant published in this
+        # repo, which meant this assertion would have passed for a forgery too.
+        from node.core.mesh_auth import PURPOSE_TELEMETRY, open_envelope
 
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-        secret_key = "pi_telemetry_secure_default_secret_key"
-        secret_bytes = secret_key.encode("utf-8")
-        enc_key = hashlib.sha256(secret_bytes + b"-encryption").digest()
-        hmac_key = hashlib.sha256(secret_bytes + b"-hmac").digest()
-
-        iv_b64 = envelope["iv"]
-        ciphertext_b64 = envelope["ciphertext"]
-        sig = envelope["signature"]
-
-        # Verify signature
-        message_to_verify = f"{iv_b64}:{ciphertext_b64}".encode()
-        expected_sig = hmac.new(hmac_key, message_to_verify, hashlib.sha256).hexdigest()
-        assert hmac.compare_digest(sig, expected_sig)
-
-        # Decrypt ciphertext
-        iv = base64.b64decode(iv_b64)
-        ciphertext = base64.b64decode(ciphertext_b64)
-        aesgcm = AESGCM(enc_key)
-        plaintext = aesgcm.decrypt(iv, ciphertext, None).decode("utf-8")
-        data = json.loads(plaintext)
-
-        assert data["node_id"] == "test-node-telemetry"
-        assert "cpu_utilization" in data
-        assert "ram_usage_bytes" in data
-        assert data["gpu_utilization"] == 0.0
-        assert data["vram_usage_bytes"] == 0
+        metrics = open_envelope(
+            received_payloads[0],
+            node_id="test-node-telemetry",
+            token=TELEMETRY_TEST_TOKEN,
+            purpose=PURPOSE_TELEMETRY,
+        )
+        assert metrics["node_id"] == "test-node-telemetry"
+        assert 0.0 <= metrics["cpu_utilization"] <= 100.0
+        assert "ram_usage_bytes" in metrics
+        assert metrics["gpu_utilization"] == 0.0
+        assert metrics["vram_usage_bytes"] == 0
 
         sub.undeclare()
 

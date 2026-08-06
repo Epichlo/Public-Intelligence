@@ -7,6 +7,7 @@ from typing import Any
 import zenoh
 
 from node.core.configuration import Settings
+from node.core.mesh_auth import PURPOSE_HEARTBEAT, seal
 from node.models import Heartbeat
 
 logger = logging.getLogger(__name__)
@@ -114,10 +115,26 @@ class ZenohHeartbeatClient:
         if self.session is None or self.publisher is None:
             raise RuntimeError("Zenoh session is not active. Call start() first.")
 
+        if not self.settings.network_auth_token:
+            # The Scheduler drops unsigned heartbeats, so publishing one would only
+            # look like it worked. install.sh generates this per install.
+            raise RuntimeError(
+                "No NODE_NETWORK_AUTH_TOKEN configured; heartbeats cannot be signed."
+            )
+
         payload_dict = heartbeat.model_dump(mode="json")
         # Ensure status field is included and online (to match scheduler requirements)
         payload_dict["status"] = "online"
 
-        payload_str = json.dumps(payload_dict)
-        logger.debug("Publishing heartbeat payload via Zenoh: %s", payload_str)
+        # Sealed with a key derived from this node's own credential. Heartbeats used
+        # to go out as plain JSON and the Scheduler accepted them unverified, so
+        # anyone on the mesh could move any node in or out of every dispatch by
+        # forging its `vram_available_gb`. See specs/authenticated-mesh-ingress.md.
+        payload_str = seal(
+            payload_dict,
+            node_id=self.settings.node_id,
+            token=self.settings.network_auth_token,
+            purpose=PURPOSE_HEARTBEAT,
+        )
+        logger.debug("Publishing sealed heartbeat via Zenoh for %s", self.settings.node_id)
         self.publisher.put(payload_str)
