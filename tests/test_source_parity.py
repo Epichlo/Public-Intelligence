@@ -62,7 +62,7 @@ def _significant_lines(path: Path) -> list[str]:
     `from node.` and the other `from scheduler.`. Everything else should converge.
     """
     out = []
-    for raw in path.read_text().splitlines():
+    for raw in path.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
@@ -145,7 +145,7 @@ def test_gpu_info_pair_has_the_same_fields() -> None:
 
 
 def _ruff_block(pyproject: Path) -> dict:
-    return tomllib.loads(pyproject.read_text())["tool"]["ruff"]
+    return tomllib.loads(pyproject.read_text(encoding="utf-8"))["tool"]["ruff"]
 
 
 def test_both_packages_lint_under_identical_rules() -> None:
@@ -175,7 +175,7 @@ def test_both_packages_pin_the_same_tool_versions() -> None:
     """
     pins = {}
     for pkg in ("Node", "Scheduler"):
-        data = tomllib.loads((REPO_ROOT / "packages" / pkg.lower() / "pyproject.toml").read_text())
+        data = tomllib.loads((REPO_ROOT / "packages" / pkg.lower() / "pyproject.toml").read_text(encoding="utf-8"))
         dev = data["project"]["optional-dependencies"]["dev"]
         pins[pkg] = sorted(d for d in dev if "==" in d)
 
@@ -193,7 +193,7 @@ def test_ci_delegates_to_the_verify_script() -> None:
     `run:` step in the test matrix invokes a linter or pytest directly instead of
     going through the one gate.
     """
-    ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
     forbidden = re.findall(
         r"^\s*(?:run:|[-\s]*)\s*(ruff|mypy|bandit|pytest)\s+(?!.*verify)", ci, flags=re.M

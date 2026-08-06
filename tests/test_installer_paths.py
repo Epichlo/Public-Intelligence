@@ -59,7 +59,7 @@ CREATED_BY_THE_INSTALLER = {
 
 def referenced_paths(script: str) -> set[str]:
     """Repo-relative paths a script names, minus the ones it creates."""
-    text = (REPO_ROOT / script).read_text()
+    text = (REPO_ROOT / script).read_text(encoding="utf-8")
     found: set[str] = set()
     for pattern in PATH_PATTERNS:
         for match in pattern.findall(text):
@@ -93,7 +93,7 @@ def test_no_installer_still_points_at_the_pre_monorepo_layout(script: str) -> No
     exactly that form and passed an earlier version of this assertion while being
     thoroughly broken.
     """
-    text = (REPO_ROOT / script).read_text()
+    text = (REPO_ROOT / script).read_text(encoding="utf-8")
     stale = sorted(set(STALE_LAYOUT.findall(text)))
 
     assert not stale, f"{script} still refers to the pre-monorepo layout: {stale}"
@@ -110,7 +110,7 @@ def test_the_windows_installer_does_not_fetch_the_archived_repo() -> None:
     that names the old repo, and forbidding the *name* would delete the explanation
     of why the code looks the way it does. Fetching it is the defect.
     """
-    text = (REPO_ROOT / "install.ps1").read_text()
+    text = (REPO_ROOT / "install.ps1").read_text(encoding="utf-8")
     fetches = re.findall(r"github\.com/Epichlo/([A-Za-z0-9._-]+)", text)
 
     assert "Node-PublicIntelligence" not in fetches, (
@@ -132,6 +132,6 @@ def test_there_is_exactly_one_windows_installer() -> None:
 
 def test_the_windows_installer_still_generates_a_control_api_credential() -> None:
     """The thing the deleted duplicate was missing. Pin it so it cannot go again."""
-    text = (REPO_ROOT / "install.ps1").read_text()
+    text = (REPO_ROOT / "install.ps1").read_text(encoding="utf-8")
 
     assert "NODE_NETWORK_AUTH_TOKEN" in text

@@ -47,7 +47,7 @@ def declared_dependencies(package: str) -> set[str]:
     at `uvicorn[standard]`, reporting six false positives -- so the real state was
     briefly hidden behind a broken measurement of it.
     """
-    data = tomllib.loads((REPO_ROOT / "packages" / package / "pyproject.toml").read_text())
+    data = tomllib.loads((REPO_ROOT / "packages" / package / "pyproject.toml").read_text(encoding="utf-8"))
     return {
         spec.split(">")[0].split("<")[0].split("=")[0].split("[")[0].strip().lower()
         for spec in data["project"]["dependencies"]
@@ -62,7 +62,7 @@ def imported_modules(package: str) -> dict[str, str]:
     """
     found: dict[str, str] = {}
     for path in (REPO_ROOT / "packages" / package / "src").rglob("*.py"):
-        for node in ast.walk(ast.parse(path.read_text())):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             names: list[str] = []
             if isinstance(node, ast.Import):
                 names = [alias.name.split(".")[0] for alias in node.names]

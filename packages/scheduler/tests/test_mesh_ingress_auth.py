@@ -337,7 +337,7 @@ def test_the_fleet_wide_secret_is_no_longer_used_anywhere() -> None:
         if p.is_file()
         and ".venv" not in p.parts
         and p.name != Path(__file__).name
-        and used.search(p.read_text())
+        and used.search(p.read_text(encoding="utf-8"))
     )
 
     assert not offenders, f"TELEMETRY_SECRET_KEY is still used in: {offenders}"

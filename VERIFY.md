@@ -183,7 +183,8 @@ Spec:        specs/authenticated-mesh-ingress.md
   5. Nothing tracked .... PASS
   6. STATUS regenerated . PASS
 
-VERDICT: PASS
+VERDICT: PASS -- then FAILED CI, fixed in a follow-up commit. See the note at the
+end of this verdict.
 
 Reasons:
 - 1. `./scripts/verify.sh` -> `PASS 13 checks`, this session. Scheduler 286 passed
@@ -266,6 +267,43 @@ that the Scheduler's handlers reject those inputs and that the node's real
 serialiser round-trips through the Scheduler's real verifier. Replay of a captured
 VALID envelope inside the 30s freshness window is still accepted, by design, and is
 recorded as out of scope rather than tested.
+
+CI FAILED ON THIS COMMIT (run 31119806560) DESPITE A GREEN LOCAL GATE. Recorded
+here rather than quietly fixed, because "local passes, CI does not" is a failure
+this repo has already been bitten by once (the 1.2 ruff-scope incident).
+
+Two unrelated causes in that run:
+
+1. REAL, MINE. `test_the_fleet_wide_secret_is_no_longer_used_anywhere` called
+   `Path.read_text()` with no encoding. On Windows the default is cp1252, and
+   `packages/node/examples/demo.py` contains a byte cp1252 cannot decode, so the
+   test raised `UnicodeDecodeError` on all three Windows legs. It passed locally
+   and on Linux/macOS because their default is UTF-8. The 2.8 dependency test
+   survived only by accident -- it globs `packages/*/src`, and `examples/` is
+   outside it.
+   Fixed by passing `encoding="utf-8"` at all 11 `read_text()` sites in the tests
+   this session added, plus the four pre-existing ones in `test_source_parity.py`
+   that had the same latent fault.
+   NOT VERIFIED ON WINDOWS. There is no Windows machine here, and an attempt to
+   reproduce with `LC_ALL=C` proved nothing -- macOS keeps a UTF-8 default
+   regardless. What is established: CI's traceback names `cp1252.py:23`, and that
+   file genuinely fails a `cp1252` decode locally. The fix removes the dependency
+   on the platform default rather than accommodating it, so it is correct by
+   construction; CI is the verification.
+
+2. NOT MINE. Several legs failed at "Set up job" with `Failed to resolve action
+   download info. Error: Service Unavailable`, and two were cancelled. That is a
+   GitHub Actions outage, not this change. It is named so a later reader does not
+   attribute all five failures to the encoding bug.
+
+GAPS THIS EXPOSED, filed rather than fixed in the hotfix:
+- `verify.sh` lints `./packages` but NOT the root `tests/` directory, so nothing
+  checks the cross-package tests at all. Enabling the full ruleset there surfaces
+  22 pre-existing errors.
+- Ruff's `PLW1514` (unspecified-encoding) would catch this whole class, but it
+  requires preview mode. Turning preview on pulls in other unstable rules and is
+  not a hotfix-sized change.
+Both are ROADMAP 2.9.
 ```
 
 ---
