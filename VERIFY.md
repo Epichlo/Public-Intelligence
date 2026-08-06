@@ -85,7 +85,7 @@ let them mask a *new* one, and do not report them as clean:
 |---|---|
 | `packages/node/src/node/core/telemetry.py:189`, `packages/scheduler/src/scheduler/core/zenoh_router.py:278` | `TELEMETRY_SECRET_KEY` defaults to a constant published in this repo (ROADMAP 2.2) |
 | `packages/scheduler/src/scheduler/api/ingress.py:16` | hardcoded fallback RSA public key |
-| `packages/scheduler/src/scheduler/main.py:76`, `packages/node/src/node/main.py:43` | `allow_origins=["*"]` with `allow_credentials=True` (ROADMAP 2.3) |
+| `packages/scheduler/src/scheduler/main.py:114`, `packages/node/src/node/main.py:43` | `allow_origins=["*"]` with `allow_credentials=True` (ROADMAP 2.3) |
 
 Two rows previously listed here were **removed on 2026-08-03 because they are fixed**,
 verified by the greps in this step returning no hit for either:
@@ -95,8 +95,9 @@ verified by the greps in this step returning no hit for either:
   RS256 with no bypass branch, and the proxy rejects an unauthenticated request rather
   than synthesising a credential.
 
-The `zenoh_router.py` line number moved from 255 to 280 as that file grew; the issue is
-unchanged.
+The `zenoh_router.py` line number moved from 255 to 280 and then to 278; `scheduler/main.py`
+moved from 76 to 114 when persistence wiring was added above it. Both issues are unchanged —
+only the lines they sit on moved.
 
 ## 4. Check for duplicated logic before adding new files
 
@@ -157,6 +158,106 @@ the code — not the file.
 ## Verdict
 
 Fill this in. It is the whole point of the file.
+
+```
+Date:        2026-08-06
+Change:      ROADMAP 2.1 — Scheduler state survives a restart. NodeRegistry and
+             CreditLedger write through to a durable store and reload at startup.
+Spec:        specs/scheduler-persistence.md
+
+  1. Test suite ......... PASS
+  2. Spec match ......... PASS
+  3. Secrets & bypasses . PASS
+  4. Duplication ........ PASS
+  5. Nothing tracked .... PASS
+  6. STATUS regenerated . PASS
+
+VERDICT: PASS
+
+Reasons:
+- 1. `./scripts/verify.sh` → `PASS 12 checks`, this session. Scheduler 254 passed,
+  Node 273 passed / 1 skipped, root E2E 57 passed. +27 on Scheduler, all in the new
+  `packages/scheduler/tests/test_persistence.py`. Node and E2E are unchanged, which
+  is expected: nothing in packages/node was touched.
+- 1a. RED WAS WEAK AND IS SAID SO PLAINLY. The new tests import
+  `scheduler.persistence`, a package that did not exist, so the first run failed as
+  `ModuleNotFoundError` — that proves the module is new and nothing else. Every
+  claim was therefore checked by mutation instead, one behaviour at a time. Ten
+  mutations, ten reds:
+    * register does not persist → `test_a_registered_node_is_reconstructed_after_a_restart`
+    * `set_node_token` does not persist → the two token tests
+    * `set_available_models` does not persist → `test_a_catalogue_refresh_survives_a_restart`
+    * `delete_node` stops deleting the token row → `test_unregister_removes_the_node_and_its_token`
+    * `local_unregister_node` skips the store → `test_stale_eviction_removes_the_node_durably`
+    * `except ValidationError` → `except ZeroDivisionError` → `test_a_row_that_no_longer_validates_...`
+    * balances stored via `f'{x:.2f}'` → `test_a_balance_round_trips_without_being_rounded`
+    * `get_or_create_account` writes a zero row → `test_an_account_that_never_earned_is_not_written`
+      (`assert {'never-earned-anything': 0.0} == {}`)
+    * lifespan does not call `load()` → the lifespan test and the HTTP restart test
+    * `create_app` builds a store of its own → `test_an_app_built_with_no_store_persists_nothing`
+  The first attempt at the zero-account mutation STAYED GREEN, and that was the
+  mutation's fault, not the test's: it wrote via an un-awaited `create_task`, so
+  nothing ever reached the database. Re-run as a real synchronous write, it went red.
+- 1b. HONEST NOTE — a coarser mutation, neutralising all three `save_*` methods at
+  once, leaves 12 of the 27 passing. Each is explained, none is evidence for the
+  write path: 2 exercise the storeless path deliberately; 3 assert persistence is
+  off unless configured; 2 concern the constructor and the schema-version check;
+  and 5 assert *absence* (the deletion and zero-account tests), which a store that
+  never writes satisfies trivially. Those 5 got their real evidence from the
+  targeted mutations above, which is why both mutation runs are recorded rather
+  than only the flattering one.
+- 2. Every box under "Done looks like" is ticked. Nothing under "Out of scope" was
+  built: `_BATCH_TASKS` is still an in-memory module global, nothing credits the
+  ledger, there is no Postgres backend, there are no migrations, tokens are
+  plaintext at rest, and heartbeats/telemetry are still not restored.
+- 2a. Scope was DELIBERATELY NARROWED against the roadmap line, which named batch
+  jobs, and the reason is recorded in the spec and in ROADMAP 2.4 rather than left
+  as a silent omission: `POST /v1/batch` has no auth dependency at all, so giving it
+  a database converts an unauthenticated unbounded-memory growth path into an
+  unauthenticated unbounded-DISK growth path. It is ordering behind 2.4, not a drop.
+- 2b. The roadmap's framing was also corrected rather than inherited. 2.1 was
+  written before 1.6 and treats registry loss as the headline; since 1.6 a node
+  re-registers itself on a 404 heartbeat, so the registry is reconstructible and the
+  LEDGER is the unrecoverable half. Both are persisted; the spec says which is which.
+- 3. Five hits, all pre-existing and all tabled in step 3: the two
+  `TELEMETRY_SECRET_KEY` defaults (telemetry.py:189, zenoh_router.py:278), the
+  fallback RSA public key (ingress.py:16), and the two
+  `allow_origins=["*"]`/`allow_credentials=True` pairs — `scheduler/main.py` moved
+  from :76 to :114 because this change adds lines above it, and the table is
+  corrected. Plus the two benign `AliasChoices` env-var-name hits. The auth-bypass
+  grep returns one hit, prose in a website page. No new secret, credential, or
+  bypass. `SCHEDULER_DATABASE_PATH` is a path, not a credential, and defaults to
+  None. The new `PUT`/`POST` paths are unchanged — this change adds no route.
+  NEW AND STATED, NOT HIDDEN: the database stores per-node auth tokens in
+  plaintext, the same as process memory does today. It is in the spec's "Out of
+  scope" and in `.env.example`, and file permissions are the only control.
+- 4. No new duplicate. Searched first: no file named `*persist*`/`*sqlite*`/`*store*`
+  existed under either package, and `NodeRegistry`/`CreditLedger` exist only in
+  packages/scheduler — `grep -rln "CreditLedger\|NodeRegistry" packages/node/src src`
+  returns nothing, so neither has a twin to keep in step. The package is named
+  `scheduler/persistence/` specifically so it is NOT confused with the artifact
+  store at `src/shared/storage/` (which is the sixth known duplicate pair); their
+  class names do not collide either — `ArtifactStore`/`LocalDiskArtifactStore` vs
+  `SchedulerStore`/`SQLiteStore`. `tests/test_source_parity.py` → 14 passed, budgets
+  unchanged.
+- 5. `git ls-files | grep -iE "\.env$|..."` → clean; `.env` ignored. Only
+  `.env.example` is tracked and this change adds documentation to it, not a value.
+- 6. Regenerated by `scripts/generate_status.py`; its counts (254/273/57) match
+  step 1 exactly.
+
+Not claimed: no test restarts a real Scheduler process. "Survives a restart" is
+proven by building a second, independent NodeRegistry/CreditLedger/FastAPI app over
+the same file — which is the right unit-level proof of the reload path, and is NOT
+the same as a `kill -9` mid-write. Nothing here was run against a real Render
+deployment, so the ephemeral-filesystem caveat in `.env.example` is read from
+Render's documented behaviour, not observed. No concurrency or load testing was
+done: the claim that synchronous SQLite on the event loop is cheap enough is a
+judgement about expected volume, stated as such in the spec, not a measurement.
+```
+
+---
+
+## Previous verdict — ROADMAP 1.6
 
 ```
 Date:        2026-08-05

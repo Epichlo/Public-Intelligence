@@ -59,6 +59,18 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("SCHEDULER_NODE_API_PORT", "NODE_API_PORT"),
         description="HTTP port used to reach registered Node inference APIs.",
     )
+    database_path: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("SCHEDULER_DATABASE_PATH", "DATABASE_PATH"),
+        description=(
+            "SQLite file for durable node and credit state. Unset (the default) means "
+            "every restart starts empty. Defaulting to a path would be worse than "
+            "defaulting to off: on an ephemeral filesystem such as Render's free tier "
+            "the file survives a process restart and is wiped by every redeploy, which "
+            "is durability that looks like it works and does not. "
+            "See specs/scheduler-persistence.md."
+        ),
+    )
 
     # Zenoh WAN Networking
     zenoh_listen_endpoints: list[str] = Field(

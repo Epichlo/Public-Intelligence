@@ -109,7 +109,9 @@ def _register_node(mesh_reachable: bool) -> None:
         ram_total_gb=64.0,
         available_models=["llama3"],
     )
-    registry.set_node_token(NODE_ID, NODE_TOKEN)
+    # Set directly, like `_nodes` and `_heartbeats` above: this helper is synchronous
+    # and the public setter became async when it grew a store write (ROADMAP 2.1).
+    registry._node_tokens[NODE_ID] = NODE_TOKEN
     # `/infer` selects through `Scheduler.select_node`, which ignores nodes with no
     # heartbeat, so one is needed for that route to reach dispatch at all.
     registry._heartbeats[NODE_ID] = Heartbeat(

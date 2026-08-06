@@ -73,7 +73,7 @@ async def register_node(
     call returns 409. Recording it only on success left the Scheduler holding a
     stale token and silently 401ing every dispatch to that node.
     """
-    registry.set_node_token(node.node_id, x_network_auth_token)
+    await registry.set_node_token(node.node_id, x_network_auth_token)
 
     try:
         await registry.register(node)

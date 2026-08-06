@@ -9,6 +9,7 @@ These tests pin that the header is sent, and that it carries the token the node
 supplied at registration rather than a fleet-wide secret.
 """
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -146,7 +147,7 @@ def test_proxy_sends_the_node_credential(
 ) -> None:
     """A non-streaming completion must carry the target node's token upstream."""
     private_key, _ = key_pair
-    app.state.registry.set_node_token(NODE_ID, NODE_TOKEN)
+    asyncio.run(app.state.registry.set_node_token(NODE_ID, NODE_TOKEN))
 
     captured: dict[str, Any] = {}
 
@@ -175,7 +176,7 @@ def test_streaming_proxy_sends_the_node_credential(
 ) -> None:
     """The SSE streaming path must carry the credential too, not just JSON."""
     private_key, _ = key_pair
-    app.state.registry.set_node_token(NODE_ID, NODE_TOKEN)
+    asyncio.run(app.state.registry.set_node_token(NODE_ID, NODE_TOKEN))
 
     captured: dict[str, Any] = {}
 
@@ -221,10 +222,8 @@ def test_streaming_proxy_sends_the_node_credential(
 
 def test_unregister_purges_the_token(client: TestClient) -> None:
     """A departed node's credential must not linger in the registry."""
-    app.state.registry.set_node_token(NODE_ID, NODE_TOKEN)
+    asyncio.run(app.state.registry.set_node_token(NODE_ID, NODE_TOKEN))
     assert app.state.registry.get_node_token(NODE_ID) == NODE_TOKEN
-
-    import asyncio
 
     asyncio.run(app.state.registry.local_unregister_node(NODE_ID))
     assert app.state.registry.get_node_token(NODE_ID) is None, (
@@ -272,7 +271,7 @@ def test_proxy_falls_back_to_the_fleet_wide_token(
     Covers the compatibility path for deployments that predate per-node tokens.
     """
     private_key, _ = key_pair
-    app.state.registry.set_node_token(NODE_ID, None)
+    asyncio.run(app.state.registry.set_node_token(NODE_ID, None))
     assert app.state.registry.get_node_token(NODE_ID) is None
 
     captured: dict[str, Any] = {}

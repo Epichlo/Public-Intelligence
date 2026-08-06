@@ -19,12 +19,28 @@ from scheduler.api.openai import router as openai_router
 from scheduler.api.schedule import router as schedule_router
 from scheduler.api.telemetry import router as telemetry_router
 from scheduler.core.config import get_settings
+from scheduler.core.credit_ledger import CreditLedger
 from scheduler.core.logging import setup_logging
 from scheduler.core.rate_limiter import TokenBucketLimiter
 from scheduler.core.zenoh_router import ZenohRouter
+from scheduler.persistence import SchedulerStore, SQLiteStore
 from scheduler.registry.node_registry import NodeRegistry
 
 logger = structlog.stdlib.get_logger()
+
+
+def build_store() -> SchedulerStore | None:
+    """Build the durable store the deployed Scheduler runs with, if configured.
+
+    This is the **only** place settings decide whether persistence is on.
+    `create_app()` deliberately does not consult them, so a `SCHEDULER_DATABASE_PATH`
+    sitting in a developer's `.env` cannot silently point the whole test suite at
+    one shared database. Tests that want persistence pass a store explicitly.
+    """
+    settings = get_settings()
+    if not settings.database_path:
+        return None
+    return SQLiteStore(settings.database_path)
 
 
 @asynccontextmanager
@@ -33,10 +49,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings = get_settings()
     setup_logging(settings.log_level)
 
+    # Before anything can be served, and before the mesh is joined: a node that
+    # arrives on the mesh must find a registry that already knows the fleet, or the
+    # first heartbeat would 404 and send a node that never went away round the
+    # re-registration loop.
+    store = app.state.store
+    await app.state.registry.load()
+    await app.state.ledger.load()
+
     logger.info(
         "scheduler_started",
         version=__version__,
         environment=settings.environment.value,
+        persistence_enabled=store is not None,
+        # The resolved path, in the logs, because prose about where state lives goes
+        # stale and a log line from this boot cannot.
+        persistence_path=str(getattr(store, "path", "")) or None,
     )
 
     # Initialize and start ZenohRouter
@@ -59,11 +87,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if hasattr(app.state, "zenoh_router"):
         app.state.zenoh_router.stop()
 
+    if store is not None:
+        await store.close()
+
     logger.info("scheduler_stopped")
 
 
-def create_app() -> FastAPI:
-    """Create and configure the FastAPI application."""
+def create_app(store: SchedulerStore | None = None) -> FastAPI:
+    """Create and configure the FastAPI application.
+
+    Args:
+        store: Durable state backend. `None` -- the default -- means in-memory
+            only, and is what every existing test gets. The deployed app is built
+            at the bottom of this module with `build_store()`; see its docstring
+            for why the settings lookup lives there and not here.
+    """
     app = FastAPI(
         title="Public Intelligence Scheduler",
         description="Control plane for distributed AI infrastructure",
@@ -79,7 +117,12 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    app.state.registry = NodeRegistry()
+    app.state.store = store
+    app.state.registry = NodeRegistry(store=store)
+    # Instantiated so its balances are durable and are loaded at startup. Nothing
+    # credits it yet -- accrual on real usage is ROADMAP 3.2/3.3. A durable ledger
+    # of zeroes is still the thing 3.2 needs to already exist before it can write.
+    app.state.ledger = CreditLedger(store=store)
     app.state.rate_limiter = TokenBucketLimiter()
 
     from scheduler.core.engine import SchedulingEngine
@@ -100,4 +143,4 @@ def create_app() -> FastAPI:
     return app
 
 
-app = create_app()
+app = create_app(store=build_store())

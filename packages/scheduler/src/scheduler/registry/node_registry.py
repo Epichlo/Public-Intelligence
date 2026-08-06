@@ -1,27 +1,50 @@
-"""In-memory node registry for storing and managing compute nodes."""
+"""Node registry: in-memory reads, optionally written through to durable storage."""
 
 from __future__ import annotations
 
 import asyncio
 import builtins
+import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from scheduler.models.heartbeat import Heartbeat
     from scheduler.models.node import Node
+    from scheduler.persistence import SchedulerStore
+
+logger = logging.getLogger(__name__)
 
 
 class NodeRegistry:
-    """Thread-safe in-memory registry of compute nodes.
+    """Registry of compute nodes, held in memory and optionally persisted.
 
     Stores Node objects keyed by node_id in insertion order.
     Also tracks runtime Heartbeat state for each node.
     Provides CRUD operations for node management.
-    Contains no scheduler logic, persistence, or networking.
+    Contains no scheduler logic or networking.
+
+    **The dicts remain the only read path.** When a store is attached, mutations are
+    additionally written through to it and `load()` refills the dicts at startup;
+    nothing reads from the store on a lookup. Reading through would put I/O on the
+    hot path of every dispatch and every `filter_nodes` call -- `matchmaker.py`
+    reaches straight into `_heartbeats` and `_telemetry` synchronously -- so the
+    read-through design would have meant rewriting the matchmaker and the
+    dispatcher to persist a node list. See specs/scheduler-persistence.md.
+
+    With no store this is exactly the class it was before persistence existed,
+    which is why `NodeRegistry()` still appears unchanged throughout the tests.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, store: SchedulerStore | None = None) -> None:
+        """Build a registry, optionally backed by durable storage.
+
+        Args:
+            store: Where to write nodes and their credentials so they survive a
+                restart. `None` means in-memory only -- every restart starts empty,
+                which is the behaviour this class had before ROADMAP 2.1.
+        """
         self._lock = asyncio.Lock()
+        self._store = store
         self._nodes: dict[str, Node] = {}
         self._heartbeats: dict[str, Heartbeat] = {}
         self._dampeners: dict[str, float] = {}
@@ -37,19 +60,48 @@ class NodeRegistry:
         self._mesh_nodes: set[str] = set()
         self.consensus_engine: Any = None
 
-    # These two are deliberately synchronous and do not take `self._lock`, unlike
-    # every other accessor on this class. The lock exists to keep compound
-    # read-modify-write sequences from interleaving at `await` points; a single
-    # dict get or set contains no await point and cannot be interleaved on the
-    # event loop. Acquiring the lock here would add an await to the hot path of
-    # every proxied request, and would deadlock if either method were ever called
-    # from inside an already-locked section (`local_unregister_node` and `clear`
-    # mutate `_node_tokens` directly for exactly that reason).
-    #
-    # If either method ever grows a compound operation or an await, it must take
-    # the lock and its callers must move off the locked paths.
+    async def load(self) -> None:
+        """Refill the in-memory state from the store. Call once, at startup.
 
-    def set_node_token(self, node_id: str, token: str | None) -> None:
+        Only nodes and their credentials come back. Heartbeats, telemetry, mesh
+        reachability, and dampeners are deliberately *not* restored: they are
+        observations from a moment that has passed, and presenting them as current
+        is worse than not having them. The matchmaker already falls back to a
+        node's registered `gpu.vram_available_gb` when there is no heartbeat, so a
+        freshly loaded node is schedulable rather than filtered out. The table of
+        what is persisted and why is in specs/scheduler-persistence.md.
+
+        A no-op without a store, so startup does not need to know which it has.
+        """
+        if self._store is None:
+            return
+        nodes = await self._store.load_nodes()
+        tokens = await self._store.load_node_tokens()
+        async with self._lock:
+            for node in nodes:
+                self._nodes[node.node_id] = node
+                self._dampeners[node.node_id] = 0.0
+            self._node_tokens.update(tokens)
+        logger.info("persistence_loaded: nodes=%d tokens=%d", len(nodes), len(tokens))
+
+    # `get_node_token` is deliberately synchronous and does not take `self._lock`,
+    # unlike every other accessor on this class. The lock exists to keep compound
+    # read-modify-write sequences from interleaving at `await` points; a single dict
+    # get contains no await point and cannot be interleaved on the event loop.
+    # Acquiring the lock here would add an await to the hot path of every proxied
+    # request, and would deadlock if it were ever called from inside an
+    # already-locked section (`local_unregister_node` and `clear` mutate
+    # `_node_tokens` directly for exactly that reason).
+    #
+    # If it ever grows a compound operation or an await, it must take the lock and
+    # its callers must move off the locked paths.
+    #
+    # `set_node_token` *is* async, and was made so by ROADMAP 2.1. It is not on a
+    # hot path -- it runs once per registration -- and it has to reach the store, or
+    # a rotated credential would live only in memory and a restart would resurrect
+    # the stale one. It still does not take the lock, for the deadlock reason above.
+
+    async def set_node_token(self, node_id: str, token: str | None) -> None:
         """Remember the credential a node presented, for use when calling it back.
 
         Args:
@@ -61,6 +113,8 @@ class NodeRegistry:
         else:
             self._node_tokens.pop(node_id, None)
             self._mesh_nodes.discard(node_id)
+        if self._store is not None:
+            await self._store.save_node_token(node_id, token)
 
     def get_node_token(self, node_id: str) -> str | None:
         """Return the stored credential for a node, or None if unknown."""
@@ -96,13 +150,21 @@ class NodeRegistry:
             await self.local_register(node)
 
     async def local_register(self, node: Node) -> None:
-        """Actually perform local registration of the node."""
+        """Actually perform local registration of the node.
+
+        The store write happens inside the lock, not after it. Outside, two
+        concurrent writers could apply to memory in one order and to the database
+        in the other, and the restart would disagree with the running process.
+        Every persisting method below holds the lock for the same reason.
+        """
         async with self._lock:
             if node.node_id in self._nodes:
                 msg = f"Node already registered: {node.node_id}"
                 raise ValueError(msg)
             self._nodes[node.node_id] = node
             self._dampeners[node.node_id] = 0.0
+            if self._store is not None:
+                await self._store.save_node(node)
 
     async def unregister(self, node_id: str) -> None:
         """Remove a node and its heartbeat from the registry.
@@ -128,6 +190,8 @@ class NodeRegistry:
             self._telemetry.pop(node_id, None)
             self._node_tokens.pop(node_id, None)
             self._mesh_nodes.discard(node_id)
+            if self._store is not None:
+                await self._store.delete_node(node_id)
 
     async def get(self, node_id: str) -> Node | None:
         """Look up a node by ID.
@@ -169,6 +233,8 @@ class NodeRegistry:
                 msg = f"Node not found: {node.node_id}"
                 raise ValueError(msg)
             self._nodes[node.node_id] = node
+            if self._store is not None:
+                await self._store.save_node(node)
 
     async def set_available_models(self, node_id: str, models: builtins.list[str]) -> None:
         """Replace a node's advertised model catalogue.
@@ -198,7 +264,10 @@ class NodeRegistry:
             if node is None:
                 msg = f"Node not found: {node_id}"
                 raise ValueError(msg)
-            self._nodes[node_id] = node.model_copy(update={"available_models": list(models)})
+            updated = node.model_copy(update={"available_models": list(models)})
+            self._nodes[node_id] = updated
+            if self._store is not None:
+                await self._store.save_node(updated)
 
     async def exists(self, node_id: str) -> bool:
         """Check whether a node is registered.
@@ -221,6 +290,8 @@ class NodeRegistry:
             self._telemetry.clear()
             self._node_tokens.clear()
             self._mesh_nodes.clear()
+            if self._store is not None:
+                await self._store.clear_nodes()
 
     async def count(self) -> int:
         """Return the number of registered nodes.
@@ -300,7 +371,12 @@ class NodeRegistry:
             await self.local_unregister_node(node_id)
 
     async def local_unregister_node(self, node_id: str) -> None:
-        """Actually perform local unregistration of the node (safe if not present)."""
+        """Actually perform local unregistration of the node (safe if not present).
+
+        This is the path stale eviction and deathrattles take, so the store write
+        matters as much as it does on the explicit `DELETE /nodes/{id}`: without it
+        every eviction would be undone by the next restart.
+        """
         async with self._lock:
             self._nodes.pop(node_id, None)
             self._heartbeats.pop(node_id, None)
@@ -308,3 +384,5 @@ class NodeRegistry:
             self._telemetry.pop(node_id, None)
             self._node_tokens.pop(node_id, None)
             self._mesh_nodes.discard(node_id)
+            if self._store is not None:
+                await self._store.delete_node(node_id)
