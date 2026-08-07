@@ -1,6 +1,5 @@
 """Inference API routes."""
 
-import uuid
 from collections.abc import AsyncGenerator
 from typing import Annotated, Any, cast
 
@@ -46,7 +45,6 @@ def get_radix_cache(request: Request) -> RadixTrieCache:
 )
 async def infer(
     request: InferenceRequest,
-    fastapi_request: Request,
     ollama_client: Annotated[OllamaClient, Depends(get_ollama_client)],
     radix_cache: Annotated[RadixTrieCache, Depends(get_radix_cache)],
 ) -> InferenceResponse | StreamingResponse:
@@ -59,52 +57,46 @@ async def infer(
     # Route only the remaining suffix data to the underlying backend serving model
     request.prompt = suffix
 
-    # Determine client co-location based on request IP
-    client_host = fastapi_request.client.host if fastapi_request.client else ""
-    is_local = client_host in ("127.0.0.1", "localhost", "::1")
-
-    # Retrieve active Zenoh session from application state runtime
-    runtime = getattr(fastapi_request.app.state, "runtime", None)
-    zenoh_session = None
-    if runtime is not None and getattr(runtime, "zenoh_client", None) is not None:
-        sess = runtime.zenoh_client.session
-        if sess is not None and "mock" not in type(sess).__name__.lower():
-            zenoh_session = sess
-
+    # The co-location probe and the Zenoh session lookup that used to sit here fed
+    # the stream router removed below; nothing else read them. The session check in
+    # particular tested `"mock" not in type(sess).__name__.lower()`, which is why no
+    # test ever exercised the path -- every double was named to trip that guard.
     if request.stream:
         try:
             generator = ollama_client.generate_stream(request)
 
             async def stream_wrapper() -> AsyncGenerator[str, None]:
-                router = None
-                session_id = uuid.uuid4().hex[:8]
-
-                # Setup backpressured stream router if zenoh_session is active
-                if zenoh_session is not None:
-                    from node.core.transport import BackpressuredStreamRouter
-
-                    router = BackpressuredStreamRouter(session_id, zenoh_session)
-                    yield f"session_id: {session_id}\n"
-
-                created_shms: list[str] = []
+                # This used to build a `BackpressuredStreamRouter` whenever the node
+                # had a live Zenoh session, and republish every generated chunk to
+                # `public-intelligence/net/transport/stream/{id}`. Two defects, both
+                # live, neither caught by any test because no test ever handed this
+                # route a session that was not a mock:
+                #
+                # 1. PLAINTEXT LEAK. Completion text went onto the shared mesh in the
+                #    clear, on a key any peer can subscribe to with a `**` wildcard,
+                #    with no subscriber anywhere in this codebase. ROADMAP 2.7 spent
+                #    a whole protocol change AES-256-GCM enveloping *telemetry* on
+                #    that same mesh; the actual generated text was travelling beside
+                #    it unprotected. The route also yielded `session_id: <id>` as the
+                #    first line of the SSE body -- not a valid SSE field, and it
+                #    handed the caller the topic to subscribe to.
+                #
+                # 2. DEADLOCK. `send_chunk` blocks once `sent - acked >= window_size`
+                #    (default 4) and nothing in this repository ever sends an ACK, so
+                #    any response longer than four chunks hung forever. Streaming was
+                #    broken on precisely the deployment this project is built for: a
+                #    node attached to the mesh.
+                #
+                # It was split-inference plumbing. Split inference is cut from v1 and
+                # the gateway answers 501 for it (ROADMAP N1), so this served a
+                # feature the product does not have. Removed rather than guarded --
+                # dead code behind a disabled flag is how N1 happened.
+                #
+                # Pinned by tests/test_streaming_does_not_publish_to_the_mesh.py.
                 try:
-                    from node.core.transport import SharedMemoryIPC
-
                     async for chunk in generator:
-                        chunk_bytes = chunk.encode("utf-8")
-                        if router is not None:
-                            await router.send_chunk(
-                                chunk_bytes,
-                                is_local=is_local,
-                            )
                         yield chunk
                 finally:
-                    if router is not None:
-                        router.stop()
-                    from node.core.transport import SharedMemoryIPC
-
-                    for shm in created_shms:
-                        SharedMemoryIPC.cleanup(shm)
                     # Append the new total token path back to the trie upon completion
                     await radix_cache.insert_prefix(original_prompt)
 

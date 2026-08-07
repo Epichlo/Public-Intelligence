@@ -6,7 +6,6 @@ import logging
 
 import pytest
 import zenoh
-
 from scheduler.core.transport import BackpressuredReceiver, SharedMemoryIPC
 
 logger = logging.getLogger(__name__)

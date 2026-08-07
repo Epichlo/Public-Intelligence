@@ -27,32 +27,44 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # Pairs of files that must stay compatible, with the number of differing
 # significant lines tolerated today. LOWER THESE as pairs converge; never raise
 # one without saying why in the commit message.
+#
+# Four pairs left this table on 2026-08-07 and the reason matters, because "the
+# ratchet has fewer entries" reads like progress and here it is mostly relocation:
+#
+#   quantization, kv_cache, local_boundary, transport -> experimental/ (ROADMAP C2).
+#     Still duplicated, still drifting, just no longer part of the shipped system.
+#     Tracked below under EXPERIMENTAL_PAIRS so the drift does not vanish from view.
+#   autonomous_orchestrator -> DELETED (ROADMAP 2.10). It returned
+#     verification_passed=True for a stub that ran nothing.
 DUPLICATE_PAIRS: dict[str, tuple[str, str, int]] = {
-    "quantization": (
-        "packages/node/src/node/core/quantization.py",
-        "packages/scheduler/src/scheduler/core/quantization.py",
+    "mesh_protocol": (
+        "packages/node/src/node/core/mesh_protocol.py",
+        "packages/scheduler/src/scheduler/core/mesh_protocol.py",
         0,
     ),
-    "kv_cache": (
-        "packages/node/src/node/core/kv_cache.py",
-        "packages/scheduler/src/scheduler/core/kv_cache.py",
-        2,
+    "mesh_auth": (
+        "packages/node/src/node/core/mesh_auth.py",
+        "packages/scheduler/src/scheduler/core/mesh_auth.py",
+        0,
     ),
+}
+
+# The same ratchet, applied to the quarantined copies. They are not shipped, so a
+# regression here is not urgent -- but dropping them from measurement entirely would
+# turn "we stopped tracking it" into "the drift went away".
+EXPERIMENTAL_PAIRS: dict[str, tuple[str, str, int]] = {
+    "quantization": (
+        "experimental/node/quantization.py",
+        "experimental/scheduler/quantization.py",
+        0,
+    ),
+    "kv_cache": ("experimental/node/kv_cache.py", "experimental/scheduler/kv_cache.py", 2),
     "local_boundary": (
-        "packages/node/src/node/core/local_boundary.py",
-        "packages/scheduler/src/scheduler/core/local_boundary.py",
+        "experimental/node/local_boundary.py",
+        "experimental/scheduler/local_boundary.py",
         2,
     ),
-    "autonomous_orchestrator": (
-        "packages/node/src/node/core/autonomous_orchestrator.py",
-        "packages/scheduler/src/scheduler/core/autonomous_orchestrator.py",
-        14,
-    ),
-    "transport": (
-        "packages/node/src/node/core/transport.py",
-        "packages/scheduler/src/scheduler/core/transport.py",
-        22,
-    ),
+    "transport": ("experimental/node/transport.py", "experimental/scheduler/transport.py", 22),
 }
 
 
@@ -260,6 +272,23 @@ def test_every_python_directory_is_linted_by_the_gate() -> None:
         f"{unlinted} contain Python and are not passed to ruff by scripts/verify.sh. "
         f"Either add them to the gate or add them to LINT_EXEMPT_DIRS with a reason. "
         f"Currently linted: {sorted(linted)}"
+    )
+
+
+def test_experimental_is_linted_but_its_tests_do_not_run():
+    """ROADMAP C2's real goal: the reported test count must mean something.
+
+    Excluding `experimental/` from the gate entirely would let ~2,000 lines rot, and
+    linting costs nothing. What C2 wanted was for the shipping test number to stop
+    being inflated by suites covering features this product decided not to have. So
+    the modules are linted and their tests are not run -- and this test pins both
+    halves, because either one flipping quietly would undo the point.
+    """
+    script = _verify_script()
+    assert "ruff check ./experimental" in script, "experimental/ is no longer linted"
+    assert "pytest ./experimental" not in script and "pytest experimental" not in script, (
+        "experimental/ tests are in the gate again -- the green count now includes "
+        "features that are cut from v1."
     )
 
 

@@ -3,7 +3,6 @@
 import struct
 
 import pytest
-
 from node.core.local_boundary import LocalBoundaryEngine
 from node.models.sharding import TensorPayload
 

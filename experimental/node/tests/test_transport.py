@@ -5,7 +5,6 @@ import logging
 
 import pytest
 import zenoh
-
 from node.core.transport import (
     BackpressuredReceiver,
     BackpressuredStreamRouter,

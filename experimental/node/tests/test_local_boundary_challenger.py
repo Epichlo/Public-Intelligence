@@ -9,7 +9,6 @@ import struct
 from typing import Any
 
 import pytest
-
 from node.models.sharding import TensorPayload
 
 # Attempt to import LocalBoundaryEngine from node.core.local_boundary

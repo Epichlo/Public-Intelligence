@@ -10,7 +10,6 @@ from multiprocessing import shared_memory
 from typing import Any
 
 import zenoh
-
 from scheduler.models.pipeline import TensorPayload
 
 logger = logging.getLogger(__name__)

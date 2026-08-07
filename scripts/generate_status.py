@@ -427,31 +427,22 @@ def repo_facts_section() -> list[str]:
         lines.append(f"- **ruff:** {ruff_v.strip()} (pinned in both pyproject `[dev]` extras)")
 
     # --- duplicate-module drift ---
+    # Shipping pairs only. quantization / kv_cache / local_boundary / transport moved
+    # to experimental/ under ROADMAP C2 and autonomous_orchestrator was deleted under
+    # 2.10, so a table listing them here would report drift for code that is either
+    # not shipped or not present. tests/test_source_parity.py still ratchets the
+    # experimental copies -- measurement continues, it just stopped being reported as
+    # if it described the product.
     pairs = [
         (
-            "quantization",
-            "packages/node/src/node/core/quantization.py",
-            "packages/scheduler/src/scheduler/core/quantization.py",
+            "mesh_protocol",
+            "packages/node/src/node/core/mesh_protocol.py",
+            "packages/scheduler/src/scheduler/core/mesh_protocol.py",
         ),
         (
-            "kv_cache",
-            "packages/node/src/node/core/kv_cache.py",
-            "packages/scheduler/src/scheduler/core/kv_cache.py",
-        ),
-        (
-            "local_boundary",
-            "packages/node/src/node/core/local_boundary.py",
-            "packages/scheduler/src/scheduler/core/local_boundary.py",
-        ),
-        (
-            "autonomous_orchestrator",
-            "packages/node/src/node/core/autonomous_orchestrator.py",
-            "packages/scheduler/src/scheduler/core/autonomous_orchestrator.py",
-        ),
-        (
-            "transport",
-            "packages/node/src/node/core/transport.py",
-            "packages/scheduler/src/scheduler/core/transport.py",
+            "mesh_auth",
+            "packages/node/src/node/core/mesh_auth.py",
+            "packages/scheduler/src/scheduler/core/mesh_auth.py",
         ),
     ]
     drift_rows = []

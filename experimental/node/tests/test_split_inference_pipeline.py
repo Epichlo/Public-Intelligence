@@ -5,7 +5,6 @@ Local Layer 0 Embedding -> Remote Hidden Layers 1..N-1 -> Local Layer N LM Head.
 """
 
 import pytest
-
 from node.backends.mock import EchoBackend
 from node.core.local_boundary import LocalBoundaryEngine
 from node.models.sharding import LayerRange, PipelineStage, TensorPayload

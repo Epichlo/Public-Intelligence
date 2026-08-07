@@ -70,7 +70,6 @@ class Runtime:
         # from a previous process, would compare [] against [] and never push.
         self.catalogue_synced = False
         self.telemetry_emitter: TelemetryEmitter | None = None
-        self.split_stage_sub: Any | None = None
         # Serves inference over the Zenoh session rather than over an inbound HTTP port.
         # None until start() finds a live session; see specs/node-reachability.md.
         self.mesh_inference_server: ZenohInferenceServer | None = None
@@ -170,7 +169,6 @@ class Runtime:
                     self.settings.network_auth_token,
                 )
                 self.telemetry_emitter.start()
-                self._setup_split_stage_listener()
 
                 # 3.7. Serve inference over the mesh. This is what makes a node behind
                 # NAT reachable: the Scheduler queries this session instead of dialling
@@ -210,12 +208,15 @@ class Runtime:
                 await self.mesh_inference_server.wait_for_inflight(timeout=5.0)
             self.mesh_inference_server = None
 
-        # Undeclare split stage subscriber
-        if self.split_stage_sub is not None:
-            with suppress(Exception):
-                if hasattr(self.split_stage_sub, "undeclare"):
-                    self.split_stage_sub.undeclare()
-            self.split_stage_sub = None
+        # The split-stage subscriber that used to be undeclared here is gone. It
+        # was an UNAUTHENTICATED wildcard subscription on
+        # `public-intelligence/net/tasks/*/tensors/*` which deserialised whatever
+        # arrived and, for a `shm://` payload, read and unlinked host shared memory
+        # by attacker-supplied name. ROADMAP 2.7 authenticated every mesh input that
+        # changes registry state; this one changed none, so it sat outside that
+        # scope. It served split inference, which is cut from v1 (ROADMAP N1/C2), so
+        # there was nothing for an authenticated version of it to do.
+        # Pinned by tests/test_no_unauthenticated_split_stage_listener.py.
 
         # Cancel background heartbeat task
         if self.heartbeat_task is not None:
@@ -561,86 +562,6 @@ class Runtime:
             "gpu_utilization": metrics.gpu_utilization,
             "vram_available_gb": metrics.vram_available_gb,
         }
-
-    def _setup_split_stage_listener(self) -> None:
-        """Subscribe to split-stage activation topics over Zenoh."""
-        if self.zenoh_client.session is None:
-            return
-
-        from node.core.transport import SharedMemoryIPC, get_tensor_topic
-        from node.models.sharding import LayerRange, PipelineStage, StageType, TensorPayload
-
-        topic = "public-intelligence/net/tasks/*/tensors/*"
-        loop = asyncio.get_running_loop()
-
-        def _on_activation_sample(sample: Any) -> None:
-            try:
-                key_expr = str(sample.key_expr)
-                parts = key_expr.split("/")
-                if len(parts) < 6 or parts[-1] == "ack":
-                    return
-
-                task_id = parts[3]
-                stage_idx = int(parts[5])
-
-                if hasattr(sample.payload, "to_bytes"):
-                    raw_bytes = sample.payload.to_bytes()
-                elif isinstance(sample.payload, bytes):
-                    raw_bytes = sample.payload
-                elif isinstance(sample.payload, str):
-                    raw_bytes = sample.payload.encode("utf-8")
-                else:
-                    raw_bytes = bytes(sample.payload)
-
-                if raw_bytes.startswith(b"shm://"):
-                    shm_name = raw_bytes[6:].decode("utf-8", errors="ignore")
-                    raw_bytes = SharedMemoryIPC.read_data(shm_name)
-                    SharedMemoryIPC.cleanup(shm_name)
-
-                payload = TensorPayload.from_framed_bytes(raw_bytes)
-                payload.validate_split_activation_boundary()
-
-                async def _process_and_respond() -> None:
-                    if self.inference_backend is None:
-                        from node.backends.mock import EchoBackend
-
-                        self.inference_backend = EchoBackend()
-
-                    stage = PipelineStage(
-                        stage_index=stage_idx,
-                        total_stages=3,
-                        layer_range=LayerRange(start_layer=1, end_layer=31),
-                        node_id=self.settings.node_id,
-                        # A label, not a routing decision -- this stage is handed to
-                        # `inference_backend`, which is only ever EchoBackend. It used
-                        # to read `settings.hosted_models[0]`, a config-declared model
-                        # list that no node actually set; "default" is what every such
-                        # node already produced here.
-                        model_id="default",
-                        is_local_boundary=False,
-                        stage_type=StageType.REMOTE_HIDDEN,
-                        is_split_inference=True,
-                    )
-                    output_payload = await self.inference_backend.execute_split_stage(
-                        stage, payload
-                    )
-                    output_payload.validate_split_activation_boundary()
-
-                    out_bytes = output_payload.to_framed_bytes()
-                    resp_topic = get_tensor_topic(task_id, stage_idx + 1)
-                    if self.zenoh_client.session is not None:
-                        self.zenoh_client.session.put(resp_topic, out_bytes)
-
-                loop.call_soon_threadsafe(lambda: asyncio.create_task(_process_and_respond()))
-            except Exception as e:
-                logger.error("Error processing split stage activation sample: %s", e)
-
-        try:
-            self.split_stage_sub = self.zenoh_client.session.declare_subscriber(
-                topic, _on_activation_sample
-            )
-        except Exception as e:
-            logger.error("Failed to declare split stage subscriber: %s", e)
 
 
 if __name__ == "__main__":

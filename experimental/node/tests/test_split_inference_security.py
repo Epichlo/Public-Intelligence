@@ -7,7 +7,6 @@ Validates payload structures across intermediate hidden transformer stages.
 import struct
 
 import pytest
-
 from node.backends.mock import EchoBackend
 from node.core.local_boundary import LocalBoundaryEngine
 from node.models.sharding import LayerRange, PipelineStage, TensorPayload

@@ -100,6 +100,14 @@ run_step "ruff format (tests)" "$PY" -m ruff format --check ./tests --config "$R
 run_step "ruff check (scripts)"  "$PY" -m ruff check ./scripts --config "$RUFF_CFG"
 run_step "ruff format (scripts)" "$PY" -m ruff format --check ./scripts --config "$RUFF_CFG"
 
+# experimental/ is LINTED but its tests are NOT RUN. ROADMAP C2 asked to exclude it
+# from the gate; excluding it entirely would let ~2,000 lines rot, and linting is
+# free. What C2 actually wanted was for the reported test count to mean something --
+# so the tests stay out and the shipping number stops being inflated by suites for
+# features this product has decided not to have.
+run_step "ruff check (experimental)"  "$PY" -m ruff check ./experimental --config "$RUFF_CFG"
+run_step "ruff format (experimental)" "$PY" -m ruff format --check ./experimental --config "$RUFF_CFG"
+
 # The gate lints its own scripts. CI already installs shellcheck on Linux but
 # never ran it; a `[ "$x" != "PATTERN"* ]` comparison that silently never matched
 # sat in this very file until shellcheck was pointed at it.

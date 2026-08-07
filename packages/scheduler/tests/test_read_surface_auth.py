@@ -11,6 +11,8 @@ table in a spec cannot notice the next one.
 See specs/authenticate-the-read-surface.md.
 """
 
+import importlib
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -114,26 +116,30 @@ def test_fleet_telemetry_is_the_one_that_mattered_most(client_with_node: TestCli
     assert allowed.json()["node-1"]["cpu_utilization"] == 12.0
 
 
-def test_the_webhook_router_is_guarded_even_though_it_is_not_mounted() -> None:
-    """`POST /v1/webhooks/github` 404s today -- `create_app` never includes it.
+def test_the_autonomous_orchestrator_and_its_webhook_are_gone() -> None:
+    """ROADMAP 2.10. Both were deleted rather than made honest.
 
-    I initially wrote this as an HTTP test asserting 401 and it returned 404, which
-    is how the router being unmounted came to light. The spec claimed it was a live
-    unauthenticated write path; it is not, and that was corrected rather than left
-    standing.
+    `AutonomousOrchestrator.execute_mission` returned `verification_passed=True` and
+    a PR body reading "Closed-loop tri-factor verification (pytest, ruff, mypy)
+    passed cleanly" -- for a stub that formatted strings and ran none of them. Its
+    only caller was `POST /v1/webhooks/github`, which `create_app` never mounted.
 
-    Guarded at the router level anyway, so that mounting it later is a one-line
-    change that does not also open an anonymous POST. Asserted on the router object
-    because there is no mounted path to call.
+    The prior question was whether either belonged in v1 at all, and ROADMAP's own
+    "deliberately not in v1" list already answered it: the autonomous agent
+    orchestrator is on that list. So the fix was deletion, not a truthful stub.
+    Making the claim accurate would have left ~170 lines of unreachable code whose
+    purpose is a feature this product has decided not to have.
+
+    This test is the ratchet: it fails if either module comes back.
     """
-    from scheduler.api.webhooks import router as webhooks_router
+    for module in (
+        "scheduler.core.autonomous_orchestrator",
+        "scheduler.api.webhooks",
+    ):
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module(module)
 
-    guards = {getattr(d.dependency, "__name__", "") for d in webhooks_router.dependencies}
-
-    assert "verify_auth_token" in guards
-    assert not any(
-        getattr(r, "path", "").startswith("/v1/webhooks") for r in create_app().routes
-    ), "the webhook router is now mounted -- give it a real HTTP auth test"
+    assert not any(getattr(r, "path", "").startswith("/v1/webhooks") for r in create_app().routes)
 
 
 # --- what stays public, and why ---------------------------------------------

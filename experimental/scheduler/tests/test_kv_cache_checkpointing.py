@@ -2,7 +2,6 @@
 & Dynamic State Rerouting."""
 
 import pytest
-
 from scheduler.core.engine import SchedulingEngine
 from scheduler.core.kv_cache import KVCacheManager
 from scheduler.core.matchmaker import CapabilityMatchmaker
