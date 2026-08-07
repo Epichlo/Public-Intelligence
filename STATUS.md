@@ -4,17 +4,17 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-06 17:25 UTC
+**Generated:** 2026-08-07 06:19 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 303 | 0 | 0 | 14.82s |
-| Node | PASS | 280 | 0 | 1 | 3.47s |
-| Root E2E | PASS | 73 | 0 | 0 | 22.17s |
-| **Total** | **PASSING** | **656** | **0** | **1** | |
+| Scheduler | PASS | 310 | 0 | 0 | 12.88s |
+| Node | PASS | 280 | 0 | 1 | 3.32s |
+| Root E2E | PASS | 73 | 0 | 0 | 22.14s |
+| **Total** | **PASSING** | **663** | **0** | **1** | |
 
 Reproduce:
 
@@ -26,30 +26,25 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `6a839ee` feat: authenticate the read surface (roadmap 2.6)
-- **Author / date:** Atharv Deshpande — 2026-08-06 22:49:51 +0530
+- **Last commit:** `3a13a90` fix: lint the cross-package tests, and catch implicit encodings (roadmap 2.9)
+- **Author / date:** Atharv Deshpande — 2026-08-06 22:56:24 +0530
 - **Branch:** main
-- **Total commits:** 205
+- **Total commits:** 206
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence.git (fetch)
-- **Working tree:** 14 uncommitted change(s)
+- **Working tree:** 5 uncommitted change(s)
 
 ```
   M ROADMAP.md
-   M packages/node/pyproject.toml
-   M packages/node/src/node/core/telemetry.py
-   M packages/node/tests/test_worktree_manager.py
-   M packages/scheduler/pyproject.toml
-   M scripts/verify.sh
-   M tests/test_artifact_store.py
-   M tests/test_declared_dependencies.py
-   M tests/test_mesh_inference_e2e.py
-   M tests/test_mesh_protocol_parity.py
+   M packages/scheduler/src/scheduler/core/zenoh_router.py
+   M packages/scheduler/src/scheduler/registry/node_registry.py
+  ?? packages/scheduler/tests/test_eviction_reporting.py
+  ?? specs/eviction-reports-what-it-did.md
 ```
 
 ## CI
 
-- **Status:** FAIL
-- **Reason:** latest run did not succeed: [{"conclusion":"","headSha":"39f4a1d69b4c96784a52961bebf9049bb9128d25"}]
+- **Status:** PASS
+- **Reason:** latest run concluded success
 
 
 ## Repo facts

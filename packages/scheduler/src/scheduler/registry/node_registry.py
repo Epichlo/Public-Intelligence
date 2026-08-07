@@ -192,6 +192,11 @@ class NodeRegistry:
             self._mesh_nodes.discard(node_id)
             if self._store is not None:
                 await self._store.delete_node(node_id)
+        # The two ways a node can leave used to be asymmetric: eviction announced
+        # itself whether or not it happened, and this path said nothing at all.
+        # Both now log, so "where did node X go" is one grep rather than an
+        # inference from a later listing.
+        logger.info("node_departed: node_id=%s reason=unregistered", node_id)
 
     async def get(self, node_id: str) -> Node | None:
         """Look up a node by ID.
@@ -358,26 +363,43 @@ class NodeRegistry:
                 raise ValueError(msg)
             self._dampeners[node_id] = self._dampeners.get(node_id, 0.0) + 0.1
 
-    async def unregister_node(self, node_id: str) -> None:
+    async def unregister_node(self, node_id: str) -> bool:
         """Unregister a node and clear its dynamic herd dampeners.
 
         If a consensus engine is active, propose the change atomically.
         Otherwise, perform local unregistration immediately.
+
+        Returns:
+            Whether the node is gone as a result. This used to return None, so the
+            caller logged "evicted" on the strength of having *asked* -- see
+            specs/eviction-reports-what-it-did.md.
+
+            On the consensus path this method cannot know whether the proposal was
+            applied: `propose` returns immediately, and a dropped, queued or
+            election-lost proposal is indistinguishable from an applied one. So it
+            does not claim to have removed anything -- it reports whether the node
+            is absent afterwards. That is a weaker statement, and the true one.
         """
         engine = getattr(self, "consensus_engine", None)
         if engine is not None and engine.is_active():
             await engine.propose("unregister_node", {"node_id": node_id})
-        else:
-            await self.local_unregister_node(node_id)
+            return not await self.exists(node_id)
+        return await self.local_unregister_node(node_id)
 
-    async def local_unregister_node(self, node_id: str) -> None:
+    async def local_unregister_node(self, node_id: str) -> bool:
         """Actually perform local unregistration of the node (safe if not present).
 
         This is the path stale eviction and deathrattles take, so the store write
         matters as much as it does on the explicit `DELETE /nodes/{id}`: without it
         every eviction would be undone by the next restart.
+
+        Returns:
+            True if the node was present and has been removed. Tolerating an absent
+            node is correct; being unable to tell the two cases apart is what made
+            the caller's log untrustworthy.
         """
         async with self._lock:
+            was_present = node_id in self._nodes
             self._nodes.pop(node_id, None)
             self._heartbeats.pop(node_id, None)
             self._dampeners.pop(node_id, None)
@@ -386,3 +408,6 @@ class NodeRegistry:
             self._mesh_nodes.discard(node_id)
             if self._store is not None:
                 await self._store.delete_node(node_id)
+        if was_present:
+            logger.info("node_departed: node_id=%s reason=evicted", node_id)
+        return was_present

@@ -352,7 +352,19 @@ class ZenohRouter:
         if not await self.registry.exists(node_id):
             return False
 
-        await self.registry.unregister_node(node_id)
+        # `unregister_node` reports whether the node is actually gone. It used to
+        # return None, so this logged an eviction on the strength of having asked --
+        # and on the consensus path, asking does not touch the registry at all.
+        # See specs/eviction-reports-what-it-did.md.
+        removed = await self.registry.unregister_node(node_id)
+        if not removed:
+            logger.warning(
+                "zenoh_node_eviction_had_no_effect",
+                node_id=node_id,
+                reason="the registry still holds this node after unregister_node",
+            )
+            return False
+
         self._last_verified_heartbeat.pop(node_id, None)
         logger.info(
             "zenoh_node_evicted_stale",

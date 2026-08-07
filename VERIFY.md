@@ -171,6 +171,67 @@ the code — not the file.
 Fill this in. It is the whole point of the file.
 
 ```
+Date:        2026-08-07
+Change:      ROADMAP 2.5 — eviction reports what it did, instead of announcing
+             that it was asked.
+Spec:        specs/eviction-reports-what-it-did.md
+
+  1. Test suite ......... PASS
+  2. Spec match ......... PASS
+  3. Secrets & bypasses . PASS
+  4. Duplication ........ PASS
+  5. Nothing tracked .... PASS
+  6. STATUS regenerated . PASS
+
+VERDICT: PASS
+
+Reasons:
+- 1. `./scripts/verify.sh` -> `PASS 15 checks`, this session. Scheduler 310 passed
+  (+7, all new in `test_eviction_reporting.py`), Node 280 / 1 skipped, root E2E 73.
+- 1a. Red observed first: 6 of the 7 failed against pre-change code. The seventh
+  ("a fresh node is neither evicted nor reported") passed, and passed VACUOUSLY —
+  see 1b.
+- 1b. TWO OF MY OWN TESTS WERE WRONG, both found by reading failures rather than
+  trusting the count:
+  * The router logs through **structlog**, which by default renders to stdout and
+    does not route into stdlib logging, so pytest's `caplog` captured NOTHING from
+    it. Two tests failed outright; a third PASSED, because it asserted a string was
+    *absent* and every string is absent from an empty capture. Rewritten with
+    `structlog.testing.capture_logs`, and the "absence" test now also asserts the
+    capture is non-empty, so its negatives mean something.
+  * The consensus test set a fake engine before constructing `ZenohRouter`.
+    `ZenohRouter.__init__` builds a `RaftConsensusEngine`, which assigns itself to
+    `registry.consensus_engine` (`consensus.py:64`) and replaced the fake — so the
+    test silently exercised the LOCAL path and observed a successful eviction.
+    Reordered; it then failed correctly.
+- 1c. Mutation-tested, 3 mutations, 3 reds: logging the eviction unconditionally
+  again; making the consensus path return True; and making removal unable to tell a
+  present node from an absent one.
+- 2. Every box under "Done looks like" is ticked. Nothing under "Out of scope" was
+  built: no departures endpoint, no eviction history, no alerting, and the consensus
+  engine itself is untouched.
+- 2a. This is the SECOND correction to 2.5's roadmap text. The first version claimed
+  stale-eviction already applied correctly when nothing aged nodes out at all (fixed
+  in 2.7). This pass narrowed what remained to the single surviving defect. A line
+  left open across several roadmap items accumulated two false claims — worth noting
+  as a pattern, not just a fact about this line.
+- 3. Unchanged: the fallback RSA public key and the two benign `AliasChoices`
+  env-var-name hits. No new secret or bypass; nothing about credentials changed.
+- 4. No new module. `NodeRegistry` exists only in packages/scheduler, no twin.
+  `tests/test_source_parity.py` passes with budgets unchanged.
+- 5. `git ls-files | grep -iE "\.env$|..."` -> clean; `.env` ignored.
+- 6. Regenerated; counts (310/280/73) match step 1.
+
+Not claimed: the consensus path is exercised only against a fake engine that drops
+proposals. Raft is explicitly not in v1 (single instance is the deployment), so no
+test here drives a real multi-Scheduler election. What is proven is that the caller
+stops asserting an outcome it cannot know — not that the consensus engine works.
+
+---
+
+## Previous verdict — ROADMAP 2.9
+
+```
 Date:        2026-08-06
 Change:      ROADMAP 2.9 — close the two gate holes that let 2.7 reach main green
              locally and fail CI on Windows.
