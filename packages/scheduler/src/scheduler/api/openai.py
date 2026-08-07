@@ -12,6 +12,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
+from scheduler.api.auth import verify_auth_token
 from scheduler.api.ingress import verify_jwt
 from scheduler.api.nodes import get_mesh_client
 from scheduler.core.config import get_settings
@@ -348,10 +349,21 @@ async def create_chat_completion(
     return StreamingResponse(sse_generator(), media_type="text/event-stream")
 
 
+# Authenticated as of ROADMAP C10. These were public on a 2.6 judgement -- "a
+# marketplace should let a developer see what is servable before obtaining a
+# credential" -- and that premise no longer exists. D1 made this an invite-only
+# trusted-host network and D8 made it a self-hosted control plane for hardware you
+# already own, so there is no anonymous developer shopping around: anyone who should
+# see the catalogue already holds a credential from the operator.
+#
+# What stays true is the other half of the 2.6 reasoning -- this discloses model
+# NAMES only, never which node has what. That is why it was a close call then and is
+# not one now: the benefit went away and the disclosure did not.
 @router.get(
     "/v1/models",
     response_model=ModelListResponse,
     summary="List available models",
+    dependencies=[Depends(verify_auth_token)],
 )
 async def list_models(request: Request) -> ModelListResponse:
     """List all available models registered across active nodes."""
@@ -374,6 +386,7 @@ async def list_models(request: Request) -> ModelListResponse:
     "/v1/models/{model_id}",
     response_model=ModelObject,
     summary="Retrieve model details",
+    dependencies=[Depends(verify_auth_token)],
 )
 async def get_model(request: Request, model_id: str) -> ModelObject:
     """Retrieve details for a specific model ID."""

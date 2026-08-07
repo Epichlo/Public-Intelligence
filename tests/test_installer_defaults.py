@@ -128,10 +128,10 @@ def test_the_dry_run_prints_what_the_real_run_writes() -> None:
     """
     text = _read("install.sh")
 
-    printed = re.findall(r'log_dry_run "  (NODE_[A-Z_]+)=(.*?)"$', text, flags=re.M)
+    printed = re.findall(r'log_dry_run "  (NODE_[A-Z_]+)=(.*?)"$', text, flags=re.MULTILINE)
     assert printed, "no dry-run output lines found -- did the format change?"
 
-    written = dict(re.findall(r"^(NODE_[A-Z_]+)=(.*)$", text, flags=re.M))
+    written = dict(re.findall(r"^(NODE_[A-Z_]+)=(.*)$", text, flags=re.MULTILINE))
 
     mismatches = []
     for key, dry_value in printed:

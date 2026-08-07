@@ -1,12 +1,14 @@
 """Asynchronous Batch Processing REST endpoints (/v1/batch)."""
 
-import uuid
 from typing import Annotated, Any
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from scheduler.api.ingress import verify_jwt
+
+logger = structlog.stdlib.get_logger()
 
 router = APIRouter(prefix="/v1", tags=["batch"])
 
@@ -86,49 +88,55 @@ def _require_tenant(jwt_claims: dict[str, Any]) -> str:
 
 @router.post(
     "/batch",
-    response_model=BatchResponse,
-    status_code=status.HTTP_202_ACCEPTED,
+    status_code=status.HTTP_501_NOT_IMPLEMENTED,
 )
 async def submit_batch_job(
-    request: Request,
     payload: BatchRequest,
     jwt_claims: Annotated[dict[str, Any], Depends(verify_jwt)],
-) -> BatchResponse:
-    """Submit an asynchronous batch processing job.
+) -> None:
+    """Refuse batch submission. Nothing here dispatches, so nothing may claim to.
 
-    NOTE: this fabricates its result strings and dispatches nothing. ROADMAP 2.4
-    made it require a credential; it did not make it do work. Do not read
-    "authenticated" as "implemented".
+    This returned **HTTP 202** with a `BatchResponse` whose every item carried
+    `status_code: 200` and the text "[Batch Response for '<your prompt>...'] Completed
+    asynchronously via WAN pipeline", with `completed_items == total_items`. No node
+    was contacted. The "completion" was a list comprehension over the request.
+
+    That is ROADMAP N1's defect in a second endpoint: a well-formed request answered
+    with invented text in the shape a client parses as model output. N1's resolution
+    applies unchanged --
+
+      * **501, not 400.** The server understands the request perfectly; it has no
+        implementation. A 400 would blame the caller for asking correctly.
+      * **501, not 202-with-a-placeholder.** Telling a caller the work is queued when
+        nothing is queued is the specific harm.
+      * **Deleted, not guarded.** N1's lesson was that dead code behind a disabled
+        flag is exactly how the original survived for weeks.
+
+    This also supersedes ROADMAP C9 ("batch jobs are still not persisted"):
+    persisting a fabrication makes it durable, not true. A stub whose output survives
+    a restart is worse than one whose output does not.
+
+    ROADMAP 2.4's work is preserved. The JWT dependency stays -- a 501 that answers
+    anyone is a smaller bug than a 200, not no bug -- and so does `_require_tenant`,
+    because when this is implemented the tenant scoping is the part that must not be
+    rebuilt from scratch.
+
+    See tests/test_batch_is_refused_not_faked.py.
     """
-    tenant_id = _require_tenant(jwt_claims)
-    batch_id = f"batch_{uuid.uuid4().hex[:12]}"
-    results: list[BatchItemResult] = []
-
-    for item in payload.requests:
-        results.append(
-            BatchItemResult(
-                custom_id=item.custom_id,
-                status_code=200,
-                response_text=(
-                    f"[Batch Response for '{item.prompt[:30]}...'] "
-                    "Completed asynchronously via WAN pipeline."
-                ),
-            )
-        )
-
-    response = BatchResponse(
-        batch_id=batch_id,
-        status="completed",
-        total_items=len(payload.requests),
-        completed_items=len(payload.requests),
-        results=results,
+    _require_tenant(jwt_claims)
+    logger.info(
+        "batch_submission_refused",
+        item_count=len(payload.requests),
+        reason="not_implemented",
     )
-    get_batch_jobs(request)[batch_id] = {
-        "tenant_id": tenant_id,
-        "response": response.model_dump(),
-    }
-
-    return response
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail=(
+            "Batch processing is not implemented. This endpoint previously returned "
+            "fabricated results; it now refuses rather than inventing an answer. "
+            "Use POST /v1/chat/completions."
+        ),
+    )
 
 
 @router.get(
@@ -147,6 +155,11 @@ async def get_batch_job_status(
     oracle for enumerating other tenants' batch ids.
     """
     tenant_id = _require_tenant(jwt_claims)
+    # Nothing can be submitted since the POST above began refusing, so this is
+    # always None today. The lookup and the tenant comparison are kept rather than
+    # short-circuited to a bare 404: they are ROADMAP 2.4's fix, they are correct,
+    # and re-deriving "must a batch be scoped to its submitter" later is how that
+    # kind of check gets rebuilt wrong.
     record = get_batch_jobs(request).get(batch_id)
 
     if record is None or record["tenant_id"] != tenant_id:

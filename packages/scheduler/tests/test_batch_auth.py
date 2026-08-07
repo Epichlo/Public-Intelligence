@@ -4,6 +4,14 @@ Both routes had no auth dependency at all while their sibling
 `/v1/chat/completions` required an RS256 JWT. Authentication alone would not be
 enough: a batch carried no owner, so any valid token could read every batch by id.
 
+**Submission itself is refused with 501 as of ROADMAP C9** -- it used to fabricate
+its results, which is `test_batch_is_refused_not_faked.py`'s subject. That removes
+the only way to *create* a batch through the API, so the ownership tests here seed
+`app.state.batch_jobs` directly instead. They are kept rather than deleted: 2.4's
+tenant scoping is the part that must not be rebuilt from scratch when batch is
+actually implemented, and a check nobody exercises is a check nobody will notice
+breaking.
+
 See specs/close-the-open-http-surface.md.
 """
 
@@ -48,6 +56,29 @@ def client(key_pair: tuple[rsa.RSAPrivateKey, str]) -> TestClient:
     return TestClient(app)
 
 
+def seed_batch(client: TestClient, batch_id: str, tenant_id: str) -> None:
+    """Put a batch record in place without going through the refusing POST.
+
+    Writing directly to `app.state.batch_jobs` is exactly what the endpoint used to
+    do; only the fabricated `results` payload is omitted, since none of these tests
+    assert on it.
+    """
+    jobs = getattr(client.app.state, "batch_jobs", None)
+    if jobs is None:
+        jobs = {}
+        client.app.state.batch_jobs = jobs
+    jobs[batch_id] = {
+        "tenant_id": tenant_id,
+        "response": {
+            "batch_id": batch_id,
+            "status": "completed",
+            "total_items": 1,
+            "completed_items": 1,
+            "results": [],
+        },
+    }
+
+
 def bearer(private_key: rsa.RSAPrivateKey, tenant_id: str) -> dict[str, str]:
     """A valid RS256 bearer token for `tenant_id`."""
     token = jwt.encode(
@@ -88,16 +119,20 @@ def test_a_garbage_token_is_rejected(client: TestClient) -> None:
     assert response.status_code == 401
 
 
-def test_a_valid_token_can_submit(
+def test_a_valid_token_gets_past_auth_and_is_refused_on_the_merits(
     client: TestClient, key_pair: tuple[rsa.RSAPrivateKey, str]
 ) -> None:
-    """The endpoint still works for a legitimate caller."""
+    """501, not 401 -- the credential was accepted; the feature does not exist.
+
+    This asserted 202 until ROADMAP C9. The distinction is the whole value of the
+    test now: it proves the JWT dependency is not rejecting a good token, and that
+    the refusal below it is about the missing implementation rather than about auth.
+    """
     private_key, _ = key_pair
 
     response = client.post("/v1/batch", json=PAYLOAD, headers=bearer(private_key, "tenant-a"))
 
-    assert response.status_code == 202
-    assert response.json()["total_items"] == 1
+    assert response.status_code == 501, response.text
 
 
 # --- authorisation ----------------------------------------------------------
@@ -110,7 +145,8 @@ def test_the_submitting_tenant_can_read_its_own_batch(
     private_key, _ = key_pair
     auth = bearer(private_key, "tenant-a")
 
-    batch_id = client.post("/v1/batch", json=PAYLOAD, headers=auth).json()["batch_id"]
+    batch_id = "batch_owned_by_a"
+    seed_batch(client, batch_id, "tenant-a")
     response = client.get(f"/v1/batch/{batch_id}", headers=auth)
 
     assert response.status_code == 200
@@ -123,9 +159,8 @@ def test_another_tenant_cannot_read_it(
     """Authentication without ownership would mean any token reads every batch."""
     private_key, _ = key_pair
 
-    batch_id = client.post(
-        "/v1/batch", json=PAYLOAD, headers=bearer(private_key, "tenant-a")
-    ).json()["batch_id"]
+    batch_id = "batch_owned_by_a"
+    seed_batch(client, batch_id, "tenant-a")
     response = client.get(f"/v1/batch/{batch_id}", headers=bearer(private_key, "tenant-b"))
 
     assert response.status_code == 404
@@ -137,9 +172,8 @@ def test_someone_elses_batch_is_indistinguishable_from_a_missing_one(
     """403 would confirm the id exists, making the endpoint an enumeration oracle."""
     private_key, _ = key_pair
 
-    batch_id = client.post(
-        "/v1/batch", json=PAYLOAD, headers=bearer(private_key, "tenant-a")
-    ).json()["batch_id"]
+    batch_id = "batch_owned_by_a"
+    seed_batch(client, batch_id, "tenant-a")
     other = bearer(private_key, "tenant-b")
 
     theirs = client.get(f"/v1/batch/{batch_id}", headers=other)
@@ -173,10 +207,12 @@ def test_two_apps_in_one_process_do_not_share_batches(
     second = create_app()
     second.state.jwt_public_key = public_pem
 
-    batch_id = TestClient(first).post("/v1/batch", json=PAYLOAD, headers=auth).json()["batch_id"]
-    response = TestClient(second).get(f"/v1/batch/{batch_id}", headers=auth)
+    first_client, second_client = TestClient(first), TestClient(second)
+    batch_id = "batch_only_in_the_first_app"
+    seed_batch(first_client, batch_id, "tenant-a")
 
-    assert response.status_code == 404
+    assert first_client.get(f"/v1/batch/{batch_id}", headers=auth).status_code == 200
+    assert second_client.get(f"/v1/batch/{batch_id}", headers=auth).status_code == 404
 
 
 # --- the 422-instead-of-401 wart, which batch inherited ---------------------

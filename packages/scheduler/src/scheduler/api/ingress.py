@@ -1,6 +1,5 @@
 """Ingress gateway API endpoint for client task submissions."""
 
-import os
 from typing import Annotated, Any
 
 import jwt
@@ -12,16 +11,25 @@ logger = structlog.stdlib.get_logger()
 
 router = APIRouter(prefix="/api/v1/tasks")
 
-# Standard dummy RSA public key PEM as fallback
-FALLBACK_PUBLIC_KEY = """-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuPdw3Iiuj6UrD6hMY1uZ
-SNXPOBfJ4wra50siLS0+DYThpmcQkhzeqvnWh4zLeiBlu4Tk563XZYozkXaaL1bY
-/a6MYPC1A5E5H4RalM7ZH0HUNBWgM+8WEZ7utSA5GRO59K9zeP7Jj+zKCDEXFdwa
-pRD330+s1UfXfK+wJCtNqCuRQBQ5CmBAbNP2p6pYxOcTCYNHhgVayDuR8kJVi04m
-n3ujts5RifLbwGn+Py/9IFYbLl2RW/cN3dNWm/eH/1Q0C7MJkZv8br4KEwevadVi
-ms0tJViEjM0cHJaH5iN7e9qxGaw1Cq/sM2M27TyZfRZMGLeH8GKRDsg3pY0nV8zu
-NQIDAQAB
------END PUBLIC KEY-----"""
+# There was a hardcoded RSA public key here, used whenever nothing else was
+# configured. It is gone (ROADMAP C4), and the reason is worth stating because the
+# risk was previously judged low on the wrong grounds.
+#
+# The argument for keeping it was that the matching PRIVATE key is not in this
+# repository, so nobody could mint a token it accepts. That is true and beside the
+# point: the key came from somewhere. It was a "standard dummy" PEM of the kind that
+# circulates in tutorials and sample projects, and whoever generated it may still
+# hold the private half. Trusting a key of unknown provenance is not "probably
+# fine" -- it is an authentication decision nobody made.
+#
+# An unconfigured gateway now refuses everyone. See test_jwt_key_rotation.py.
+
+# Key identifiers carried in the `kid` JWT header. Two keys are accepted at once so
+# that rotation is a sequence rather than an outage: add the new key as secondary,
+# start signing with it, and retire the old one once the last token minted under it
+# has expired. Before this, replacing the key invalidated every live token at once.
+KID_PRIMARY = "primary"
+KID_SECONDARY = "secondary"
 
 
 class TaskSubmission(BaseModel):
@@ -32,6 +40,59 @@ class TaskSubmission(BaseModel):
     data: dict[str, Any] = Field(
         default_factory=dict, description="Arbitrary task execution arguments."
     )
+
+
+def _verification_keys(request: Request) -> dict[str, str]:
+    """Active public keys by `kid`, most likely first.
+
+    Read from `app.state` rather than from settings, matching how `store` and
+    `rate_limiter` are injected: settings are resolved once where the deployed app is
+    built, so an ambient `.env` cannot change what the test suite verifies against.
+    """
+    keys: dict[str, str] = {}
+    primary = getattr(request.app.state, "jwt_public_key", None)
+    secondary = getattr(request.app.state, "jwt_public_key_secondary", None)
+    if primary:
+        keys[KID_PRIMARY] = primary
+    if secondary:
+        keys[KID_SECONDARY] = secondary
+    return keys
+
+
+def _decode_with_any(token: str, candidates: dict[str, str]) -> dict[str, Any] | None:
+    """Verify against the `kid`-named key, then against the rest. None means invalid.
+
+    `kid` is a HINT for key selection and never an assertion of validity: an
+    unrecognised one falls through to trying every active key, and a token that
+    verifies under none of them is refused. It is not treated as "no key matched, so
+    skip the check" -- that is the standard way a kid-aware verifier becomes a
+    bypass, and `test_an_unknown_kid_does_not_bypass_verification` pins it.
+
+    `algorithms=["RS256"]` is passed on every call, so an `alg: none` token has no
+    path through here regardless of which key is tried.
+    """
+    try:
+        named = jwt.get_unverified_header(token).get("kid")
+    except jwt.PyJWTError:
+        named = None
+
+    ordered = list(candidates.items())
+    if named in candidates:
+        ordered.sort(key=lambda item: item[0] != named)
+
+    last_error: Exception | None = None
+    for kid, key in ordered:
+        try:
+            payload: dict[str, Any] = jwt.decode(token, key, algorithms=["RS256"])
+        except jwt.PyJWTError as e:
+            last_error = e
+            continue
+        else:
+            logger.debug("ingress_jwt_verified", kid=kid)
+            return payload
+
+    logger.warning("ingress_jwt_verification_failed", error=str(last_error))
+    return None
 
 
 def verify_jwt(request: Request, authorization: str | None = Header(None)) -> dict[str, Any]:
@@ -65,18 +126,19 @@ def verify_jwt(request: Request, authorization: str | None = Header(None)) -> di
 
     token = authorization.split(" ")[1]
 
-    public_key = getattr(request.app.state, "jwt_public_key", None)
-    if not public_key:
-        public_key = os.environ.get("JWT_PUBLIC_KEY", FALLBACK_PUBLIC_KEY)
-
-    try:
-        # Asymmetric signature verification using RS256
-        payload = jwt.decode(token, public_key, algorithms=["RS256"])
-    except jwt.PyJWTError as e:
-        logger.warning("ingress_jwt_verification_failed", error=str(e))
+    candidates = _verification_keys(request)
+    if not candidates:
+        # Fail closed. Previously this fell back to a key literal in this file, so an
+        # unconfigured gateway trusted whoever held that key's private half.
+        logger.error("ingress_jwt_no_key_configured")
         raise HTTPException(
-            status_code=401, detail=f"JWT signature verification failed: {e}"
-        ) from e
+            status_code=401,
+            detail="Gateway has no JWT verification key configured; refusing all requests.",
+        )
+
+    payload = _decode_with_any(token, candidates)
+    if payload is None:
+        raise HTTPException(status_code=401, detail="JWT signature verification failed.")
 
     if "tenant_id" not in payload:
         raise HTTPException(

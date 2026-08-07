@@ -74,7 +74,7 @@ def generate_keypair(force: bool = False) -> None:
     print(public_pem.decode("utf-8"))
 
 
-def mint(tenant: str, subject: str, hours: int) -> str:
+def mint(tenant: str, subject: str, hours: int, kid: str = "primary") -> str:
     """Sign an RS256 JWT carrying the tenant claim the gateway requires."""
     if not PRIVATE_KEY.exists():
         print(
@@ -96,6 +96,12 @@ def mint(tenant: str, subject: str, hours: int) -> str:
         },
         private_key,  # type: ignore[arg-type]
         algorithm="RS256",
+        # `kid` tells the Scheduler which of its two active keys to try first
+        # (ROADMAP C4). During a rotation, mint under "secondary" while the old key
+        # is still the one deployments verify with, then swap. It is a HINT only:
+        # the gateway verifies the signature against every active key regardless, so
+        # a wrong or unknown kid costs a little work and grants nothing.
+        headers={"kid": kid},
     )
 
 
@@ -109,13 +115,19 @@ def main() -> int:
     parser.add_argument("--tenant", default="tenant-a", help="tenant_id claim")
     parser.add_argument("--subject", default="playground-user", help="sub claim")
     parser.add_argument("--hours", type=int, default=24, help="token lifetime")
+    parser.add_argument(
+        "--kid",
+        default="primary",
+        choices=["primary", "secondary"],
+        help="which active Scheduler key this token is signed for (see ROADMAP C4)",
+    )
     args = parser.parse_args()
 
     if args.generate_keypair:
         generate_keypair(force=args.force)
         return 0
 
-    token = mint(args.tenant, args.subject, args.hours)
+    token = mint(args.tenant, args.subject, args.hours, args.kid)
     print(token)
     print(
         f"\n# tenant={args.tenant} expires in {args.hours}h\n"

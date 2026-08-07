@@ -38,10 +38,18 @@ async def test_credit_ledger_accrual_and_deduction() -> None:
 def test_batch_processing_api_endpoints() -> None:
     """Verify POST /v1/batch submission and GET /v1/batch/{batch_id} status lookup.
 
-    Now carries a credential. Both routes had no auth dependency when this test was
-    written, so it passed anonymously; ROADMAP 2.4 closed that. See
-    specs/close-the-open-http-surface.md. What this test covers that
-    `test_batch_auth.py` does not is the response shape for a multi-item batch.
+    **This test was pinning a fabrication as correct behaviour.** It asserted
+    `status == "completed"` and `len(results) == 2` for a submission that contacted
+    no node and ran no model -- the response text was a formatted string containing
+    the caller's own prompt. Asserting the shape of invented output is worse than not
+    testing it, because it converts the bug into a requirement.
+
+    Rewritten under ROADMAP C9 to pin the refusal instead, and kept multi-item
+    because that is what it uniquely covered: the refusal must not depend on batch
+    size, and must not become a partial success for a longer list.
+
+    Its earlier history is worth keeping too: both routes had no auth dependency when
+    this was written, so it passed anonymously until ROADMAP 2.4.
     """
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     public_pem = (
@@ -81,21 +89,22 @@ def test_batch_processing_api_endpoints() -> None:
         "priority": "batch",
     }
 
-    # Submit batch job
+    # A two-item batch is refused exactly as a one-item batch is: 501, and nothing
+    # in the body that a client could parse as either progress or model output.
     response = client.post("/v1/batch", json=payload, headers=auth)
-    assert response.status_code == 202
-    data = response.json()
+    assert response.status_code == 501, response.text
 
-    assert "batch_id" in data
-    assert data["status"] == "completed"
-    assert data["total_items"] == 2
-    assert len(data["results"]) == 2
-    batch_id = data["batch_id"]
+    # Structure, not word-matching: the detail message legitimately mentions
+    # "fabricated results" while explaining itself, and an earlier version of this
+    # assertion failed on that. What must not happen is the body being READABLE as a
+    # batch -- no id to poll, no counts, and none of the caller's prompts echoed back
+    # in a field a client would render.
+    body = response.json()
+    assert set(body) == {"detail"}, f"the refusal carries batch-shaped fields: {sorted(body)}"
+    assert "Summarize batch item" not in response.text, (
+        "the refusal echoes the submitted prompts, which is how the fabricated "
+        "version made its output look like a real completion"
+    )
 
-    # Query status
-    status_resp = client.get(f"/v1/batch/{batch_id}", headers=auth)
-    assert status_resp.status_code == 200
-    status_data = status_resp.json()
-
-    assert status_data["batch_id"] == batch_id
-    assert status_data["completed_items"] == 2
+    # And nothing was recorded, so there is no id to look up afterwards.
+    assert client.get("/v1/batch/batch_000000000000", headers=auth).status_code == 404

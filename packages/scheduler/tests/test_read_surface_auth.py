@@ -29,11 +29,12 @@ DELIBERATELY_PUBLIC = {
     # health check that needs a secret reports "unhealthy" when the secret is wrong.
     ("GET", "/health"),
     ("GET", "/health/ready"),
-    # Marketplace discovery: a set of model NAMES aggregated across the fleet. Not
-    # which node has what, not hardware, not addresses. A developer deciding whether
-    # to obtain a credential should be able to see what the network can serve.
-    ("GET", "/v1/models"),
-    ("GET", "/v1/models/{model_id}"),
+    # /v1/models and /v1/models/{model_id} were HERE until ROADMAP C10, on the 2.6
+    # argument that "a marketplace should let a developer see what is servable before
+    # obtaining a credential". Stage D removed the marketplace: D1 made this
+    # invite-only and D8 made it a self-hosted control plane, so the anonymous
+    # developer that justified the exception does not exist. The disclosure did not
+    # change; the benefit did.
 }
 
 GUARDED_READS = [
@@ -151,19 +152,31 @@ def test_probes_still_answer_without_a_credential(client: TestClient, path: str)
     assert client.get(path).status_code == 200
 
 
-def test_model_discovery_stays_public_as_a_decision(client_with_node: TestClient) -> None:
-    """DELIBERATE, not an omission -- which is why it has a test rather than a gap.
+def test_model_discovery_is_now_authenticated(client_with_node: TestClient) -> None:
+    """REVERSED by ROADMAP C10, in exactly the way the previous version asked for.
 
-    The product is a marketplace. What this returns is a set of model NAMES
-    aggregated across the fleet: not which node has what, not hardware, not
-    addresses. That is a materially smaller disclosure than `/nodes`, which is why
-    the two are treated differently. If that judgement is ever reversed, this test
-    is what has to be changed on purpose.
+    This test used to assert `/v1/models` answers 200 with no credential, on the 2.6
+    judgement that "the product is a marketplace" and a developer should be able to
+    see what is servable before obtaining one. It closed with: *if that judgement is
+    ever reversed, this test is what has to be changed on purpose.* This is that
+    change.
+
+    Stage D removed the premise rather than the reasoning. D1 made this an
+    invite-only trusted-host network and D8 made it a self-hosted control plane for
+    hardware you already own, so the anonymous developer the exception existed for
+    does not exist: anyone who should see the catalogue already holds a credential
+    from the operator.
+
+    Note what did NOT change -- the disclosure is still model names only, never which
+    node has what. The exception was reasonable when it was made; its benefit went
+    away and its cost did not.
     """
-    response = client_with_node.get("/v1/models")
+    assert client_with_node.get("/v1/models").status_code == 401
+    assert client_with_node.get("/v1/models/llama3").status_code == 401
 
-    assert response.status_code == 200
-    assert [m["id"] for m in response.json()["data"]] == ["llama3"]
+    allowed = client_with_node.get("/v1/models", headers={"X-Network-Auth-Token": TOKEN})
+    assert allowed.status_code == 200
+    assert [m["id"] for m in allowed.json()["data"]] == ["llama3"]
 
 
 # --- the ratchet ------------------------------------------------------------

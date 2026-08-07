@@ -123,6 +123,8 @@ def create_app(
     store: SchedulerStore | None = None,
     cors_origins: list[str] | None = None,
     rate_limiter: TokenBucketLimiter | None = None,
+    jwt_public_key: str | None = None,
+    jwt_public_key_secondary: str | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
 
@@ -141,6 +143,10 @@ def create_app(
             two above -- constructed here rather than resolved from settings, so the
             suite's limits do not depend on an ambient environment. The deployed app
             passes one built from settings at the bottom of this module.
+        jwt_public_key: PEM key verifying requester JWTs. `None` means the gateway
+            refuses every request -- there is no fallback key (ROADMAP C4).
+        jwt_public_key_secondary: Second key accepted during rotation, as kid
+            "secondary". Injected here for the same reason as everything above.
     """
     app = FastAPI(
         title="Public Intelligence Scheduler",
@@ -177,6 +183,8 @@ def create_app(
     # of zeroes is still the thing 3.2 needs to already exist before it can write.
     app.state.ledger = CreditLedger(store=store)
     app.state.rate_limiter = rate_limiter or TokenBucketLimiter()
+    app.state.jwt_public_key = jwt_public_key
+    app.state.jwt_public_key_secondary = jwt_public_key_secondary
 
     from scheduler.core.engine import SchedulingEngine
     from scheduler.core.matchmaker import CapabilityMatchmaker
@@ -200,4 +208,6 @@ app = create_app(
     store=build_store(),
     cors_origins=get_settings().cors_allow_origins,
     rate_limiter=build_rate_limiter(),
+    jwt_public_key=get_settings().jwt_public_key,
+    jwt_public_key_secondary=get_settings().jwt_public_key_secondary,
 )

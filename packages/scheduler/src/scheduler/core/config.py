@@ -86,6 +86,28 @@ class Settings(BaseSettings):
         ),
     )
 
+    jwt_public_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("SCHEDULER_JWT_PUBLIC_KEY", "JWT_PUBLIC_KEY"),
+        description=(
+            "PEM public key that verifies requester JWTs. Unset means the gateway "
+            "refuses every request: there is deliberately no fallback key, because "
+            "the one that used to be here was a literal of unknown provenance."
+        ),
+    )
+    jwt_public_key_secondary: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "SCHEDULER_JWT_PUBLIC_KEY_SECONDARY", "JWT_PUBLIC_KEY_SECONDARY"
+        ),
+        description=(
+            "Second PEM public key accepted during rotation, addressed as kid "
+            "'secondary'. Set this to the OUTGOING key while tokens minted under it "
+            "are still live, then clear it. Rotation without this is an outage: "
+            "replacing the single key invalidates every issued token at once."
+        ),
+    )
+
     rate_limit_capacity: int = Field(
         default=5,
         validation_alias=AliasChoices("SCHEDULER_RATE_LIMIT_CAPACITY", "RATE_LIMIT_CAPACITY"),

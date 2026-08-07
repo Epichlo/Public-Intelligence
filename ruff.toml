@@ -1,0 +1,23 @@
+# Root ruff config. It EXTENDS the scheduler package's settings rather than
+# restating them, so this is not the third copy of the lint config that
+# `tests/test_source_parity.py` exists to prevent -- there is still exactly one
+# definition of the rules, and this file only points at it.
+#
+# Why it exists: `tests/`, `scripts/` and `experimental/` sit outside both packages,
+# so ruff invoked there finds no configuration above them and falls back to its
+# DEFAULTS -- 88 columns instead of this repo's 100, and a different rule set. The
+# consequences are not cosmetic:
+#
+#   * Reformatting at 88 columns adds magic trailing commas, and those are STICKY:
+#     re-running with the right config afterwards does not undo them, because an
+#     explicit trailing comma is itself the signal to stay exploded.
+#   * Ruff's defaults enable rules this repo does not select (PYI034, PYI036, ...),
+#     so a bare run reports errors that are not errors here.
+#   * Under the default target version, `tomllib` sorts as third-party rather than
+#     stdlib, so a bare `--fix` silently reorders imports into a state the real
+#     config then rejects.
+#
+# `scripts/verify.sh` passes `--config packages/scheduler/pyproject.toml` explicitly
+# and always did. This makes the bare invocation correct too, which matters because
+# the bare invocation is what a contributor -- or an agent -- actually types.
+extend = "packages/scheduler/pyproject.toml"

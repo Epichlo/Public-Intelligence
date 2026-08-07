@@ -71,9 +71,19 @@ grep -rn -A3 "allow_origins" packages/node/src packages/scheduler/src
 - [ ] No new auth bypass on any authenticated route
 - [ ] Any pre-existing hit is listed below as known, not silently passed over
 
-The first grep returns two benign hits — `AliasChoices("NODE_NETWORK_AUTH_TOKEN", ...)`
-in `packages/node/src/node/core/configuration.py:105` and `packages/scheduler/src/scheduler/core/config.py:54`
-— which declare env var *names*, not values. Everything else it returns is real.
+The first grep returns four benign hits, and no others:
+
+- `AliasChoices("NODE_NETWORK_AUTH_TOKEN", ...)` in `packages/node/src/node/core/configuration.py`
+  and `packages/scheduler/src/scheduler/core/config.py` — these declare env var
+  *names*, not values.
+- Two `SCHEDULER_NETWORK_AUTH_TOKEN = "s3cret-token"` assignments in
+  `packages/website/src/app/api/telemetry/all/route.test.ts` — a **test fixture**
+  asserting that the proxy forwards the credential upstream and never leaks it to
+  the browser. The grep covers `packages/website/src`, which gained test files in
+  ROADMAP C6; a fixture value inside a `*.test.ts` is not a shipped credential.
+
+**Everything else it returns is real.** If it comes back completely clean, the
+pattern is broken, not the code.
 
 The auth-bypass grep returns one hit, `packages/website/src/app/architecture/page.tsx:42`,
 which is prose containing the word "bypassing", not code.
@@ -83,7 +93,7 @@ let them mask a *new* one, and do not report them as clean:
 
 | Location | Issue |
 |---|---|
-| `packages/scheduler/src/scheduler/api/ingress.py:16` | hardcoded fallback RSA public key |
+| _(none)_ | The table is empty as of 2026-08-07. Keep it, and add a row rather than fixing something quietly. |
 
 Rows previously listed here that were **removed because they are fixed**, each verified
 by the greps in this step returning no hit:
@@ -98,6 +108,17 @@ by the greps in this step returning no hit:
   this sat here so long as a low-priority row: it was described as "rejected by browsers",
   i.e. as failing safe. It did not. Starlette reflects the caller's `Origin` rather than
   sending a wildcard when credentials are on, so it worked for every origin that asked.
+
+- **2026-08-07** — the hardcoded fallback RSA public key at `ingress.py:16` (ROADMAP C4).
+  The risk had been judged low on the grounds that the matching *private* key is not in
+  this repository, so nobody could mint a token it accepts. True, and beside the point:
+  **the key came from somewhere.** It was a "standard dummy" PEM of the kind that
+  circulates in tutorials, and whoever generated it may still hold the private half.
+  Trusting a key of unknown provenance is not "probably fine" — it is an authentication
+  decision nobody made. The gateway now **fails closed**: no configured key means 401 for
+  every request plus an error log, and there is no literal left to fall back to. Pinned by
+  `test_no_public_key_literal_survives_in_the_source`, which scans the whole installed
+  package for `BEGIN PUBLIC KEY` rather than watching one line number.
 
 - **2026-08-06** — `TELEMETRY_SECRET_KEY` defaulting to a constant published in this repo
   (ROADMAP 2.7, which superseded 2.2's "rotate it"). Rotating would have closed nothing:
