@@ -1,10 +1,8 @@
 """OpenAI-compatible REST API Gateway router."""
 
-import asyncio
 import time
 import uuid
 from collections.abc import AsyncGenerator
-from contextlib import suppress
 from typing import TYPE_CHECKING, Annotated, Any
 
 if TYPE_CHECKING:
@@ -16,14 +14,12 @@ from fastapi.responses import StreamingResponse
 
 from scheduler.api.ingress import verify_jwt
 from scheduler.api.nodes import get_mesh_client
-from scheduler.core.boundary_engine import LocalBoundaryEngine
 from scheduler.core.config import get_settings
 from scheduler.core.node_dispatch import (
     NodeDispatchError,
     infer_once,
     open_inference_stream,
 )
-from scheduler.core.transport import SharedMemoryIPC, get_tensor_topic
 from scheduler.models.openai import (
     ChatCompletionChunk,
     ChatCompletionChunkChoice,
@@ -36,7 +32,6 @@ from scheduler.models.openai import (
     ModelListResponse,
     ModelObject,
 )
-from scheduler.models.pipeline import LayerRange, PipelineStage, StageType, TensorPayload
 
 logger = structlog.stdlib.get_logger()
 
@@ -97,255 +92,37 @@ async def create_chat_completion(
                 detail="Rate limit exceeded. Multi-tenant quota exhausted.",
             )
 
-    # 2. Split Inference Execution Path Guard
-    is_split_req = (
+    # 2. Split inference is NOT IMPLEMENTED, and says so.
+    #
+    # This used to run the request through `LocalBoundaryEngine` -- seeded
+    # `random.gauss` matrices over a toy vocabulary -- and return the result as a
+    # normal 200 in the OpenAI response shape. Asking "What is the capital of
+    # France?" with `x-split-inference: true` returned `content: 'token_556'`, which
+    # every OpenAI-compatible client presents to a user as the model's answer.
+    #
+    # 501 is exactly the condition: the server understands the request and has no
+    # implementation. A 400 would blame the caller for asking a reasonable question;
+    # silently serving a non-split completion would tell them, in effect, that they
+    # got what they asked for.
+    #
+    # The ~250-line execution block was DELETED rather than left behind this guard.
+    # Dead code behind a disabled flag is how this happened: something written to be
+    # finished later that stayed wired to the request path. Re-enabling split
+    # inference now means writing it.
+    # See specs/stop-returning-fabricated-completions.md.
+    if (
         req_data.split_inference
         or request.headers.get("x-split-inference", "").lower() == "true"
         or getattr(get_settings(), "enable_split_inference", False)
-    )
-
-    if is_split_req:
-        task_id = f"chatcmpl-split-{uuid.uuid4().hex[:12]}"
-        task_data = {
-            "task_id": task_id,
-            "model_id": req_data.model,
-            "model": req_data.model,
-            "total_layers": 32,
-            "requirements": {"model_name": req_data.model},
-        }
-        scheduling_engine = getattr(request.app.state, "scheduling_engine", None)
-
-        if scheduling_engine is not None:
-            try:
-                stages = await scheduling_engine.schedule_split_inference_pipeline(
-                    task_data, total_layers=32
-                )
-            except ValueError as e:
-                logger.warning("openai_split_scheduling_failed", error=str(e))
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail=(
-                        f"No suitable compute nodes available for split inference model "
-                        f"'{req_data.model}': {e}"
-                    ),
-                ) from e
-        else:
-            stages = [
-                PipelineStage(
-                    stage_index=0,
-                    total_stages=3,
-                    layer_range=LayerRange(start_layer=0, end_layer=0),
-                    node_id="client_local",
-                    model_id=req_data.model,
-                    is_local_boundary=True,
-                    stage_type=StageType.CLIENT_EMBEDDING,
-                    is_split_inference=True,
-                ),
-                PipelineStage(
-                    stage_index=1,
-                    total_stages=3,
-                    layer_range=LayerRange(start_layer=1, end_layer=31),
-                    node_id="remote_node_1",
-                    model_id=req_data.model,
-                    is_local_boundary=False,
-                    stage_type=StageType.REMOTE_HIDDEN,
-                    is_split_inference=True,
-                ),
-                PipelineStage(
-                    stage_index=2,
-                    total_stages=3,
-                    layer_range=LayerRange(start_layer=32, end_layer=32),
-                    node_id="client_local",
-                    model_id=req_data.model,
-                    is_local_boundary=True,
-                    stage_type=StageType.CLIENT_LM_HEAD,
-                    is_split_inference=True,
-                ),
-            ]
-
-        local_boundary = LocalBoundaryEngine(
-            model_id=req_data.model, vocab_size=1000, hidden_dim=128
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=(
+                "Split inference is not implemented. It is cut from v1 (see ROADMAP.md); "
+                "the previous implementation returned simulated tokens. Retry without "
+                "`split_inference` / `x-split-inference` for a single-node completion."
+            ),
         )
-        prompt_text = messages_to_prompt(req_data.messages)
-
-        # Tokenize and compute local Layer 0 embeddings H_0
-        h0_payload = local_boundary.embed_prompt(prompt_text, task_id=task_id)
-
-        # Transmit activation vectors through intermediate remote host stages
-        remote_stages = [s for s in stages if not s.is_local_boundary]
-        stream_router = getattr(request.app.state, "stream_router", None)
-        zenoh_session = getattr(request.app.state, "zenoh_session", None)
-        timeout = float(getattr(get_settings(), "split_inference_timeout_seconds", 5.0))
-
-        curr_payload = h0_payload
-        for r_stage in remote_stages:
-            resp_topic = get_tensor_topic(task_id, r_stage.stage_index + 1)
-
-            if stream_router is not None and zenoh_session is not None:
-                await stream_router.send_tensor_payload(curr_payload)
-
-                loop = asyncio.get_running_loop()
-                fut: asyncio.Future[TensorPayload] = loop.create_future()
-
-                def _on_remote_activation(
-                    sample: Any,
-                    fut: asyncio.Future[TensorPayload] = fut,
-                    loop: asyncio.AbstractEventLoop = loop,
-                ) -> None:
-                    try:
-                        if hasattr(sample.payload, "to_bytes"):
-                            raw_bytes = sample.payload.to_bytes()
-                        elif isinstance(sample.payload, bytes):
-                            raw_bytes = sample.payload
-                        elif isinstance(sample.payload, str):
-                            raw_bytes = sample.payload.encode("utf-8")
-                        else:
-                            raw_bytes = bytes(sample.payload)
-
-                        if raw_bytes.startswith(b"shm://"):
-                            shm_name = raw_bytes[6:].decode("utf-8", errors="ignore")
-                            raw_bytes = SharedMemoryIPC.read_data(shm_name)
-                            SharedMemoryIPC.cleanup(shm_name)
-
-                        recv_payload = TensorPayload.from_framed_bytes(raw_bytes)
-                        if not fut.done():
-                            loop.call_soon_threadsafe(fut.set_result, recv_payload)
-                    except Exception as exc:
-                        if not fut.done():
-                            loop.call_soon_threadsafe(fut.set_exception, exc)
-
-                sub = zenoh_session.declare_subscriber(resp_topic, _on_remote_activation)
-                try:
-                    returned_payload = await asyncio.wait_for(fut, timeout=timeout)
-                except TimeoutError as err:
-                    logger.error(
-                        "remote_split_stage_timeout",
-                        task_id=task_id,
-                        stage_index=r_stage.stage_index,
-                    )
-                    raise HTTPException(
-                        status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                        detail=(
-                            f"Gateway Timeout: Remote split stage {r_stage.stage_index} timed out "
-                            f"after {timeout}s waiting for topic {resp_topic}"
-                        ),
-                    ) from err
-                finally:
-                    if hasattr(sub, "undeclare"):
-                        with suppress(Exception):
-                            sub.undeclare()
-
-                try:
-                    returned_payload.validate_split_activation_boundary()
-                except ValueError as val_err:
-                    logger.error(
-                        "remote_split_stage_validation_failed",
-                        task_id=task_id,
-                        stage_index=r_stage.stage_index,
-                        error=str(val_err),
-                    )
-                    raise HTTPException(
-                        status_code=status.HTTP_502_BAD_GATEWAY,
-                        detail=(
-                            f"Bad Gateway: Remote split stage {r_stage.stage_index} returned "
-                            f"invalid activation payload: {val_err}"
-                        ),
-                    ) from val_err
-
-                curr_payload = returned_payload
-            else:
-                if stream_router is not None:
-                    await stream_router.send_tensor_payload(curr_payload)
-
-                curr_payload = TensorPayload(
-                    task_id=task_id,
-                    stage_index=r_stage.stage_index,
-                    target_stage_index=r_stage.stage_index + 1,
-                    is_split_inference=True,
-                    tensor_type="activation",
-                    data=curr_payload.data,
-                    shape=curr_payload.shape,
-                    dtype=curr_payload.dtype,
-                    sequence_id=curr_payload.sequence_id,
-                )
-                curr_payload.validate_split_activation_boundary()
-
-        # Compute local Layer N LM Head unembedding and sampling
-        _token_id, token_text = local_boundary.unembed_logits(
-            curr_payload, temperature=req_data.temperature or 1.0
-        )
-
-        if not req_data.stream:
-            prompt_tokens = estimate_tokens(prompt_text)
-            completion_tokens = estimate_tokens(token_text)
-            return ChatCompletionResponse(
-                id=task_id,
-                object="chat.completion",
-                created=int(time.time()),
-                model=req_data.model,
-                choices=[
-                    ChatCompletionResponseChoice(
-                        index=0,
-                        message=ChatMessage(role="assistant", content=token_text),
-                        finish_reason="stop",
-                    )
-                ],
-                usage=CompletionUsage(
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                    total_tokens=prompt_tokens + completion_tokens,
-                ),
-            )
-
-        # Handle SSE streaming for split inference
-        async def split_sse_generator() -> AsyncGenerator[str, None]:
-            role_chunk = ChatCompletionChunk(
-                id=task_id,
-                object="chat.completion.chunk",
-                created=int(time.time()),
-                model=req_data.model,
-                choices=[
-                    ChatCompletionChunkChoice(
-                        index=0,
-                        delta=ChatCompletionChunkDelta(role="assistant", content=""),
-                        finish_reason=None,
-                    )
-                ],
-            )
-            yield f"data: {role_chunk.model_dump_json()}\n\n"
-
-            content_chunk = ChatCompletionChunk(
-                id=task_id,
-                object="chat.completion.chunk",
-                created=int(time.time()),
-                model=req_data.model,
-                choices=[
-                    ChatCompletionChunkChoice(
-                        index=0,
-                        delta=ChatCompletionChunkDelta(content=token_text),
-                        finish_reason=None,
-                    )
-                ],
-            )
-            yield f"data: {content_chunk.model_dump_json()}\n\n"
-
-            stop_chunk = ChatCompletionChunk(
-                id=task_id,
-                object="chat.completion.chunk",
-                created=int(time.time()),
-                model=req_data.model,
-                choices=[
-                    ChatCompletionChunkChoice(
-                        index=0,
-                        delta=ChatCompletionChunkDelta(),
-                        finish_reason="stop",
-                    )
-                ],
-            )
-            yield f"data: {stop_chunk.model_dump_json()}\n\n"
-            yield "data: [DONE]\n\n"
-
-        return StreamingResponse(split_sse_generator(), media_type="text/event-stream")
 
     # 3. Select Target Node via Scheduling Engine or NodeRegistry
     registry: NodeRegistry = request.app.state.registry

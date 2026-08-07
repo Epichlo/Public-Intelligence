@@ -172,6 +172,76 @@ Fill this in. It is the whole point of the file.
 
 ```
 Date:        2026-08-07
+Change:      ROADMAP N1 — the gateway stops returning fabricated text as a
+             successful completion.
+Spec:        specs/stop-returning-fabricated-completions.md
+
+  1. Test suite ......... PASS
+  2. Spec match ......... PASS
+  3. Secrets & bypasses . PASS
+  4. Duplication ........ PASS
+  5. Nothing tracked .... PASS
+  6. STATUS regenerated . PASS
+
+VERDICT: PASS
+
+Reasons:
+- 1. `./scripts/verify.sh` -> `PASS 15 checks`, this session. Scheduler 311 passed,
+  Node 280 / 1 skipped, root E2E 73. Net -5 on Scheduler: +6 new in
+  `test_split_inference_refused.py`, -5 from deleting
+  `test_openai_split_inference.py`, and one existing test renamed.
+- 1a. Red observed first, and the STARTING evidence was a live probe rather than a
+  test: a valid RS256 JWT plus `x-split-inference: true` asking "What is the capital
+  of France?" returned `HTTP 200` with `content: 'token_556'`. 5 of the 6 new tests
+  then failed against unfixed code.
+- 1b. TWO OF MY OWN TESTS WERE WRONG AGAIN, same shape as earlier in this session:
+  * `test_the_gateway_no_longer_reaches_the_simulation` failed because the only
+    remaining mention of `LocalBoundaryEngine` is the COMMENT explaining the
+    history. Rewritten to match use, not mention -- it now strips comment lines
+    first. Same reasoning as the archived-repo check in `test_installer_paths.py`.
+  * `test_the_settings_flag_refuses_every_request` failed with
+    `"Settings" object has no field "enable_split_inference"`, which is a FINDING,
+    not a test bug -- see 2a.
+- 1c. DELETED `packages/scheduler/tests/test_openai_split_inference.py` in full. All
+  5 of its tests asserted that the simulated split path returned well-formed
+  completions. They passed for years and were evidence for nothing: the suite
+  asserted the path returned *something*, never that what it returned was real.
+  That is the lesson worth keeping from this item.
+- 2. Every box under "Done looks like" is ticked, one of them CORRECTED -- see 2a.
+  Nothing under "Out of scope" was built: `local_boundary`, `transport`, `kv_cache`
+  and `quantization` are untouched (ROADMAP C2), split inference is not
+  implemented, and the three module-level test files that never call the endpoint
+  are left alone.
+- 2a. SPEC CORRECTION. The spec claimed the `enable_split_inference` setting "keeps
+  working, as a way to get 501s". Writing the test disproved it: `Settings` has no
+  such field and never did, so `getattr(get_settings(), "enable_split_inference",
+  False)` was permanently False. A third trigger that could never fire, and an
+  operator setting `SCHEDULER_ENABLE_SPLIT_INFERENCE` got nothing, silently. The
+  `getattr` is kept so that adding the field later refuses rather than fabricates,
+  and a test now pins the field's absence.
+- 3. Unchanged: the fallback RSA public key at `ingress.py:16` and the two benign
+  `AliasChoices` env-var-name hits. No new secret or bypass. This change only
+  removes a capability.
+- 4. No new module. 250 lines removed from `openai.py` (613 -> 395). It no longer
+  imports `LocalBoundaryEngine`, and the `transport` import it dropped does not
+  change either copy of that duplicated pair. `tests/test_source_parity.py` passes
+  with budgets unchanged.
+- 5. `git ls-files | grep -iE "\.env$|..."` -> clean; `.env` ignored.
+- 6. Regenerated; counts (311/280/73) match step 1.
+
+Not claimed: this does not make split inference work, and does not remove the
+~2,850 lines of simulation still shipped and tested (C2). What it establishes is
+that no request can reach that code and no response can carry its output. The
+`token_` guard test covers the two known triggers; it cannot prove a path nobody
+thought of does not exist, which is why the source-level assertion exists alongside
+it.
+
+---
+
+## Previous verdict — ROADMAP 2.5
+
+```
+Date:        2026-08-07
 Change:      ROADMAP 2.5 — eviction reports what it did, instead of announcing
              that it was asked.
 Spec:        specs/eviction-reports-what-it-did.md

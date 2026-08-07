@@ -116,8 +116,16 @@ def test_local_boundary_embed_prompt_split_inference_payload() -> None:
     assert "prompt" not in payload_repr.lower() or "activation" in payload_repr.lower()
 
 
-def test_gateway_boundary_import_uses_canonical_local_boundary() -> None:
-    """Verify gateway imports resolve to the canonical local boundary engine."""
+def test_boundary_engine_module_reexports_the_canonical_engine() -> None:
+    """Renamed: this never tested the gateway, and now the gateway has no link to it.
+
+    It was `test_gateway_boundary_import_uses_canonical_local_boundary`, which
+    implied `api/openai.py` resolves to this class. It does not -- ROADMAP N1
+    removed that wiring, because reaching `LocalBoundaryEngine` from a request meant
+    returning simulated tokens to a caller as a normal 200. All this checks is that
+    `core/boundary_engine` re-exports `core/local_boundary`. Both modules are
+    slated for quarantine under ROADMAP C2.
+    """
     assert GatewayBoundaryEngine is LocalBoundaryEngine
 
 
