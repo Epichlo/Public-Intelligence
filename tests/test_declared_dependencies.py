@@ -34,9 +34,11 @@ DISTRIBUTION_NAME = {
     "yaml": "pyyaml",
 }
 
-# First-party, so never a declared dependency. `shared` and `src` are the
-# in-tree artifact-store copies the monorepo migration left behind.
-FIRST_PARTY = {"node", "scheduler", "shared", "src"}
+# First-party, so never a declared dependency. `shared` and `src` used to be here
+# too -- two more in-tree copies of the artifact store that the monorepo migration
+# left behind. Both are gone (ROADMAP C8); the surviving copy lives at
+# `node/storage/` and is covered by the `node` entry.
+FIRST_PARTY = {"node", "scheduler"}
 
 
 def declared_dependencies(package: str) -> set[str]:
@@ -66,14 +68,22 @@ def imported_modules(package: str) -> dict[str, str]:
     for path in (REPO_ROOT / "packages" / package / "src").rglob("*.py"):
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             names: list[str] = []
+            # `lineno` is read inside the isinstance branches rather than after them:
+            # ast.walk is typed as yielding the base `ast.AST`, which has no lineno,
+            # and only Import/ImportFrom ever reach the read. Narrowing here is what
+            # makes this file type-check -- it was the one real error mypy found when
+            # ROADMAP C7 pointed it at tests/ for the first time.
+            lineno = 0
             if isinstance(node, ast.Import):
                 names = [alias.name.split(".")[0] for alias in node.names]
+                lineno = node.lineno
             elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
                 names = [node.module.split(".")[0]]
+                lineno = node.lineno
             for name in names:
                 if name in STDLIB or name in FIRST_PARTY:
                     continue
-                found.setdefault(name, f"{path.relative_to(REPO_ROOT)}:{node.lineno}")
+                found.setdefault(name, f"{path.relative_to(REPO_ROOT)}:{lineno}")
     return found
 
 

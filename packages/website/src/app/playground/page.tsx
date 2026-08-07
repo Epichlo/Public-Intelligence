@@ -14,6 +14,36 @@ function estimateTokens(text: string): number {
   return Math.max(1, Math.floor(text.length / 4));
 }
 
+/**
+ * Error bodies arrive from three shapes and were previously read through `any`.
+ *
+ * FastAPI's 422 sends `detail` as an array of `{loc, msg, type}`; its
+ * HTTPException sends `detail` as a string; the Next.js proxy routes send
+ * `{detail: string}`. The `any` casts meant a shape change here surfaced as
+ * "[object Object]" in the UI instead of a type error. These narrow instead.
+ */
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function errorDetailOf(parsed: unknown): unknown {
+  if (typeof parsed !== "object" || parsed === null) return undefined;
+  const body = parsed as Record<string, unknown>;
+  return body.detail ?? body.error;
+}
+
+function describeValidationError(item: unknown): string {
+  if (typeof item === "string") return item;
+  if (typeof item !== "object" || item === null) return JSON.stringify(item);
+
+  const entry = item as { loc?: unknown; msg?: unknown };
+  const msg = asString(entry.msg);
+  if (!msg) return JSON.stringify(item);
+
+  const where = Array.isArray(entry.loc) ? `${entry.loc.join(".")}: ` : "";
+  return `${where}${msg}`;
+}
+
 export default function PlaygroundPage() {
   const [selectedModel, setSelectedModel] = useState("llama3");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -128,22 +158,16 @@ export default function PlaygroundPage() {
         const errText = await response.text();
         let errMsg = errText;
         try {
-          const parsed = JSON.parse(errText);
-          const rawDetail = parsed.detail ?? parsed.error ?? errText;
+          const parsed: unknown = JSON.parse(errText);
+          const rawDetail = errorDetailOf(parsed) ?? errText;
           if (typeof rawDetail === "string") {
             errMsg = rawDetail;
           } else if (Array.isArray(rawDetail)) {
-            errMsg = rawDetail
-              .map((item: any) =>
-                typeof item === "string"
-                  ? item
-                  : item?.msg
-                  ? `${item.loc ? item.loc.join(".") + ": " : ""}${item.msg}`
-                  : JSON.stringify(item)
-              )
-              .join("; ");
+            errMsg = rawDetail.map(describeValidationError).join("; ");
           } else if (typeof rawDetail === "object" && rawDetail !== null) {
-            errMsg = (rawDetail as any).message || (rawDetail as any).msg || JSON.stringify(rawDetail);
+            const obj = rawDetail as Record<string, unknown>;
+            errMsg =
+              asString(obj.message) ?? asString(obj.msg) ?? JSON.stringify(rawDetail);
           }
         } catch {
           // ignore

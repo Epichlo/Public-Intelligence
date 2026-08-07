@@ -108,7 +108,9 @@ def fully_loaded_cost(a: Assumptions) -> float:
     The honest number: it charges the host for the depreciation they are consuming
     and for the power burned while merely being available.
     """
-    tokens_per_year = a.tokens_per_second_single_stream * a.utilisation * SECONDS_PER_HOUR * 24 * 365
+    tokens_per_year = (
+        a.tokens_per_second_single_stream * a.utilisation * SECONDS_PER_HOUR * 24 * 365
+    )
     if tokens_per_year <= 0:
         return float("inf")
     millions_per_year = tokens_per_year / TOKENS_PER_MILLION
@@ -188,8 +190,12 @@ def main(argv: list[str] | None = None) -> int:
     print("=" * 78)
     print(f"  electricity            ${a.electricity_usd_per_kwh:.3f}/kWh")
     print(f"  GPU                    ${a.gpu_price_usd:,.0f} over {a.gpu_life_years:.0f} years")
-    print(f"  draw                   {a.gpu_load_watts + a.system_load_watts:.0f} W loaded / {a.idle_watts:.0f} W idle")
-    print(f"  throughput             {a.tokens_per_second_single_stream:.0f} tok/s single, {a.tokens_per_second_batched:.0f} tok/s batched")
+    print(
+        f"  draw                   {a.gpu_load_watts + a.system_load_watts:.0f} W loaded / {a.idle_watts:.0f} W idle"
+    )
+    print(
+        f"  throughput             {a.tokens_per_second_single_stream:.0f} tok/s single, {a.tokens_per_second_batched:.0f} tok/s batched"
+    )
     print(f"  utilisation            {a.utilisation:.0%}")
     print(f"  commodity API price    ${a.commodity_api_usd_per_1m_tokens:.3f}/1M")
     print()
@@ -199,7 +205,9 @@ def main(argv: list[str] | None = None) -> int:
     for s in scenarios(a):
         margin = s.margin_vs(a.commodity_api_usd_per_1m_tokens)
         sign = "+" if margin >= 0 else "-"
-        print(f"  {s.name:<58}${s.usd_per_1m_tokens:>8.3f}{sign + '$' + format(abs(margin), '.3f'):>12}")
+        print(
+            f"  {s.name:<58}${s.usd_per_1m_tokens:>8.3f}{sign + '$' + format(abs(margin), '.3f'):>12}"
+        )
     print()
     for s in scenarios(a):
         print(f"  {s.name.split(' (')[0]:<58}{s.note}")

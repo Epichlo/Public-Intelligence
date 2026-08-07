@@ -45,6 +45,12 @@ fi
 # run should show you everything that is wrong, not just the first thing.
 FAILED=()
 PASSED=()
+# Skipped steps are tracked and REPORTED, not merely printed and forgotten. A gate
+# that quietly omits checks while printing PASS is the exact failure this file has
+# now hit three times (tests/ unlinted, tests/ untyped, the website unchecked). The
+# summary names what did not run, and the receipt records it, so "it passed" and
+# "it passed everything" stay distinguishable.
+SKIPPED=()
 declare -a RECEIPT_STEPS
 
 run_step() {
@@ -82,6 +88,18 @@ RUFF_CFG="packages/scheduler/pyproject.toml"
 run_step "ruff check (tests)"  "$PY" -m ruff check ./tests --config "$RUFF_CFG"
 run_step "ruff format (tests)" "$PY" -m ruff format --check ./tests --config "$RUFF_CFG"
 
+# scripts/ was the THIRD directory sitting outside the gate while appearing to be
+# inside it -- after packages/tests (2.9) and the website (C6). It contains this
+# file. Pointing ruff at it found 3 errors and 4 unformatted files, and one of the
+# errors was `Path.read_text()` with no encoding *in generate_status.py*: the same
+# platform-default bug 2.9 added PLW1514 to catch, surviving in the script that
+# produces STATUS.md, because the rule was only ever aimed at packages/ and tests/.
+#
+# The pattern is now three for three: every time a directory has been added to this
+# file, the defect found was the check's ABSENCE, not a check's failure.
+run_step "ruff check (scripts)"  "$PY" -m ruff check ./scripts --config "$RUFF_CFG"
+run_step "ruff format (scripts)" "$PY" -m ruff format --check ./scripts --config "$RUFF_CFG"
+
 # The gate lints its own scripts. CI already installs shellcheck on Linux but
 # never ran it; a `[ "$x" != "PATTERN"* ]` comparison that silently never matched
 # sat in this very file until shellcheck was pointed at it.
@@ -90,6 +108,7 @@ if command -v shellcheck >/dev/null 2>&1; then
         scripts/verify_install.sh scripts/launch_host_node.sh install.sh
 else
     printf '\n\033[33m── shellcheck (skipped: not installed)\033[0m\n'
+    SKIPPED+=("shellcheck")
 fi
 
 # --- types -----------------------------------------------------------------
@@ -105,6 +124,17 @@ run_step "mypy (scheduler)"  "$PY" -m mypy packages/scheduler/src
 # `os.getgid()` call. There is a Windows installer, so these were reachable.
 run_step "mypy (node, win32)"      "$PY"  -m mypy packages/node/src --platform win32
 run_step "mypy (scheduler, win32)" "$PY" -m mypy packages/scheduler/src --platform win32
+
+# The root tests/ directory. 2.9 closed the lint half of this gap and named the type
+# half as a known gap; ROADMAP C7 closes it.
+#
+# This only checks anything because both packages now ship a PEP 561 `py.typed`
+# marker. Without it mypy answered `module is installed, but missing library stubs`
+# for all 26 imports tests/ makes into node and scheduler -- so a type-check step
+# here would have verified the test files' own local variables and NOTHING about
+# the contract they assert. Adding the step without the marker would have been a
+# check that reports success for doing nothing, which is worse than no check.
+run_step "mypy (tests)" "$PY" -m mypy tests
 
 # --- tests -----------------------------------------------------------------
 # Branch coverage, reported not gated: the point is seeing which branches a
@@ -125,6 +155,26 @@ if [ "$QUICK" -eq 0 ]; then
     # ratchets. Kept as a separate suite because they assert relationships BETWEEN
     # the packages rather than the behaviour of either one.
     run_step "pytest (root e2e)" "$PY" -m pytest tests -q
+fi
+
+# --- website ---------------------------------------------------------------
+# 4,270 lines that were checked by NOTHING: package.json had a `lint` script this
+# file never invoked, and no `test` script at all. Every proxy route -- including
+# the credential forwarding added in 2.6 -- was verified only by reading it.
+#
+# Skipped loudly when node_modules is absent, same as shellcheck above. A Python
+# contributor should not need a Node toolchain to run the gate; CI installs it and
+# therefore always runs these. The cost is stated rather than hidden: on a machine
+# without the dependencies, a local PASS is weaker than a CI PASS, and the line
+# below says which checks did not run.
+WEBSITE_DIR="$REPO_ROOT/packages/website"
+if [ -d "$WEBSITE_DIR/node_modules" ]; then
+    run_step "website lint" npm --prefix "$WEBSITE_DIR" run --silent lint
+    run_step "website tests" npm --prefix "$WEBSITE_DIR" run --silent test
+else
+    printf '\n\033[33m── website lint + tests (skipped: packages/website/node_modules absent)\033[0m\n'
+    printf '   run: npm ci --prefix packages/website\n'
+    SKIPPED+=("website lint + tests")
 fi
 
 # --- security --------------------------------------------------------------
@@ -170,6 +220,14 @@ VERDICT="pass"
     printf '  "working_tree_dirty": %s,\n' "$DIRTY"
     printf '  "generated_at": "%s",\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf '  "quick_mode": %s,\n' "$([ "$QUICK" -eq 1 ] && echo true || echo false)"
+    printf '  "skipped": ['
+    skip_first=1
+    for s in ${SKIPPED[@]+"${SKIPPED[@]}"}; do
+        [ $skip_first -eq 0 ] && printf ', '
+        printf '"%s"' "$s"
+        skip_first=0
+    done
+    printf '],\n'
     printf '  "steps": [\n'
     local_first=1
     for s in "${RECEIPT_STEPS[@]}"; do
@@ -186,6 +244,11 @@ if [ ${#FAILED[@]} -eq 0 ]; then
     printf '\033[32mPASS\033[0m  %d checks  commit %s%s\n' \
         "${#PASSED[@]}" "${SHA:0:8}" "$([ "$DIRTY" = "true" ] && echo ' (dirty tree)')"
     [ "$DIRTY" = "true" ] && printf '      receipt covers HEAD, but the tree has uncommitted changes\n'
+    if [ ${#SKIPPED[@]} -gt 0 ]; then
+        printf '\033[33m      %d check(s) DID NOT RUN:\033[0m %s\n' \
+            "${#SKIPPED[@]}" "$(IFS=', '; echo "${SKIPPED[*]}")"
+        printf '      this PASS is weaker than a CI PASS, which runs all of them\n'
+    fi
     exit 0
 fi
 printf '\033[31mFAIL\033[0m  %d of %d checks failed:\n' "${#FAILED[@]}" "$(( ${#FAILED[@]} + ${#PASSED[@]} ))"

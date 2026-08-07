@@ -15,6 +15,7 @@ converge a pair, lower its budget; the test then holds the new line.
 and round-trips real data through both copies. This file covers the rest.
 """
 
+import json
 import re
 import tomllib
 from pathlib import Path
@@ -199,10 +200,119 @@ def test_ci_delegates_to_the_verify_script() -> None:
     ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
     forbidden = re.findall(
-        r"^\s*(?:run:|[-\s]*)\s*(ruff|mypy|bandit|pytest)\s+(?!.*verify)", ci, flags=re.M
+        r"^\s*(?:run:|[-\s]*)\s*(ruff|mypy|bandit|pytest)\s+(?!.*verify)",
+        ci,
+        flags=re.MULTILINE,
     )
 
     assert not forbidden, (
         f"ci.yml runs {sorted(set(forbidden))} directly. Add the check to "
         "scripts/verify.sh instead -- CI is supposed to call that and nothing else."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Gate coverage. Three times now the defect found was a check's ABSENCE rather
+# than a check's failure: tests/ was unlinted until ROADMAP 2.9, tests/ was
+# untyped and the website unchecked until C6/C7, and scripts/ -- which contains
+# the gate itself -- was outside all of it until the same change.
+#
+# Each was invisible for the same reason: verify.sh is trusted as total and was
+# silently partial. These tests make the NEXT such directory fail loudly when it
+# is added, instead of two roadmap items later.
+# ---------------------------------------------------------------------------
+
+# Directories that hold Python and are deliberately not linted, with the reason.
+# Adding a name here is a decision someone has to write down.
+LINT_EXEMPT_DIRS = {
+    ".venv": "third-party code",
+    ".git": "not source",
+    "docs": "prose; any Python here is illustrative",
+}
+
+
+def _verify_script() -> str:
+    return (REPO_ROOT / "scripts" / "verify.sh").read_text(encoding="utf-8")
+
+
+def test_every_python_directory_is_linted_by_the_gate() -> None:
+    """A top-level directory containing Python must be named in a ruff invocation.
+
+    This is the ratchet for the pattern above. It does not check that the linting
+    is *correct* -- only that the directory is not sitting outside "the only
+    definition of does this pass" while appearing to be inside it.
+    """
+    script = _verify_script()
+    linted = set(re.findall(r"-m ruff (?:check|format)[^\n]*?\./(\w+)", script))
+
+    unlinted = []
+    for child in sorted(REPO_ROOT.iterdir()):
+        if not child.is_dir() or child.name.startswith("."):
+            continue
+        if child.name in LINT_EXEMPT_DIRS:
+            continue
+        if not any(child.rglob("*.py")):
+            continue
+        if child.name not in linted:
+            unlinted.append(child.name)
+
+    assert not unlinted, (
+        f"{unlinted} contain Python and are not passed to ruff by scripts/verify.sh. "
+        f"Either add them to the gate or add them to LINT_EXEMPT_DIRS with a reason. "
+        f"Currently linted: {sorted(linted)}"
+    )
+
+
+def test_the_gate_type_checks_the_root_test_suite() -> None:
+    """ROADMAP C7. mypy on tests/ is only meaningful because of the py.typed markers.
+
+    Without them mypy answers `missing library stubs or py.typed marker` for every
+    import into node and scheduler, so the step would pass while verifying nothing
+    about the contract these tests assert. Both facts are checked together, because
+    either one alone is a check that reports success for doing no work.
+    """
+    assert "-m mypy tests" in _verify_script(), (
+        "scripts/verify.sh no longer type-checks tests/ (ROADMAP C7)."
+    )
+
+    for package in ("node", "scheduler"):
+        marker = REPO_ROOT / "packages" / package / "src" / package / "py.typed"
+        assert marker.exists(), (
+            f"{marker.relative_to(REPO_ROOT)} is missing. Without it, `mypy tests` "
+            f"silently stops checking anything that crosses into {package}."
+        )
+
+
+def test_the_gate_checks_the_website() -> None:
+    """ROADMAP C6. The website has a test script, a runner config, and gate steps."""
+    script = _verify_script()
+    assert "website lint" in script and "website tests" in script, (
+        "scripts/verify.sh no longer runs the website checks (ROADMAP C6)."
+    )
+
+    package_json = json.loads(
+        (REPO_ROOT / "packages" / "website" / "package.json").read_text(encoding="utf-8")
+    )
+    assert "test" in package_json["scripts"], "packages/website has no `test` script."
+
+    # `passWithNoTests: false` is what stops the step going green on zero test
+    # files, which would be the same silent-partial failure in a new costume.
+    config = (REPO_ROOT / "packages" / "website" / "vitest.config.mts").read_text(encoding="utf-8")
+    assert "passWithNoTests: false" in config, (
+        "vitest must not pass with no tests -- a green step that ran nothing is "
+        "exactly what putting the website in the gate was meant to prevent."
+    )
+
+
+def test_ci_installs_what_the_gate_needs_to_avoid_skipping() -> None:
+    """The website steps skip when node_modules is absent. CI must never skip them.
+
+    Locally that skip is a deliberate kindness to Python-only contributors, and the
+    summary line says which checks did not run. In CI it would be a green PASS over
+    unchecked code, so CI installs the dependencies.
+    """
+    ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "npm ci" in ci, (
+        "ci.yml does not install the website dependencies, so scripts/verify.sh "
+        "will skip the website checks and still report PASS."
     )

@@ -105,9 +105,7 @@ def parse_pytest_summary(output: str) -> dict[str, int | str]:
 def run_suite(name: str, python: Path, tests: Path) -> SuiteResult:
     """Execute one pytest suite and capture its real result."""
     if not python.exists():
-        return SuiteResult(
-            name, "NOT RUN", detail=f"interpreter missing: {rel(python)}"
-        )
+        return SuiteResult(name, "NOT RUN", detail=f"interpreter missing: {rel(python)}")
     if not tests.exists():
         return SuiteResult(name, "NOT RUN", detail=f"test path missing: {rel(tests)}")
 
@@ -118,9 +116,7 @@ def run_suite(name: str, python: Path, tests: Path) -> SuiteResult:
     counts = parse_pytest_summary(output)
 
     if code == 124:
-        return SuiteResult(
-            name, "NOT RUN", detail=f"timed out after {TEST_TIMEOUT_SECONDS}s"
-        )
+        return SuiteResult(name, "NOT RUN", detail=f"timed out after {TEST_TIMEOUT_SECONDS}s")
 
     result = SuiteResult(
         name=name,
@@ -168,16 +164,12 @@ def git_signals() -> dict[str, str]:
     signals["branch"] = out if code == 0 else "UNKNOWN"
 
     code, out = run(["git", "remote", "-v"])
-    signals["remote"] = (
-        out.splitlines()[0] if (code == 0 and out) else "NONE CONFIGURED"
-    )
+    signals["remote"] = out.splitlines()[0] if (code == 0 and out) else "NONE CONFIGURED"
 
     code, out = run(["git", "status", "--porcelain"])
     if code == 0:
         dirty = [ln for ln in out.splitlines() if ln.strip()]
-        signals["tree"] = (
-            "clean" if not dirty else f"{len(dirty)} uncommitted change(s)"
-        )
+        signals["tree"] = "clean" if not dirty else f"{len(dirty)} uncommitted change(s)"
         signals["dirty_detail"] = "\n".join(f"  {ln}" for ln in dirty[:10])
     else:
         signals["tree"] = "UNKNOWN"
@@ -211,9 +203,7 @@ def ci_signal() -> tuple[str, str]:
     if shutil.which("gh") is None:
         return "UNVERIFIABLE", "gh CLI not installed -- cannot query run history"
 
-    code, out = run(
-        ["gh", "run", "list", "--limit", "1", "--json", "conclusion,headSha"]
-    )
+    code, out = run(["gh", "run", "list", "--limit", "1", "--json", "conclusion,headSha"])
     if code != 0:
         return "UNVERIFIABLE", f"gh run list failed: {out[:160]}"
     if not out.strip() or out.strip() == "[]":
@@ -233,9 +223,7 @@ def submodule_signals() -> list[tuple[str, str, str]]:
         if line.startswith("160000"):
             parts = line.split()
             sha, path = parts[1], parts[-1]
-            ccode, subject = run(
-                ["git", "-C", path, "log", "-1", "--pretty=%s"], timeout=30
-            )
+            ccode, subject = run(["git", "-C", path, "log", "-1", "--pretty=%s"], timeout=30)
             rows.append((path, sha[:8], subject if ccode == 0 else "UNKNOWN"))
     return rows
 
@@ -402,7 +390,6 @@ def repo_facts_section() -> list[str]:
     lines += ["| Repo | Remote | Branch | Tracking |", "| --- | --- | --- | --- |"]
     for name, path in [
         ("root", ROOT),
-        
     ]:
         if not (path / ".git").exists():
             lines.append(f"| {name} | (not a git repo) | - | - |")
@@ -441,16 +428,31 @@ def repo_facts_section() -> list[str]:
 
     # --- duplicate-module drift ---
     pairs = [
-        ("quantization", "packages/node/src/node/core/quantization.py",
-         "packages/scheduler/src/scheduler/core/quantization.py"),
-        ("kv_cache", "packages/node/src/node/core/kv_cache.py",
-         "packages/scheduler/src/scheduler/core/kv_cache.py"),
-        ("local_boundary", "packages/node/src/node/core/local_boundary.py",
-         "packages/scheduler/src/scheduler/core/local_boundary.py"),
-        ("autonomous_orchestrator", "packages/node/src/node/core/autonomous_orchestrator.py",
-         "packages/scheduler/src/scheduler/core/autonomous_orchestrator.py"),
-        ("transport", "packages/node/src/node/core/transport.py",
-         "packages/scheduler/src/scheduler/core/transport.py"),
+        (
+            "quantization",
+            "packages/node/src/node/core/quantization.py",
+            "packages/scheduler/src/scheduler/core/quantization.py",
+        ),
+        (
+            "kv_cache",
+            "packages/node/src/node/core/kv_cache.py",
+            "packages/scheduler/src/scheduler/core/kv_cache.py",
+        ),
+        (
+            "local_boundary",
+            "packages/node/src/node/core/local_boundary.py",
+            "packages/scheduler/src/scheduler/core/local_boundary.py",
+        ),
+        (
+            "autonomous_orchestrator",
+            "packages/node/src/node/core/autonomous_orchestrator.py",
+            "packages/scheduler/src/scheduler/core/autonomous_orchestrator.py",
+        ),
+        (
+            "transport",
+            "packages/node/src/node/core/transport.py",
+            "packages/scheduler/src/scheduler/core/transport.py",
+        ),
     ]
     drift_rows = []
     for name, left, right in pairs:
@@ -479,7 +481,13 @@ def _significant_drift(a: Path, b: Path) -> int:
 
     def sig(p: Path) -> list[str]:
         out = []
-        for raw in p.read_text().splitlines():
+        # Explicit encoding: this file reads source from packages/, and
+        # `read_text()` with no encoding resolves to the platform default -- UTF-8
+        # here, cp1252 on a Windows runner. One non-ASCII byte in a scanned module
+        # is all it takes. ROADMAP 2.9 enabled ruff's PLW1514 for exactly this and
+        # pointed it at packages/ and tests/; scripts/ was still outside the gate,
+        # so this violation survived in the script that GENERATES the status file.
+        for raw in p.read_text(encoding="utf-8").splitlines():
             line = raw.strip()
             if not line or line.startswith(("#", "import ", "from ")):
                 continue
@@ -487,17 +495,13 @@ def _significant_drift(a: Path, b: Path) -> int:
         return out
 
     diff = difflib.unified_diff(sig(a), sig(b), lineterm="", n=0)
-    return sum(
-        1 for ln in diff if ln.startswith(("+", "-")) and not ln.startswith(("+++", "---"))
-    )
+    return sum(1 for ln in diff if ln.startswith(("+", "-")) and not ln.startswith(("+++", "---")))
 
 
 def main() -> int:
     """Collect signals and write STATUS.md."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--stdout", action="store_true", help="print to stdout instead of writing"
-    )
+    parser.add_argument("--stdout", action="store_true", help="print to stdout instead of writing")
     args = parser.parse_args()
 
     print("Collecting real signals (this runs the test suites)...", file=sys.stderr)

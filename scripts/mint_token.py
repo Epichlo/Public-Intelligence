@@ -84,9 +84,7 @@ def mint(tenant: str, subject: str, hours: int) -> str:
         )
         raise SystemExit(1)
 
-    private_key = serialization.load_pem_private_key(
-        PRIVATE_KEY.read_bytes(), password=None
-    )
+    private_key = serialization.load_pem_private_key(PRIVATE_KEY.read_bytes(), password=None)
 
     now = datetime.now(UTC)
     return jwt.encode(
@@ -107,9 +105,7 @@ def main() -> int:
     parser.add_argument(
         "--generate-keypair", action="store_true", help="create a new RS256 keypair"
     )
-    parser.add_argument(
-        "--force", action="store_true", help="overwrite an existing keypair"
-    )
+    parser.add_argument("--force", action="store_true", help="overwrite an existing keypair")
     parser.add_argument("--tenant", default="tenant-a", help="tenant_id claim")
     parser.add_argument("--subject", default="playground-user", help="sub claim")
     parser.add_argument("--hours", type=int, default=24, help="token lifetime")

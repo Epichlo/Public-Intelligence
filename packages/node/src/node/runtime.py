@@ -9,7 +9,7 @@ from asyncio import sleep as async_sleep
 from contextlib import suppress
 from datetime import UTC, datetime
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from node.clients import OllamaClient, SchedulerClient, SchedulerError, ZenohHeartbeatClient
 from node.clients.mesh_inference_server import ZenohInferenceServer
@@ -76,15 +76,18 @@ class Runtime:
         self.mesh_inference_server: ZenohInferenceServer | None = None
         self.is_running = False
 
-        if TYPE_CHECKING:
-            from shared.storage.local import LocalDiskArtifactStore
-        else:
-            try:
-                from shared.storage.local import LocalDiskArtifactStore
-            except ModuleNotFoundError:
-                from src.shared.storage.local import LocalDiskArtifactStore
-
+        # Was `packages/node/src/shared/`, a top-level `shared` package installed
+        # into site-packages by this distribution -- so any other project shipping a
+        # module by that name collided with it. It reached here through a
+        # try/except ladder falling back to `src.shared...`, which only ever
+        # resolved when pytest was invoked from the package directory. Moved under
+        # `node.storage` so there is one import path that always works.
+        #
+        # ROADMAP C8 describes this module as "an orphan third copy ... imported by
+        # nothing". That was wrong: it is live on the task-queue path below, where
+        # every generated completion is written to disk.
         from node.backends.base import InferenceBackend
+        from node.storage.local import LocalDiskArtifactStore
 
         self.inference_backend: InferenceBackend | None = None
         self.artifact_store = LocalDiskArtifactStore()

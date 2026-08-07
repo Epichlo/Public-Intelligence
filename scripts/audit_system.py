@@ -5,7 +5,6 @@ Performs static analysis, cross-platform path validation, installer syntax audit
 and security checks across Node, Scheduler, and website sub-repositories.
 """
 
-import os
 import re
 import sys
 from pathlib import Path
@@ -61,9 +60,13 @@ def audit_installer_scripts() -> int:
             AuditLogger.error("install.sh missing SCHEDULER_URL override support!")
             errors += 1
         if "disown" not in launch_content and "disown" not in content:
-            AuditLogger.warn("install.sh / launch_host_node.sh missing disown process detachment command.")
+            AuditLogger.warn(
+                "install.sh / launch_host_node.sh missing disown process detachment command."
+            )
         else:
-            AuditLogger.ok("install.sh & launch_host_node.sh contain SCHEDULER_URL overrides & disown process detachment.")
+            AuditLogger.ok(
+                "install.sh & launch_host_node.sh contain SCHEDULER_URL overrides & disown process detachment."
+            )
 
     if not install_ps1.exists():
         AuditLogger.error("install.ps1 missing in root directory!")
@@ -74,7 +77,9 @@ def audit_installer_scripts() -> int:
             AuditLogger.error("install.ps1 missing $env:SCHEDULER_URL override support!")
             errors += 1
         if "elseif" not in content and "else if" in content:
-            AuditLogger.error("install.ps1 contains invalid PowerShell 'else if' syntax! Use 'elseif'.")
+            AuditLogger.error(
+                "install.ps1 contains invalid PowerShell 'else if' syntax! Use 'elseif'."
+            )
             errors += 1
         else:
             AuditLogger.ok("install.ps1 syntax and $env:SCHEDULER_URL overrides verified.")
@@ -117,7 +122,9 @@ def audit_exception_fallbacks() -> int:
         content = runtime_py.read_text(encoding="utf-8")
         if "list_models" in content:
             if "except Exception" in content:
-                AuditLogger.ok("Node runtime.py wraps Ollama discovery in try/except fallback block.")
+                AuditLogger.ok(
+                    "Node runtime.py wraps Ollama discovery in try/except fallback block."
+                )
             else:
                 AuditLogger.error("Node runtime.py calls list_models() without exception fallback!")
                 errors += 1
@@ -140,10 +147,14 @@ def main() -> None:
     print()
     print("=" * 80)
     if total_errors == 0:
-        AuditLogger.ok("AUDIT COMPLETE: All core installation and runtime invariants passed cleanly.")
+        AuditLogger.ok(
+            "AUDIT COMPLETE: All core installation and runtime invariants passed cleanly."
+        )
         sys.exit(0)
     else:
-        AuditLogger.error(f"AUDIT FAILED: Found {total_errors} critical errors across repositories.")
+        AuditLogger.error(
+            f"AUDIT FAILED: Found {total_errors} critical errors across repositories."
+        )
         sys.exit(1)
 
 

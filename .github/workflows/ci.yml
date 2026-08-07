@@ -46,14 +46,31 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y shellcheck
 
+      - name: Set up Node
+        # For the website checks in scripts/verify.sh. Those steps SKIP when
+        # packages/website/node_modules is absent, so without this step CI would
+        # print a green PASS having silently not checked 4,270 lines -- the exact
+        # shape of failure ROADMAP C6 exists to close.
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: packages/website/package-lock.json
+
       - name: Install Packages
         # The [dev] extras pin ruff, mypy, bandit and pytest exactly. CI used to
         # `pip install --upgrade` them unpinned, so a tool release could turn main
         # red with no code change, and local could disagree with CI about what passes.
+        #
+        # `npm ci` lives HERE, in the install step, and not as a check of its own.
+        # tests/test_source_parity.py forbids ruff|mypy|bandit|pytest appearing in
+        # this file so CI cannot grow a second list of checks; installation is not a
+        # check, so the rule is respected in substance and not merely in letter.
         run: |
           python -m pip install --upgrade pip setuptools wheel
           pip install -e "./packages/node[dev]"
           pip install -e "./packages/scheduler[dev]"
+          npm ci --prefix packages/website
 
       - name: Verify
         shell: bash

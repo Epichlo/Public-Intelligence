@@ -46,6 +46,14 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/scheduler"]
 
+# PEP 561 marker. Both packages set `strict = true` and are clean under it, but
+# without py.typed that type information is invisible to everything downstream:
+# mypy reported `module is installed, but missing library stubs or py.typed
+# marker` for all 26 imports the root `tests/` suite makes into them, which meant
+# ROADMAP C7's "type-check tests/" would have checked nothing but the test files'
+# own local variables.
+artifacts = ["src/scheduler/py.typed"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

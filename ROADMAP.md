@@ -1,29 +1,43 @@
 # ROADMAP — v1
 
-Status: **Stage 0-2 built. Stage D open, and it gates everything below it.**
+Status: **Stage 0-2 built. Stage D answered on 2026-08-07 (D7 excepted); C, 3 and 4 in progress.**
 
 This supersedes `docs/ROADMAP.md`, which describes phases 4.6–4.9 as "Realized"
 based on code that does not do what the labels claim. Where the two disagree,
-this file is correct. (`docs/` still makes those claims to anyone who reads it —
-that is item N2 below.)
+this file is correct. Those documents were moved to `docs/historical/` behind a
+header tabulating each false claim against reality (N2, done).
 
-**A full audit on 2026-08-07 found that the engineering is ahead of the product
-definition.** Ten items shipped across Stages 0–2; meanwhile the production network
-does not exist, the API can return fabricated text as a successful completion, and
+**A full audit on 2026-08-07 found that the engineering was ahead of the product
+definition.** Ten items had shipped across Stages 0–2; meanwhile the production network
+did not exist, the API could return fabricated text as a successful completion, and
 the central question a compute marketplace has to answer — how a requester knows a
-node really ran the model — is not on this roadmap at all. Stage D was added in
-front of everything as a result. **No further feature work starts until D is
-answered**, with the deliberate exception of the three no-regret fixes.
+node really ran the model — was not on this roadmap at all. Stage D was added in
+front of everything as a result.
+
+**Stage D was then answered, and it changed this document.** Seven of the eight
+decisions are recorded in [`docs/decisions/`](docs/decisions/README.md). Two of them
+cut scope from this page: the economics do not close, so v1 is a donation network and
+the payout machinery is gone (D2); and there is no network and one will not be
+operated, so this is a self-hosted product (D6). D7 — a second pair of eyes — is
+deliberately still open, because it cannot be closed by the party asking.
 
 ---
 
 ## What v1 is
 
-> **A decentralised inference marketplace.** A person with a spare GPU runs one
-> command and their machine starts serving requests. A developer points an
-> OpenAI-compatible client at one URL and gets completions back, served by
-> somebody's donated hardware. The host can see what their machine did and what
-> it earned.
+> **An OpenAI-compatible control plane for hardware you already own.** A person
+> runs one command on a machine with a GPU and it starts serving requests. A
+> developer points an OpenAI-compatible client at one URL and gets completions back,
+> served by a machine they or someone they trust controls — including one behind
+> NAT, with no port forwarding. The host can see what their machine did and what it
+> contributed.
+
+**This wording changed on 2026-08-07.** It used to read "a decentralised inference
+marketplace ... and what it earned". Three words in that sentence were load-bearing
+and all three failed: *decentralised* (the coordinator is a single point of trust —
+D5), *marketplace* (a host loses ~15x against commodity pricing — D2), and *earned*
+(credits are non-redeemable, by decision, not by omission — D2). See
+[D8](docs/decisions/D8-the-wedge.md).
 
 Each request is served **by a single node**, running a model that fits on that
 node's own hardware. The network's job is matchmaking, delivery, and accounting —
@@ -66,9 +80,12 @@ that fit on one consumer GPU, served over a network of donated machines, behind 
 OpenAI-compatible API"** is. That means roughly 7B–70B class models depending on the
 host, not 400B+.
 
-That is a real product — the economics of idle consumer hardware stand on their own —
-but it is a smaller claim than the current docs make, and the docs will need to stop
-making the larger one.
+That is a real product, but **the parenthetical in the original version of this
+paragraph was wrong.** It said "the economics of idle consumer hardware stand on their
+own". They do not: `scripts/economics.py` puts a realistic host at $2.256 per 1M
+tokens against a $0.150 commodity price, and break-even utilisation is unreachable.
+That sentence was an assumption stated as a fact for eight roadmap items. See
+[D2](docs/decisions/D2-economics.md).
 
 Sharding becomes **v2**, attempted only once v1 has real hosts and real traffic to
 justify it.
@@ -172,7 +189,7 @@ answers.
 | C5 | **The rate limiter is in-memory and per-instance.** Capacity 5, refill 0.5/s, resets on restart, would not hold across replicas. Fine for one instance; not a quota. | D5 |
 | C6 | **`packages/website` has zero tests** — `package.json` has `lint` and no `test`. Duplicate of 4.1, restated because the 2.6 proxy change is unverified by anything. | — |
 | C7 | **The gate does not type-check `tests/` and does not touch the website at all.** 2.9 closed the lint half; mypy and the website remain outside "the only definition of does this pass". | — |
-| C8 | **Dead and duplicated code.** `src/shared/` is an orphan third copy of the artifact store, imported by nothing. Six duplicated module pairs remain, and `packages/shared/` — the stated follow-up to the monorepo migration — still does not exist. | C2 |
+| C8 | **PARTIAL — and this line's own premise was wrong on both halves.** `packages/node/src/shared/` was **not** "imported by nothing": `node/runtime.py:80` uses it to write every generated completion to disk, and it installed a top-level `shared` package into site-packages that any other distribution could collide with. Folded into `node.storage`. The genuine orphan was a **fourth** copy at the repo root, `src/` — deleted. Both were found by C7's gate-coverage ratchet rather than by reading this line. **Still open:** six duplicated module pairs and `packages/shared/`. | C2 |
 | C9 | **Batch jobs are still not persisted**, now unblocked by 2.4 moving them off module scope. | C3 |
 | C10 | **Revisit `/v1/models` being public.** A deliberate 2.6 decision on the argument that a marketplace should let a developer see what is servable. It also discloses fleet composition, and the tradeoff changes once there is a real fleet. | D1 |
 

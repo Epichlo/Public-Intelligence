@@ -7,11 +7,7 @@ import tempfile
 from collections.abc import Generator
 
 import pytest
-
-try:
-    from shared.storage.local import LocalDiskArtifactStore
-except ModuleNotFoundError:
-    from src.shared.storage.local import LocalDiskArtifactStore
+from node.storage.local import LocalDiskArtifactStore
 
 
 @pytest.fixture

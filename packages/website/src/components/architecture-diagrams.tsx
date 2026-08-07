@@ -8,6 +8,7 @@ import {
   DiagramCaption,
   ArrowheadDef,
 } from "@/components/diagram";
+import { diagramTokens } from "@/components/diagram/diagram-tokens";
 
 // 1. Overall System Topology
 export function OverallSystemDiagram() {
@@ -16,8 +17,11 @@ export function OverallSystemDiagram() {
   const patternId = "grid-system-overall";
   const nodeY = 80;
   const connectionY = 110;
-  const nodeWidth = 140;
-  const nodeHeight = 60;
+  // Sourced from the shared token rather than redeclared: this file previously
+  // carried its own `nodeWidth = 140` and `nodeHeight = 60`, duplicating
+  // diagramTokens.node, and `nodeHeight` was never read. Two copies of a layout
+  // constant is one drift away from a diagram that no longer lines up.
+  const nodeWidth = diagramTokens.node.width;
   const nodeSpacing = 230;
   const startX = 80;
 
