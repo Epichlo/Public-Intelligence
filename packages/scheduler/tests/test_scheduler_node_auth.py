@@ -22,7 +22,7 @@ from fastapi.testclient import TestClient
 
 from scheduler.core.config import get_settings
 from scheduler.core.rate_limiter import TokenBucketLimiter
-from scheduler.main import app
+from scheduler.main import create_app
 from scheduler.models.node import GPUInfo, Node
 
 NODE_ID = "node-auth-1"
@@ -46,7 +46,15 @@ def key_pair() -> tuple[rsa.RSAPrivateKey, str]:
 
 @pytest.fixture
 def client(key_pair: tuple[rsa.RSAPrivateKey, str]) -> TestClient:
-    """Scheduler client with one node registered and consensus stubbed out."""
+    """Scheduler client with one node registered and consensus stubbed out.
+
+    Builds its own app rather than importing the deployed module-level one. That
+    instance carries the real store, so since ROADMAP C3 turned persistence on this
+    test wrote a `scheduler-state.db` into whatever directory pytest ran from -- and
+    two concurrent runs would have shared it. A test should not inherit production
+    configuration to begin with; `create_app()` deliberately reads no settings.
+    """
+    app = create_app()
     _, public_pem = key_pair
     app.state.jwt_public_key = public_pem
     app.state.rate_limiter = TokenBucketLimiter(capacity=50, refill_rate=50.0)
@@ -115,7 +123,7 @@ def test_registration_captures_the_node_token(client: TestClient) -> None:
     )
     assert response.status_code in (200, 201), response.text
 
-    stored = app.state.registry.get_node_token("node-reg-1")
+    stored = client.app.state.registry.get_node_token("node-reg-1")
     assert stored == "reg-token-xyz", (
         "the Scheduler did not retain the node's credential from registration"
     )
@@ -147,7 +155,7 @@ def test_proxy_sends_the_node_credential(
 ) -> None:
     """A non-streaming completion must carry the target node's token upstream."""
     private_key, _ = key_pair
-    asyncio.run(app.state.registry.set_node_token(NODE_ID, NODE_TOKEN))
+    asyncio.run(client.app.state.registry.set_node_token(NODE_ID, NODE_TOKEN))
 
     captured: dict[str, Any] = {}
 
@@ -176,7 +184,7 @@ def test_streaming_proxy_sends_the_node_credential(
 ) -> None:
     """The SSE streaming path must carry the credential too, not just JSON."""
     private_key, _ = key_pair
-    asyncio.run(app.state.registry.set_node_token(NODE_ID, NODE_TOKEN))
+    asyncio.run(client.app.state.registry.set_node_token(NODE_ID, NODE_TOKEN))
 
     captured: dict[str, Any] = {}
 
@@ -222,11 +230,11 @@ def test_streaming_proxy_sends_the_node_credential(
 
 def test_unregister_purges_the_token(client: TestClient) -> None:
     """A departed node's credential must not linger in the registry."""
-    asyncio.run(app.state.registry.set_node_token(NODE_ID, NODE_TOKEN))
-    assert app.state.registry.get_node_token(NODE_ID) == NODE_TOKEN
+    asyncio.run(client.app.state.registry.set_node_token(NODE_ID, NODE_TOKEN))
+    assert client.app.state.registry.get_node_token(NODE_ID) == NODE_TOKEN
 
-    asyncio.run(app.state.registry.local_unregister_node(NODE_ID))
-    assert app.state.registry.get_node_token(NODE_ID) is None, (
+    asyncio.run(client.app.state.registry.local_unregister_node(NODE_ID))
+    assert client.app.state.registry.get_node_token(NODE_ID) is None, (
         "node credential survived unregistration"
     )
 
@@ -252,12 +260,12 @@ def test_reregistration_refreshes_a_rotated_token(client: TestClient) -> None:
 
     first = client.post("/nodes/register", json=body, headers={"X-Network-Auth-Token": "TOKEN-V1"})
     assert first.status_code in (200, 201)
-    assert app.state.registry.get_node_token("node-rotate") == "TOKEN-V1"
+    assert client.app.state.registry.get_node_token("node-rotate") == "TOKEN-V1"
 
     # Node restarted without a graceful unregister and its token had rotated.
     again = client.post("/nodes/register", json=body, headers={"X-Network-Auth-Token": "TOKEN-V2"})
     assert again.status_code == 409, "re-registration should still report the conflict"
-    assert app.state.registry.get_node_token("node-rotate") == "TOKEN-V2", (
+    assert client.app.state.registry.get_node_token("node-rotate") == "TOKEN-V2", (
         "Scheduler kept the stale credential after the node rotated it; every "
         "dispatch to this node would 401 until it was evicted"
     )
@@ -271,8 +279,8 @@ def test_proxy_falls_back_to_the_fleet_wide_token(
     Covers the compatibility path for deployments that predate per-node tokens.
     """
     private_key, _ = key_pair
-    asyncio.run(app.state.registry.set_node_token(NODE_ID, None))
-    assert app.state.registry.get_node_token(NODE_ID) is None
+    asyncio.run(client.app.state.registry.set_node_token(NODE_ID, None))
+    assert client.app.state.registry.get_node_token(NODE_ID) is None
 
     captured: dict[str, Any] = {}
 

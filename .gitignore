@@ -29,3 +29,7 @@ node_modules/
 .verify-receipt.json
 .coverage
 htmlcov/
+
+# Default Scheduler state file (ROADMAP C3 turned persistence on by default).
+scheduler-state.db
+scheduler-state.db-*

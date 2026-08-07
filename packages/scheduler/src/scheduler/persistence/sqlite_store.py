@@ -78,26 +78,43 @@ class SQLiteStore:
     """
 
     def __init__(self, path: str | PathLike[str]) -> None:
-        """Open, and if necessary create, the database at `path`.
+        """Record where the database lives. Nothing touches the disk until first use.
+
+        **Construction is deliberately side-effect-free.** ROADMAP C3 turned
+        persistence on by default, which made `build_store()` return a real store --
+        and `scheduler/main.py` builds the ASGI `app` at module scope, so opening the
+        file here meant *importing the module* created a database wherever the
+        process happened to be running. Six test modules import `scheduler.main.app`,
+        so the suite dropped a file in the working directory and two concurrent runs
+        would have shared one SQLite file.
 
         Args:
             path: Filesystem location of the SQLite file. Parent directories are
-                created -- `.env.example` suggests `./data/scheduler.db`, and a
-                container whose `./data` does not exist yet must not fail startup
-                on a missing directory.
+                created on connect -- `.env.example` suggests `./data/scheduler.db`,
+                and a container whose `./data` does not exist yet must not fail
+                startup on a missing directory.
         """
         self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        # check_same_thread=False: the event loop is one thread today, but TestClient
-        # and any future to_thread offload are not, and the alternative failure is an
-        # opaque ProgrammingError rather than anything a reader could act on.
-        self._conn = sqlite3.connect(self.path, check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA synchronous=NORMAL")
-        self._conn.executescript(_SCHEMA)
-        self._check_schema_version()
-        self._conn.commit()
+        self._connection: sqlite3.Connection | None = None
+
+    @property
+    def _conn(self) -> sqlite3.Connection:
+        """Connect on first use, creating the file and schema if needed."""
+        if self._connection is None:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            # check_same_thread=False: the event loop is one thread today, but
+            # TestClient and any future to_thread offload are not, and the
+            # alternative failure is an opaque ProgrammingError rather than anything
+            # a reader could act on.
+            conn = sqlite3.connect(self.path, check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.executescript(_SCHEMA)
+            self._connection = conn
+            self._check_schema_version()
+            conn.commit()
+        return self._connection
 
     def _check_schema_version(self) -> None:
         """Record the schema version, or complain loudly if the file has another.
@@ -224,5 +241,12 @@ class SQLiteStore:
     # --- lifecycle ---------------------------------------------------------
 
     async def close(self) -> None:
-        """Close the connection. Safe to call more than once."""
-        self._conn.close()
+        """Close the connection. Safe to call more than once.
+
+        Reads `_connection` directly rather than the `_conn` property: going through
+        the property would OPEN the database in order to close it, which is how a
+        store that was never used ends up creating a file on shutdown.
+        """
+        if self._connection is not None:
+            self._connection.close()
+            self._connection = None

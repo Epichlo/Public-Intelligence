@@ -29,6 +29,21 @@ from scheduler.registry.node_registry import NodeRegistry
 logger = structlog.stdlib.get_logger()
 
 
+def build_rate_limiter() -> TokenBucketLimiter:
+    """Build the limiter the deployed Scheduler runs with, from settings.
+
+    Same split as `build_store`: settings are read here, at the module bottom, and
+    never inside `create_app`, so the test suite's limits cannot be changed by an
+    ambient `.env`. Before ROADMAP C5 the limits were constructor defaults and an
+    operator had no way to reach them at all.
+    """
+    settings = get_settings()
+    return TokenBucketLimiter(
+        capacity=settings.rate_limit_capacity,
+        refill_rate=settings.rate_limit_refill_per_second,
+    )
+
+
 def build_store() -> SchedulerStore | None:
     """Build the durable store the deployed Scheduler runs with, if configured.
 
@@ -39,6 +54,17 @@ def build_store() -> SchedulerStore | None:
     """
     settings = get_settings()
     if not settings.database_path:
+        # Reachable only by an operator explicitly setting SCHEDULER_DATABASE_PATH=""
+        # since ROADMAP C3 turned persistence on. Loud, because the thing lost is the
+        # thing nothing else can reconstruct: a node re-registers itself after a 404
+        # heartbeat (1.6), but no one but this process ever knew a credit balance.
+        logger.warning(
+            "persistence_disabled",
+            detail=(
+                "SCHEDULER_DATABASE_PATH is empty. Every restart loses all credit "
+                "balances and the node registry. Unset it to use the default file."
+            ),
+        )
         return None
     return SQLiteStore(settings.database_path)
 
@@ -96,6 +122,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 def create_app(
     store: SchedulerStore | None = None,
     cors_origins: list[str] | None = None,
+    rate_limiter: TokenBucketLimiter | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
 
@@ -110,6 +137,10 @@ def create_app(
             here, at app-construction time, so a `dependency_overrides` entry would
             arrive too late to affect it and reading the environment here would let
             an ambient `.env` change what the test suite exercises.
+        rate_limiter: Per-tenant token bucket. Injected for the same reason as the
+            two above -- constructed here rather than resolved from settings, so the
+            suite's limits do not depend on an ambient environment. The deployed app
+            passes one built from settings at the bottom of this module.
     """
     app = FastAPI(
         title="Public Intelligence Scheduler",
@@ -145,7 +176,7 @@ def create_app(
     # credits it yet -- accrual on real usage is ROADMAP 3.2/3.3. A durable ledger
     # of zeroes is still the thing 3.2 needs to already exist before it can write.
     app.state.ledger = CreditLedger(store=store)
-    app.state.rate_limiter = TokenBucketLimiter()
+    app.state.rate_limiter = rate_limiter or TokenBucketLimiter()
 
     from scheduler.core.engine import SchedulingEngine
     from scheduler.core.matchmaker import CapabilityMatchmaker
@@ -165,4 +196,8 @@ def create_app(
     return app
 
 
-app = create_app(store=build_store(), cors_origins=get_settings().cors_allow_origins)
+app = create_app(
+    store=build_store(),
+    cors_origins=get_settings().cors_allow_origins,
+    rate_limiter=build_rate_limiter(),
+)

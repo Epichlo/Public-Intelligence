@@ -37,8 +37,12 @@ class Settings(BaseSettings):
 
     # Scheduler
     scheduler_url: str = Field(
-        default="http://localhost:8080",
-        description="The base URL of the Scheduler service.",
+        # 8000, not 8080. 8080 is the NODE's own default port, so the previous
+        # default pointed a node at itself -- harmless only because install.sh
+        # overwrote it with a URL that did not resolve either (ROADMAP C1).
+        default="http://localhost:8000",
+        description="Base URL of the Scheduler. Defaults to a Scheduler you run yourself; "
+        "see docs/decisions/D6-is-there-a-network.md.",
     )
 
     # Ollama
@@ -126,9 +130,22 @@ class Settings(BaseSettings):
         description="Additional Zenoh WAN peer endpoints for redundancy.",
     )
     bootstrap_routers: list[str] = Field(
-        default_factory=lambda: ["tcp/bootstrap.public-intelligence.net:7447"],
+        # EMPTY, deliberately. This used to default to
+        # `tcp/bootstrap.public-intelligence.net:7447`, a name that is NXDOMAIN --
+        # so every installed node spent its startup dialling a host that does not
+        # exist, and failed slowly and quietly instead of quickly and clearly.
+        #
+        # Empty means multicast/gossip scouting only, which is correct for nodes on
+        # one network and is the shape of deployment this product is for
+        # (docs/decisions/D6-is-there-a-network.md). Defaulting to
+        # `tcp/localhost:7447` was considered and rejected: it trades a dead remote
+        # name for a dead local port unless the operator also runs a router.
+        #
+        # Ratcheted by tests/test_installer_defaults.py.
+        default_factory=list,
         validation_alias=AliasChoices("NODE_BOOTSTRAP_ROUTERS", "BOOTSTRAP_ROUTERS"),
-        description="Fallback Zenoh bootstrap routers for auto-joining WAN.",
+        description="Zenoh bootstrap routers to dial. Empty means scout the local "
+        "network only; set this to reach nodes across networks.",
     )
     zenoh_gossip_scouting: bool = Field(
         default=True,

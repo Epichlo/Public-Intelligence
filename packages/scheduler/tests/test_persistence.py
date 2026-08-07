@@ -9,6 +9,7 @@ in-memory implementation and prove nothing.
 See specs/scheduler-persistence.md.
 """
 
+import asyncio
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
@@ -350,7 +351,13 @@ async def test_a_file_written_by_a_future_schema_is_reported_not_silently_coerce
     with no statement of the cause. The stored version is left as it was, so the
     evidence of what wrote the file survives for whoever writes the migration.
     """
-    SQLiteStore(db)
+    # `load_nodes()` rather than bare construction: since ROADMAP C3 the store
+    # connects lazily, because building the ASGI app at module scope would otherwise
+    # create a database file merely by importing scheduler.main.
+    store = SQLiteStore(db)
+    await store.load_nodes()
+    await store.close()
+
     conn = sqlite3.connect(db)
     conn.execute("UPDATE schema_meta SET value = '99' WHERE key = 'schema_version'")
     conn.commit()
@@ -358,9 +365,12 @@ async def test_a_file_written_by_a_future_schema_is_reported_not_silently_coerce
 
     with caplog.at_level("ERROR"):
         store = SQLiteStore(db)
+        # The check runs on first connect rather than in __init__, since C3 made
+        # construction side-effect-free. It must still fire, and still not be fatal.
+        loaded = await store.load_nodes()
 
     assert "persistence_schema_mismatch" in caplog.text
-    assert await store.load_nodes() == [], "a mismatch must not be fatal"
+    assert loaded == [], "a mismatch must not be fatal"
 
     conn = sqlite3.connect(db)
     stored = conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()[0]
@@ -473,21 +483,42 @@ async def test_a_ledger_with_no_store_still_works() -> None:
 # --- the wiring -------------------------------------------------------------
 
 
-def test_persistence_is_off_unless_an_operator_asks_for_it(
-    monkeypatch: pytest.MonkeyPatch,
+def test_persistence_is_on_by_default_and_off_is_explicit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Defaulting to a path would be worse than defaulting to off.
+    """REVERSED by ROADMAP C3, and the original reasoning is worth keeping.
 
-    On an ephemeral filesystem -- Render's free tier, any plain container -- a
-    default path produces a file that survives a process restart and is wiped by
-    every redeploy: durability that looks like it works. Off by default means the
-    operator who turns it on is the one who decided where it lives.
+    This test used to assert the opposite -- `build_store() is None` with nothing
+    configured -- on the argument that a default path on an ephemeral filesystem
+    (Render's free tier, any plain container) survives a process restart and is
+    wiped by every redeploy, which is durability that looks like it works.
+
+    That argument was correct about that deployment.
+    `docs/decisions/D6-is-there-a-network.md` then decided not to have it: this is a
+    self-hosted product, the operator has a real disk, and the measured consequence
+    of "off by default" was that **no deployment set it, so nothing persisted
+    anywhere**. Losing every credit balance on every restart is the worse failure,
+    because the ledger is the half nothing can reconstruct -- a node re-registers
+    itself after a 404 heartbeat (ROADMAP 1.6); no one but this process ever knew a
+    balance.
+
+    So: on by default, and off is an explicit empty string that logs a warning.
     """
     monkeypatch.delenv("SCHEDULER_DATABASE_PATH", raising=False)
     monkeypatch.delenv("DATABASE_PATH", raising=False)
+    # The default is relative to the working directory, so this test would otherwise
+    # drop a database file in whatever directory pytest happened to start in.
+    monkeypatch.chdir(tmp_path)
     get_settings.cache_clear()
     try:
-        assert build_store() is None
+        assert build_store() is not None, "persistence must be on with no configuration"
+    finally:
+        get_settings.cache_clear()
+
+    monkeypatch.setenv("SCHEDULER_DATABASE_PATH", "")
+    get_settings.cache_clear()
+    try:
+        assert build_store() is None, "an explicit empty path must still disable it"
     finally:
         get_settings.cache_clear()
 
@@ -503,7 +534,13 @@ def test_the_configured_database_path_is_what_gets_opened(
         store = build_store()
         assert isinstance(store, SQLiteStore)
         assert store.path == target
-        assert target.exists(), "the file is opened where it was configured, not lazily"
+        # The file appears on first use, not on construction (ROADMAP C3): the ASGI
+        # app is built at module scope, so an eager connect meant importing
+        # scheduler.main created a database wherever the process was running.
+        assert not target.exists(), "constructing a store must not touch the disk"
+
+        asyncio.run(store.load_nodes())
+        assert target.exists(), "the file is opened where it was configured"
     finally:
         get_settings.cache_clear()
 

@@ -18,7 +18,9 @@ def test_default_values() -> None:
         assert settings.node_id == "node-local"
         assert settings.hostname == "localhost"
         assert settings.region == "local"
-        assert settings.scheduler_url == "http://localhost:8080"
+        # 8000, the Scheduler's port. This asserted 8080 -- the NODE's own port --
+        # so the default pointed a node at itself. Corrected with ROADMAP C1.
+        assert settings.scheduler_url == "http://localhost:8000"
         assert settings.host == "0.0.0.0"
         assert settings.port == 8080
         assert settings.heartbeat_interval_seconds == 30

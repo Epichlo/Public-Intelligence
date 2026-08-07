@@ -60,15 +60,52 @@ class Settings(BaseSettings):
         description="HTTP port used to reach registered Node inference APIs.",
     )
     database_path: str | None = Field(
-        default=None,
+        # ON by default as of ROADMAP C3. It used to default to None, and the
+        # reasoning was sound at the time: a default path on an ephemeral filesystem
+        # (Render's free tier) survives a process restart and is wiped by every
+        # redeploy -- durability that looks like it works and does not.
+        #
+        # docs/decisions/D6-is-there-a-network.md removed that deployment. This is a
+        # self-hosted product, so the operator has a real disk, and the balance
+        # flips: NOTHING set this, so nothing persisted anywhere, and the ledger is
+        # the unrecoverable half of the state. A node re-registers itself after a 404
+        # heartbeat (ROADMAP 1.6), so losing the registry is a recovery window;
+        # nothing but the Scheduler ever knew a credit balance.
+        #
+        # `create_app()` still does not read this -- build_store() is the only
+        # reader -- which matters MORE now, not less: without that, every test in the
+        # repo would share one file. Pinned by
+        # test_persistence_and_limits_are_honest.py.
+        default="scheduler-state.db",
         validation_alias=AliasChoices("SCHEDULER_DATABASE_PATH", "DATABASE_PATH"),
         description=(
-            "SQLite file for durable node and credit state. Unset (the default) means "
-            "every restart starts empty. Defaulting to a path would be worse than "
-            "defaulting to off: on an ephemeral filesystem such as Render's free tier "
-            "the file survives a process restart and is wiped by every redeploy, which "
-            "is durability that looks like it works and does not. "
+            "SQLite file for durable node and credit state, relative to the working "
+            "directory. Set to an empty string to run with no persistence, in which "
+            "case every restart loses every credit balance. "
             "See specs/scheduler-persistence.md."
+        ),
+    )
+
+    rate_limit_capacity: int = Field(
+        default=5,
+        validation_alias=AliasChoices("SCHEDULER_RATE_LIMIT_CAPACITY", "RATE_LIMIT_CAPACITY"),
+        description=(
+            "Burst capacity of the per-tenant token bucket. This limiter is "
+            "in-memory and PER-INSTANCE: it resets on restart and would not hold "
+            "across replicas, so it is an abuse dampener and not a quota. Adequate "
+            "because the deployment is a single instance "
+            "(docs/decisions/D5-decentralisation-claim.md)."
+        ),
+    )
+    rate_limit_refill_per_second: float = Field(
+        default=0.5,
+        validation_alias=AliasChoices(
+            "SCHEDULER_RATE_LIMIT_REFILL", "RATE_LIMIT_REFILL_PER_SECOND"
+        ),
+        description=(
+            "Token refill rate per second, per tenant. Per-instance and in-memory; "
+            "see rate_limit_capacity. Default 0.5 is one request every two seconds "
+            "sustained, bursting to rate_limit_capacity."
         ),
     )
 

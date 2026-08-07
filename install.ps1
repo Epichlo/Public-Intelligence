@@ -1,6 +1,18 @@
 # ==============================================================================
 # Public Intelligence - One-Click Windows Host Node Installer (PowerShell)
 # ==============================================================================
+param(
+    # This project operates NO network. bootstrap.public-intelligence.net is NXDOMAIN
+    # and the hosted Scheduler does not answer, yet both were written into every .env
+    # this script generated -- so the happy path produced a node that connected to
+    # nothing, slowly. See docs/decisions/D6-is-there-a-network.md and ROADMAP C1.
+    #
+    # 8000 is the Scheduler's port. Reaching another network is now an explicit
+    # -BootstrapRouter, because it always was a decision and used to be a hidden one.
+    [string]$SchedulerUrl = $(if ($env:SCHEDULER_URL) { $env:SCHEDULER_URL } else { "http://localhost:8000" }),
+    [string[]]$BootstrapRouter = @()
+)
+
 $ErrorActionPreference = "Stop"
 
 Write-Host "==============================================================================" -ForegroundColor Cyan
@@ -121,8 +133,15 @@ if (-not (Test-Path (Join-Path $NodeDir "pyproject.toml"))) {
 }
 
 # Environment Setup
-$SchedulerUrl = if ($env:SCHEDULER_URL) { $env:SCHEDULER_URL } else { "https://scheduler-publicintelligence.onrender.com" }
 $EnvFile = Join-Path $NodeDir ".env"
+
+# Empty by default: Zenoh then scouts the local network, which is correct for
+# machines on one LAN and does not dial a host that does not exist.
+$BootstrapRoutersJson = if ($BootstrapRouter.Count -gt 0) {
+    "[" + (($BootstrapRouter | ForEach-Object { '"' + $_ + '"' }) -join ",") + "]"
+} else {
+    "[]"
+}
 
 # Per-install credential for the node's control API. The node binds 0.0.0.0, so
 # without this any machine on the LAN could stop the node or spend its GPU. The
@@ -139,7 +158,7 @@ NODE_HOST=0.0.0.0
 NODE_PORT=8080
 NODE_SCHEDULER_URL=$SchedulerUrl
 NODE_OLLAMA_HOST=http://localhost:11434
-NODE_BOOTSTRAP_ROUTERS=["tcp/bootstrap.public-intelligence.net:7447"]
+NODE_BOOTSTRAP_ROUTERS=$BootstrapRoutersJson
 NODE_ZENOH_GOSSIP_SCOUTING=true
 NODE_ZENOH_MULTICAST_SCOUTING=true
 NODE_NETWORK_AUTH_TOKEN=$AuthToken

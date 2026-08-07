@@ -20,6 +20,20 @@ FORCE=false
 SKIP_DOCKER=false
 SKIP_VENV=false
 
+# Network defaults. This project operates NO network: bootstrap.public-intelligence.net
+# is NXDOMAIN and the hosted Scheduler does not answer, yet both were written into
+# every .env this script generated -- so the happy path produced a node that connected
+# to nothing, slowly. See docs/decisions/D6-is-there-a-network.md and ROADMAP C1.
+#
+# localhost:8000 is the Scheduler's port. The node's own default used to be
+# localhost:8080, which is the NODE's port, so an unconfigured node pointed at itself.
+#
+# No bootstrap router by default means Zenoh scouts the local network, which is right
+# for machines on one LAN. Reaching another network is now an explicit
+# --bootstrap-router, because it always was a decision and used to be a hidden one.
+SCHEDULER_URL="${SCHEDULER_URL:-http://localhost:8000}"
+BOOTSTRAP_ROUTERS=()
+
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
 }
@@ -48,6 +62,12 @@ usage() {
     echo "Options:"
     echo "  --dry-run       Simulate installation, hardware discovery, and configuration without making changes"
     echo "  --force         Force overwrite existing .env configuration and virtual environment"
+    echo "  --scheduler-url URL"
+    echo "                  Scheduler to register with. Default: http://localhost:8000"
+    echo "                  (this project operates no network -- see docs/decisions/D6)"
+    echo "  --bootstrap-router ADDR"
+    echo "                  Zenoh router to dial, e.g. tcp/10.0.0.5:7447. Repeatable."
+    echo "                  Default: none, meaning scout the local network only."
     echo "  --skip-docker   Skip Docker daemon connectivity requirement check"
     echo "  --skip-venv     Skip Python virtual environment creation"
     echo "  -h, --help      Display this help message"
@@ -64,6 +84,14 @@ while [[ $# -gt 0 ]]; do
         --force)
             FORCE=true
             shift
+            ;;
+        --scheduler-url)
+            SCHEDULER_URL="$2"
+            shift 2
+            ;;
+        --bootstrap-router)
+            BOOTSTRAP_ROUTERS+=("$2")
+            shift 2
             ;;
         --skip-docker)
             SKIP_DOCKER=true
@@ -252,21 +280,37 @@ configure_environment() {
         AUTH_TOKEN_VAL=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
     fi
 
+    # Computed BEFORE the dry-run branch on purpose. These used to be computed after
+    # it, so `--dry-run` printed NODE_SCHEDULER_URL=http://localhost:8080 while the
+    # real run wrote https://scheduler-publicintelligence.onrender.com -- two answers
+    # from one function, and the dry-run is the one the gate checked.
+    # Ratcheted by tests/test_installer_defaults.py.
+    local SCHEDULER_URL_VAL="$SCHEDULER_URL"
+    local BOOTSTRAP_ROUTERS_JSON="[]"
+    if [[ ${#BOOTSTRAP_ROUTERS[@]} -gt 0 ]]; then
+        local joined=""
+        local r
+        for r in "${BOOTSTRAP_ROUTERS[@]}"; do
+            [[ -n "$joined" ]] && joined+=","
+            joined+="\"$r\""
+        done
+        BOOTSTRAP_ROUTERS_JSON="[$joined]"
+    fi
+
     if [[ "$DRY_RUN" == "true" ]]; then
         log_dry_run "Would configure ${ENV_FILE} with:"
         log_dry_run "  NODE_ID=${NODE_ID_VAL}"
         log_dry_run "  NODE_HOST=0.0.0.0"
         log_dry_run "  NODE_PORT=8080"
-        log_dry_run "  NODE_SCHEDULER_URL=http://localhost:8080"
+        log_dry_run "  NODE_SCHEDULER_URL=${SCHEDULER_URL_VAL}"
         log_dry_run "  NODE_OLLAMA_HOST=http://localhost:11434"
-        log_dry_run "  NODE_BOOTSTRAP_ROUTERS=[\"tcp/bootstrap.public-intelligence.net:7447\"]"
+        log_dry_run "  NODE_BOOTSTRAP_ROUTERS=${BOOTSTRAP_ROUTERS_JSON}"
         log_dry_run "  NODE_ZENOH_GOSSIP_SCOUTING=true"
         log_dry_run "  NODE_ZENOH_MULTICAST_SCOUTING=true"
         log_dry_run "  NODE_NETWORK_AUTH_TOKEN=<64-char random hex, generated per install>"
         return 0
     fi
 
-    local SCHEDULER_URL_VAL="${SCHEDULER_URL:-https://scheduler-publicintelligence.onrender.com}"
 
     if [[ ! -f "$ENV_FILE" ]] || [[ "$FORCE" == "true" ]]; then
         cat <<EOF > "$ENV_FILE"
@@ -277,7 +321,7 @@ NODE_HOST=0.0.0.0
 NODE_PORT=8080
 NODE_SCHEDULER_URL=${SCHEDULER_URL_VAL}
 NODE_OLLAMA_HOST=http://localhost:11434
-NODE_BOOTSTRAP_ROUTERS=["tcp/bootstrap.public-intelligence.net:7447"]
+NODE_BOOTSTRAP_ROUTERS=${BOOTSTRAP_ROUTERS_JSON}
 NODE_ZENOH_GOSSIP_SCOUTING=true
 NODE_ZENOH_MULTICAST_SCOUTING=true
 NODE_NETWORK_AUTH_TOKEN=${AUTH_TOKEN_VAL}
