@@ -4,15 +4,15 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-07 06:19 UTC
+**Generated:** 2026-08-07 06:50 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 310 | 0 | 0 | 12.88s |
-| Node | PASS | 280 | 0 | 1 | 3.32s |
+| Scheduler | PASS | 310 | 0 | 0 | 14.70s |
+| Node | PASS | 280 | 0 | 1 | 3.29s |
 | Root E2E | PASS | 73 | 0 | 0 | 22.14s |
 | **Total** | **PASSING** | **663** | **0** | **1** | |
 
@@ -26,19 +26,15 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `3a13a90` fix: lint the cross-package tests, and catch implicit encodings (roadmap 2.9)
-- **Author / date:** Atharv Deshpande — 2026-08-06 22:56:24 +0530
+- **Last commit:** `b91cb5b` fix: eviction reports what it did (roadmap 2.5)
+- **Author / date:** Atharv Deshpande — 2026-08-07 11:49:39 +0530
 - **Branch:** main
-- **Total commits:** 206
+- **Total commits:** 207
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence.git (fetch)
-- **Working tree:** 5 uncommitted change(s)
+- **Working tree:** 1 uncommitted change(s)
 
 ```
   M ROADMAP.md
-   M packages/scheduler/src/scheduler/core/zenoh_router.py
-   M packages/scheduler/src/scheduler/registry/node_registry.py
-  ?? packages/scheduler/tests/test_eviction_reporting.py
-  ?? specs/eviction-reports-what-it-did.md
 ```
 
 ## CI

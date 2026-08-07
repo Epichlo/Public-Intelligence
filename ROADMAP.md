@@ -1,10 +1,19 @@
 # ROADMAP — v1
 
-Status: **draft for review.** Nothing here is being built yet.
+Status: **Stage 0-2 built. Stage D open, and it gates everything below it.**
 
 This supersedes `docs/ROADMAP.md`, which describes phases 4.6–4.9 as "Realized"
 based on code that does not do what the labels claim. Where the two disagree,
-this file is correct.
+this file is correct. (`docs/` still makes those claims to anyone who reads it —
+that is item N2 below.)
+
+**A full audit on 2026-08-07 found that the engineering is ahead of the product
+definition.** Ten items shipped across Stages 0–2; meanwhile the production network
+does not exist, the API can return fabricated text as a successful completion, and
+the central question a compute marketplace has to answer — how a requester knows a
+node really ran the model — is not on this roadmap at all. Stage D was added in
+front of everything as a result. **No further feature work starts until D is
+answered**, with the deliberate exception of the three no-regret fixes.
 
 ---
 
@@ -107,6 +116,54 @@ correct for same-host and containerised deployments and is the only thing that p
 Each item lists what must exist before it. Status is one of
 **done** / **partial** / **not started**.
 
+### Stage D — Decide what this is (blocks everything below)
+
+Not code. These are the questions the code has been assuming answers to. Each one
+is cheap to answer on paper and expensive to answer wrong after another month of
+building. **Nothing in Stages 0–4 should be started until D1–D3 are settled**, because
+each of them can change what the right system looks like.
+
+| # | Decision | Why it blocks | Status |
+|---|---------|---------------|--------|
+| D1 | **How does a requester know a node actually ran the model?** In a network of untrusted hosts this is the core problem, and there is no answer today: no redundant execution, no canary prompts, no attestation, no reputation grounded in anything checkable. The `token_556` bug (N1) is the accidental version of this; the adversarial version is a host returning cheap garbage to earn credits, which is rational for them and undetectable by us. Petals survives without this because participants are semi-altruistic researchers — **attaching payment invites cheating.** Acceptable answers include "trusted/invite-only hosts for v1", sampled redundant execution, or canary prompts. Having no answer is not one. | Determines whether v1 is a marketplace or a trusted-host network, which changes matchmaking, the ledger, and the pitch. | **not started** |
+| D2 | **Do the economics close?** One spreadsheet: a host's electricity cost per 1M tokens on consumer hardware, versus current commodity API pricing. Inference prices have collapsed; if a host loses money per token, this is a donation network rather than a marketplace — a legitimate thing to be, but a different product with a different design and a different pitch. | If hosts cannot profit, Stage 3 (credentials, metering, ledger, payouts) is building the wrong thing. | **not started** |
+| D3 | **Terms of service, acceptable use, and operator liability.** Hosts run arbitrary prompts from strangers on home machines, egressing from a residential IP. There is no ToS, no AUP, no abuse pipeline, no content policy. Separately, prompts are personal data routed to unvetted third parties worldwide with no DPA and no real residency control (`region` is self-asserted). | Existential and much cheaper to settle on paper than in court. Needs actual legal advice, not a guess. | **not started** |
+| D4 | **Sybil resistance.** Registration costs nothing and anyone can register N nodes and receive dispatch. 1.2 made *honest* nodes report real hardware; a malicious host patches their own copy. Invite-only onboarding is the cheap v1 answer. | Determines whether node identity needs stake, vetting, or attestation. | **not started** |
+| D5 | **"Decentralised" versus one instance.** The pitch is community-owned decentralised infrastructure. The architecture is a single control plane holding all state in memory on a free tier. The Raft code exists and is explicitly out of v1. Either the claim narrows or the architecture changes. | Same failure mode as the docs: a story the system does not implement. | **not started** |
+| D6 | **Is there a network at all, and who runs it?** `bootstrap.public-intelligence.net` and `public-intelligence.net` are **NXDOMAIN**; the hosted Scheduler did not respond in 120s. Every installer-provisioned node points at all three. Decide: register and operate a real network, or ship a self-hosted product and change the installer defaults. The current state is the worst of both. | C1 cannot be executed until this is decided. | **not started** |
+| D7 | **A second pair of eyes.** The process here — `VERIFY.md`, the drift ratchets, red-green with mutation testing — is stronger than most production teams have. It catches regressions and is structurally incapable of catching a wrong premise: it did not notice the dead DNS, the reachable simulation path, or the missing licence, because it was not looking. Every judgement to date has been made by one party. | Determines whether D1–D6 get reviewed by anyone who can say "this premise is wrong". | **not started** |
+| D8 | **The wedge.** Petals, Together, Akash, io.net, Prime Intellect, Hyperbolic, Bittensor. Write the one paragraph explaining why someone picks this instead. If it is hard to write, that is the finding. | Everything in Stage 3 is go-to-market machinery for a position not yet articulated. | **not started** |
+
+### No-regret fixes (do not wait for Stage D)
+
+These are wrong under **every** possible answer to D, so sequencing them behind it
+would be false discipline.
+
+| # | Fix | Status |
+|---|-----|--------|
+| N1 | **The API returns fabricated text as a successful completion.** Verified live: a valid JWT plus `x-split-inference: true` on `POST /v1/chat/completions` asking "What is the capital of France?" returns **HTTP 200** with `content: 'token_556'`, in the standard OpenAI response shape — so every OpenAI-compatible client presents it to a user as the model's answer. It routes to `LocalBoundaryEngine`, a seeded-random matrix over a toy vocabulary (`openai.py:103`, `:166`). Fix: return **501 Not Implemented** for `split_inference`/`x-split-inference`, or delete the branch, plus a test that no path can return `LocalBoundaryEngine` output to a client. CLAUDE.md already says not to *describe* split inference as working; this makes the code stop *claiming* it. ~90 minutes. | **not started** |
+| N2 | **`docs/` still advertises the cut features as shipped.** `ARCHITECTURE_OVERVIEW.md:60` claims FP8 E4M3 "integrated"; `:94` says "realized through Phase 4.5"; `docs/ROADMAP.md` says "v0.1 (Realized)" and "v0.2 (Realized)"; `PROJECT_CONTEXT.md` promises layer sharding. A visitor reads these, enables the flag from N1, and gets noise. Fix: move to `docs/historical/` behind a header stating it describes an aspiration, or delete; point README at `ROADMAP.md` and `STATUS.md`. | **not started** |
+| N3 | **No LICENSE, CONTRIBUTING, or SECURITY policy.** Default copyright is all-rights-reserved, so nobody may legally fork, contribute to, or run this — which contradicts the community-owned positioning outright. No disclosure path for security reports either. Fix: Apache-2.0 (patent grant matters here) plus `SECURITY.md`. One hour, and it unblocks anything community-shaped. | **not started** |
+
+### Stage C — Correctness debt found in the 2026-08-07 audit
+
+Real defects, none of them blocking D, all of them worth fixing once D says what
+this is. Sequenced after D deliberately: several change shape depending on the
+answers.
+
+| # | Item | Depends on |
+|---|------|-----------|
+| C1 | **Make the deployment real, or stop shipping one.** Register the domain and stand up the bootstrap router and Scheduler, or change installer defaults to `localhost`. Today `install.sh` writes a dead Scheduler URL and a non-resolving Zenoh bootstrap into every `.env` it generates. | D6 |
+| C2 | **Quarantine the cut-feature code.** ~2,850 lines across `local_boundary` (756), `transport` (1,082), `consensus` (530), `kv_cache` (197), `quantization` (98), `autonomous_orchestrator` (172) — shipped, tested by ~40 test files, and in `local_boundary`'s case reachable from the public API. Move to `experimental/`, exclude from the gate, and report the shipping-code test count separately so a green number means something. | N1 |
+| C3 | **Persistence is off by default, so nothing persists.** 2.1 made it opt-in for good reasons (ephemeral filesystems), but no deployment sets `SCHEDULER_DATABASE_PATH`. Either default it on with a real disk, or state plainly in `STATUS.md` that no deployment persists. | D6 |
+| C4 | **One signing key, no rotation, no revocation.** Add `kid` to issued JWTs and support two active keys, before it is needed rather than after. The hardcoded fallback public key at `ingress.py:16` is the related known issue. | — |
+| C5 | **The rate limiter is in-memory and per-instance.** Capacity 5, refill 0.5/s, resets on restart, would not hold across replicas. Fine for one instance; not a quota. | D5 |
+| C6 | **`packages/website` has zero tests** — `package.json` has `lint` and no `test`. Duplicate of 4.1, restated because the 2.6 proxy change is unverified by anything. | — |
+| C7 | **The gate does not type-check `tests/` and does not touch the website at all.** 2.9 closed the lint half; mypy and the website remain outside "the only definition of does this pass". | — |
+| C8 | **Dead and duplicated code.** `src/shared/` is an orphan third copy of the artifact store, imported by nothing. Six duplicated module pairs remain, and `packages/shared/` — the stated follow-up to the monorepo migration — still does not exist. | C2 |
+| C9 | **Batch jobs are still not persisted**, now unblocked by 2.4 moving them off module scope. | C3 |
+| C10 | **Revisit `/v1/models` being public.** A deliberate 2.6 decision on the argument that a marketplace should let a developer see what is servable. It also discloses fleet composition, and the tradeoff changes once there is a real fleet. | D1 |
+
 ### Stage 0 — Stop the bleeding
 
 | # | Feature | Status | Depends on |
@@ -162,8 +219,19 @@ Each item lists what must exist before it. Status is one of
 
 ## Definition of done for v1
 
-All of Stages 0–3 at **done**, and this specific walkthrough passing on real
-hardware, unassisted:
+**Stage D answered, N1–N3 fixed, and all of Stages 0–3 at done** — plus this
+specific walkthrough passing on real hardware, unassisted.
+
+Stage D is listed first on purpose. Step 3 below assumes a developer *wants* to
+send this request (D8), step 5 assumes a credit is worth something (D2), and the
+whole walkthrough assumes the answer arriving in step 4 was really produced by
+that node rather than fabricated (D1). Those assumptions were load-bearing and
+unexamined for the first eight roadmap items; they are now explicit.
+
+Note also that steps 1–4 currently cannot happen at all: the installer points at a
+Scheduler and a bootstrap router that do not resolve (D6/C1).
+
+The walkthrough:
 
 1. A person on a home connection runs the installer on a machine with a GPU.
 2. Their node appears in the Scheduler registry with its **real** GPU, VRAM, and
