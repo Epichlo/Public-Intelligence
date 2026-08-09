@@ -1,7 +1,7 @@
 # D4 — Sybil resistance
 
 **Date:** 2026-08-07
-**Status:** Decided
+**Status:** Decided, and **implemented** on 2026-08-09.
 
 ## The question, restated
 
@@ -50,6 +50,10 @@ are the entire supply).
 ## What changes in the code
 
 - `scheduler/core/invites.py` — issue, verify, redeem, revoke; hashed at rest.
+  One subtlety worth recording because the first implementation got it wrong:
+  "enforcing" means *any code has ever been issued*, not *a usable code exists now*.
+  The latter switches admission back off the moment the last single-use code is
+  redeemed — the check disabling itself exactly when it has finished being used.
 - `POST /nodes` takes `invite_code`; refuses with 403 when required and absent.
 - Persisted in `SchedulerStore` alongside nodes and credentials.
 - `scripts/mint_invite.py` — the operator tool that issues them.

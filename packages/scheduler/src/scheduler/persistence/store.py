@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from scheduler.core.credit_ledger import CreditAccount
+    from scheduler.core.invites import InviteCode
     from scheduler.core.metering import UsageRecord
     from scheduler.models.node import Node
 
@@ -79,6 +80,19 @@ class SchedulerStore(Protocol):
 
     async def save_account(self, account: CreditAccount) -> None:
         """Insert or replace a credit account's balances."""
+        ...
+
+    async def load_invites(self) -> list[InviteCode]:
+        """Return every stored invite, including spent and revoked ones.
+
+        Spent codes are kept rather than deleted: "which invite admitted this node"
+        is the question D4 exists to be able to answer, and deleting the record
+        answers it with silence.
+        """
+        ...
+
+    async def save_invite(self, invite: InviteCode) -> None:
+        """Insert or replace an invite, keyed on its hash."""
         ...
 
     async def load_usage(self, limit: int = 500) -> list[UsageRecord]:

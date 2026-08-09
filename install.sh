@@ -33,6 +33,9 @@ SKIP_VENV=false
 # --bootstrap-router, because it always was a decision and used to be a hidden one.
 SCHEDULER_URL="${SCHEDULER_URL:-http://localhost:8000}"
 BOOTSTRAP_ROUTERS=()
+# Empty is valid: a Scheduler that has issued no invite codes registers anyone, which
+# is every existing deployment. One that has issued any answers 403 without this.
+INVITE_CODE="${INVITE_CODE:-}"
 
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -65,6 +68,9 @@ usage() {
     echo "  --scheduler-url URL"
     echo "                  Scheduler to register with. Default: http://localhost:8000"
     echo "                  (this project operates no network -- see docs/decisions/D6)"
+    echo "  --invite-code CODE"
+    echo "                  Invite code from the operator (scripts/mint_invite.py)."
+    echo "                  Required by a Scheduler that has issued any; see docs/decisions/D4."
     echo "  --bootstrap-router ADDR"
     echo "                  Zenoh router to dial, e.g. tcp/10.0.0.5:7447. Repeatable."
     echo "                  Default: none, meaning scout the local network only."
@@ -87,6 +93,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --scheduler-url)
             SCHEDULER_URL="$2"
+            shift 2
+            ;;
+        --invite-code)
+            INVITE_CODE="$2"
             shift 2
             ;;
         --bootstrap-router)
@@ -308,6 +318,7 @@ configure_environment() {
         log_dry_run "  NODE_ZENOH_GOSSIP_SCOUTING=true"
         log_dry_run "  NODE_ZENOH_MULTICAST_SCOUTING=true"
         log_dry_run "  NODE_NETWORK_AUTH_TOKEN=<64-char random hex, generated per install>"
+        log_dry_run "  NODE_INVITE_CODE=${INVITE_CODE:-<unset -- ok unless the Scheduler enforces invites>}"
         return 0
     fi
 
@@ -325,6 +336,7 @@ NODE_BOOTSTRAP_ROUTERS=${BOOTSTRAP_ROUTERS_JSON}
 NODE_ZENOH_GOSSIP_SCOUTING=true
 NODE_ZENOH_MULTICAST_SCOUTING=true
 NODE_NETWORK_AUTH_TOKEN=${AUTH_TOKEN_VAL}
+NODE_INVITE_CODE=${INVITE_CODE}
 EOF
         chmod 600 "$ENV_FILE" 2>/dev/null || true
         log_success "Created ${ENV_FILE} with P2P WAN endpoints."

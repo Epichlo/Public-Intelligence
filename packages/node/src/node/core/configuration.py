@@ -129,6 +129,16 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("NODE_ZENOH_PEER_ENDPOINTS", "ZENOH_PEER_ENDPOINTS"),
         description="Additional Zenoh WAN peer endpoints for redundancy.",
     )
+    invite_code: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("NODE_INVITE_CODE", "INVITE_CODE"),
+        description=(
+            "Invite code presented at registration (decision D4). The operator "
+            "issues one with scripts/mint_invite.py. Unset is fine against a "
+            "Scheduler that has issued no codes -- that one registers anyone -- and "
+            "is refused with 403 by one that has."
+        ),
+    )
     bootstrap_routers: list[str] = Field(
         # EMPTY, deliberately. This used to default to
         # `tcp/bootstrap.public-intelligence.net:7447`, a name that is NXDOMAIN --

@@ -57,10 +57,10 @@ both are blunter than they should be:
 
 - **Evict a node** (`DELETE /nodes/{id}`) — the removal is logged and reports whether
   the node is actually gone (ROADMAP 2.5). This is the precise one.
-- **Rotate the fleet token** (`SCHEDULER_NETWORK_AUTH_TOKEN`) — stops new
-  registrations, and requires re-configuring every legitimate node at the same time.
-  Per-node invite codes ([D4](decisions/D4-sybil-resistance.md)) would make this
-  targeted; they are **decided and not implemented**.
+- **Revoke an invite code** (`scripts/mint_invite.py --revoke`) — stops further
+  registrations under it, and leaves nodes already admitted alone.
+- **Rotate the fleet token** (`SCHEDULER_NETWORK_AUTH_TOKEN`) — the blunt instrument:
+  stops all new registrations and requires re-configuring every legitimate node.
 
 There is **no mechanism to revoke an issued requester credential** before it expires,
 other than rotating the signing key — which invalidates every token at once. This is

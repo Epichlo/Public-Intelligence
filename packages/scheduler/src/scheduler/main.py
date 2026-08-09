@@ -22,6 +22,7 @@ from scheduler.api.telemetry import router as telemetry_router
 from scheduler.api.usage import router as usage_router
 from scheduler.core.config import get_settings
 from scheduler.core.credit_ledger import CreditLedger
+from scheduler.core.invites import InviteRegistry
 from scheduler.core.logging import setup_logging
 from scheduler.core.metering import UsageMeter
 from scheduler.core.rate_limiter import TokenBucketLimiter
@@ -86,6 +87,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await app.state.registry.load()
     await app.state.ledger.load()
     await app.state.usage_meter.load()
+    await app.state.invites.load()
+    # Loudly, after loading, so an operator running with admission off cannot
+    # be in that state without being told.
+    app.state.invites.warn_if_open()
 
     logger.info(
         "scheduler_started",
@@ -190,6 +195,9 @@ def create_app(
     # the credit it produced are the same event, and putting them in one database
     # means they cannot end up in two states after a crash.
     app.state.usage_meter = UsageMeter(store=store)
+    # Decision D4. Admission is enforced only once a code exists; see
+    # InviteRegistry.enforcing for why the fallback is open rather than closed.
+    app.state.invites = InviteRegistry(store=store)
     app.state.rate_limiter = rate_limiter or TokenBucketLimiter()
     app.state.jwt_public_key = jwt_public_key
     app.state.jwt_public_key_secondary = jwt_public_key_secondary

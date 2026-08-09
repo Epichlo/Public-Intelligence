@@ -2,6 +2,7 @@
 
 from typing import Annotated
 
+import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 
 from scheduler.api.auth import verify_auth_token
@@ -9,6 +10,8 @@ from scheduler.core.config import get_settings
 from scheduler.core.mesh_inference_client import MeshInferenceClient
 from scheduler.models.node import ModelCatalogueUpdate, Node, NodeView
 from scheduler.registry.node_registry import NodeRegistry
+
+logger = structlog.stdlib.get_logger()
 
 router = APIRouter(tags=["nodes"])
 
@@ -57,7 +60,9 @@ RegistryDep = Annotated[NodeRegistry, Depends(get_registry)]
 async def register_node(
     node: Node,
     registry: RegistryDep,
+    request: Request,
     x_network_auth_token: Annotated[str | None, Header(alias="X-Network-Auth-Token")] = None,
+    x_invite_code: Annotated[str | None, Header(alias="X-Invite-Code")] = None,
 ) -> Node:
     """Register a compute node with the scheduler.
 
@@ -73,6 +78,26 @@ async def register_node(
     call returns 409. Recording it only on success left the Scheduler holding a
     stale token and silently 401ing every dispatch to that node.
     """
+    # Decision D4. The fleet token proves the caller knows a shared secret; it says
+    # nothing about WHICH host this is or who vouched for it, and it cannot be
+    # revoked for one node without being rotated for all of them.
+    #
+    # Enforced only when a usable code exists, so upgrading a running deployment
+    # does not lock its operator out of their own fleet. `InviteRegistry.warn_if_open`
+    # shouts at startup when that fallback is active, because an admission check
+    # that is off by default is only acceptable if being in that state is
+    # impossible to miss.
+    invites = getattr(request.app.state, "invites", None)
+    if invites is not None and invites.enforcing and invites.verify(x_invite_code) is None:
+        logger.warning("registration_refused_no_invite", node_id=node.node_id)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "A valid X-Invite-Code header is required to register a node. "
+                "Ask the operator to issue one with scripts/mint_invite.py."
+            ),
+        )
+
     await registry.set_node_token(node.node_id, x_network_auth_token)
 
     try:
@@ -82,6 +107,12 @@ async def register_node(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Node already registered: {node.node_id}",
         ) from None
+
+    # Redeemed only AFTER the registration succeeds. A node re-registering after a
+    # 404 heartbeat is routine since ROADMAP 1.6, so burning a use on the resulting
+    # 409 would spend an operator's invite on a retry and lock the node out.
+    if invites is not None and invites.enforcing and x_invite_code:
+        await invites.redeem(x_invite_code, node.node_id)
 
     return node
 

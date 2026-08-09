@@ -88,6 +88,7 @@ class SchedulerClient:
         self.client = client
         self.timeout = 5.0
         self.network_auth_token = settings.network_auth_token
+        self.invite_code = settings.invite_code
 
     async def _send_request(
         self,
@@ -110,6 +111,11 @@ class SchedulerClient:
         headers = {}
         if self.network_auth_token:
             headers["X-Network-Auth-Token"] = self.network_auth_token
+        # Sent on every request rather than only on register: harmless elsewhere,
+        # and the alternative is a second request-builder that can drift from this
+        # one. The Scheduler reads it on `/nodes/register` and nowhere else.
+        if self.invite_code:
+            headers["X-Invite-Code"] = self.invite_code
 
         # Both branches raised the same two errors in the same two ways. Kept as one
         # handler so a change to how failures are reported -- such as attaching the

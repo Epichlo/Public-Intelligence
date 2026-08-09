@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 from pydantic import ValidationError
 
 from scheduler.core.credit_ledger import CreditAccount
+from scheduler.core.invites import InviteCode
 from scheduler.core.metering import UsageRecord
 from scheduler.models.node import Node
 
@@ -80,6 +81,16 @@ CREATE TABLE IF NOT EXISTS usage_records (
     recorded_at       REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS usage_by_node ON usage_records (node_id, recorded_at);
+-- Only the HASH is stored. An invite code is a bearer credential, so keeping it at
+-- rest would mean the database leaks admission along with everything else.
+CREATE TABLE IF NOT EXISTS invites (
+    code_hash  TEXT PRIMARY KEY,
+    label      TEXT NOT NULL,
+    max_uses   INTEGER NOT NULL,
+    uses       INTEGER NOT NULL,
+    revoked    INTEGER NOT NULL,
+    created_at REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS schema_meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -261,6 +272,52 @@ class SQLiteStore:
         self._conn.commit()
 
     # --- lifecycle ---------------------------------------------------------
+
+    # --- invites -----------------------------------------------------------
+
+    async def load_invites(self) -> list[InviteCode]:
+        """Every stored invite, spent and revoked ones included."""
+        rows = self._conn.execute(
+            "SELECT code_hash, label, max_uses, uses, revoked, created_at FROM invites"
+        ).fetchall()
+
+        invites: list[InviteCode] = []
+        for row in rows:
+            try:
+                invites.append(
+                    InviteCode(
+                        code_hash=row["code_hash"],
+                        label=row["label"],
+                        max_uses=row["max_uses"],
+                        uses=row["uses"],
+                        revoked=bool(row["revoked"]),
+                        created_at=row["created_at"],
+                    )
+                )
+            except ValidationError:
+                # Skipping here is NOT the same trade as skipping a node row. An
+                # unparseable invite fails OPEN -- the code it represents stops
+                # being enforced -- so it is logged at ERROR rather than WARNING.
+                logger.error("persistence_skipped_unparseable_invite_row")
+        return invites
+
+    async def save_invite(self, invite: InviteCode) -> None:
+        """Insert or replace an invite, keyed on its hash."""
+        self._conn.execute(
+            "INSERT INTO invites (code_hash, label, max_uses, uses, revoked, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(code_hash) DO UPDATE SET "
+            "label=excluded.label, max_uses=excluded.max_uses, uses=excluded.uses, "
+            "revoked=excluded.revoked",
+            (
+                invite.code_hash,
+                invite.label,
+                invite.max_uses,
+                invite.uses,
+                int(invite.revoked),
+                invite.created_at,
+            ),
+        )
+        self._conn.commit()
 
     # --- usage -------------------------------------------------------------
 

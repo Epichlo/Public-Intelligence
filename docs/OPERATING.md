@@ -57,14 +57,26 @@ is compromised, every node credential in it is compromised.
 keeping your data-protection exposure small. **If you add logging that captures request
 bodies, you have undone it.**
 
-**You decide who joins — with a shared secret, not yet with invite codes.**
-Registration requires `SCHEDULER_NETWORK_AUTH_TOKEN`, one fleet-wide value every node
-presents. That gates admission but gives no per-node attribution and no per-node
-revocation: you cannot answer "who vouched for this host", and you cannot revoke one
-host without rotating the secret for all of them.
-[D4](decisions/D4-sybil-resistance.md) decided on single-use invite codes to close
-that, and **they are not implemented yet.** Until they are, treat the fleet token as a
-password you share only with people you would vouch for.
+**You decide who joins.** Registration requires `SCHEDULER_NETWORK_AUTH_TOKEN` *and*,
+once you have issued any, an invite code ([D4](decisions/D4-sybil-resistance.md)):
+
+```bash
+scripts/mint_invite.py --issue --label "alice's workstation"
+scripts/mint_invite.py --list
+scripts/mint_invite.py --revoke <code>
+```
+
+The code is shown once; only its SHA-256 is stored. Codes are single-use unless you
+pass `--max-uses`, and **revoking one does not evict nodes already admitted under it**
+— that is `DELETE /nodes/{id}`, deliberately kept separate so revocation is safe
+enough to actually reach for.
+
+**Until you issue your first code, registration is open to anyone holding the fleet
+token**, and the Scheduler logs `invite_admission_disabled` at startup saying so. That
+fallback exists so upgrading does not lock you out of your own fleet. Once you issue
+one, you are in invite mode permanently — including after every code is spent, which
+is deliberate: an admission check that switched itself off once its last code was used
+would be worse than none.
 
 **You decide who calls.** The gateway requires an RS256 JWT, and with no
 `SCHEDULER_JWT_PUBLIC_KEY` configured it refuses **everyone** rather than falling back
