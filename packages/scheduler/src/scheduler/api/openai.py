@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Annotated, Any
 
 if TYPE_CHECKING:
+    from scheduler.models.node import Node
     from scheduler.registry.node_registry import NodeRegistry
 
 import structlog
@@ -16,6 +17,8 @@ from scheduler.api.auth import verify_auth_token
 from scheduler.api.ingress import verify_jwt
 from scheduler.api.nodes import get_mesh_client
 from scheduler.core.config import get_settings
+from scheduler.core.credit_ledger import CreditLedger
+from scheduler.core.metering import UsageMeter, UsageRecord
 from scheduler.core.node_dispatch import (
     NodeDispatchError,
     infer_once,
@@ -132,6 +135,10 @@ async def create_chat_completion(
     task_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
     tx_hash = None
     target_node_id = None
+    # Started before matchmaking, so the recorded duration is what the REQUESTER
+    # waited, not just what the node spent generating. A host reading their
+    # dashboard should see the cost of the whole round trip their machine was in.
+    started_at = time.time()
 
     task_data = {
         "task_id": task_id,
@@ -208,12 +215,44 @@ async def create_chat_completion(
                 prompt=prompt_text,
             )
         except NodeDispatchError as e:
+            # Metered as a FAILURE rather than not metered at all. "Which node keeps
+            # failing" is the question this table has to be able to answer, and it is
+            # the cheapest input D1's canary work can build on. No credit accrues --
+            # `_meter` only credits when `succeeded`.
+            #
+            # This was missed on the first pass: the record model documented
+            # `succeeded=False` while the only path that could produce one raised
+            # before reaching the meter, so the flag was unreachable. A mutation that
+            # removed the `and succeeded` guard survived the test suite, which is how
+            # it was found.
+            await _meter(
+                request,
+                request_id=task_id,
+                tenant_id=tenant_id,
+                node=target_node,
+                model=req_data.model,
+                prompt_tokens=estimate_tokens(prompt_text),
+                completion_tokens=0,
+                started_at=started_at,
+                succeeded=False,
+            )
             raise HTTPException(status_code=e.status, detail=e.detail) from e
 
         generated_text = result["response"]
 
         prompt_tokens = estimate_tokens(prompt_text)
         completion_tokens = estimate_tokens(generated_text)
+
+        await _meter(
+            request,
+            request_id=task_id,
+            tenant_id=tenant_id,
+            node=target_node,
+            model=req_data.model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            started_at=started_at,
+        )
 
         return ChatCompletionResponse(
             id=task_id,
@@ -252,6 +291,17 @@ async def create_chat_completion(
             prompt=prompt_text,
         )
     except NodeDispatchError as e:
+        await _meter(
+            request,
+            request_id=task_id,
+            tenant_id=tenant_id,
+            node=target_node,
+            model=req_data.model,
+            prompt_tokens=estimate_tokens(prompt_text),
+            completion_tokens=0,
+            started_at=started_at,
+            succeeded=False,
+        )
         raise HTTPException(status_code=e.status, detail=e.detail) from e
 
     async def sse_generator() -> AsyncGenerator[str, None]:
@@ -346,7 +396,45 @@ async def create_chat_completion(
         yield f"data: {stop_chunk.model_dump_json()}\n\n"
         yield "data: [DONE]\n\n"
 
-    return StreamingResponse(sse_generator(), media_type="text/event-stream")
+    async def metered_sse() -> AsyncGenerator[str, None]:
+        """Wrap the stream so usage is recorded however it ends.
+
+        Streaming is the path where metering is easy to get wrong: the response has
+        already started, so there is no return statement to hang the accounting on,
+        and an abandoned connection raises out of the generator rather than
+        finishing it. `finally` covers both -- a client that disconnects halfway
+        still consumed the node's time, and the record says `succeeded=False` rather
+        than not existing.
+
+        `completion_tokens` is counted from the chunks actually yielded, so a
+        truncated stream is metered for what it produced rather than for what it
+        intended to.
+        """
+        completion_text_length = 0
+        ok = False
+        try:
+            async for chunk in sse_generator():
+                completion_text_length += len(chunk)
+                yield chunk
+            ok = True
+        finally:
+            await _meter(
+                request,
+                request_id=task_id,
+                tenant_id=tenant_id,
+                node=target_node,
+                model=req_data.model,
+                prompt_tokens=estimate_tokens(prompt_text),
+                # Length of the SSE frames, not of the text -- an over-count. The
+                # alternative was accumulating the generated text to measure it,
+                # which means holding a full completion in memory purely to produce
+                # a number, on the one path built to avoid exactly that.
+                completion_tokens=estimate_tokens("x" * completion_text_length),
+                started_at=started_at,
+                succeeded=ok,
+            )
+
+    return StreamingResponse(metered_sse(), media_type="text/event-stream")
 
 
 # Authenticated as of ROADMAP C10. These were public on a 2.6 judgement -- "a
@@ -359,6 +447,65 @@ async def create_chat_completion(
 # What stays true is the other half of the 2.6 reasoning -- this discloses model
 # NAMES only, never which node has what. That is why it was a close call then and is
 # not one now: the benefit went away and the disclosure did not.
+async def _meter(
+    request: Request,
+    *,
+    request_id: str,
+    tenant_id: str,
+    node: Node,
+    model: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    started_at: float,
+    succeeded: bool = True,
+) -> None:
+    """Record what a request consumed, and credit the node that served it.
+
+    ROADMAP 3.2 and 3.3 in one place, because splitting them would let the ledger
+    and the usage table disagree about what happened. The ledger was defined and
+    unit-tested since long before this and had **no caller in the running app** --
+    hosts earned nothing, and `CreditLedger`'s own docstring said so.
+
+    Deliberately non-fatal. A metering failure must not turn a completion the
+    requester already received into an error: the tokens are theirs either way, and
+    the honest failure mode for an accounting system is a gap in the record, not a
+    lost response. The gap is logged at ERROR so it is visible rather than silent.
+
+    **Credits are an accounting unit, not a currency**
+    (docs/decisions/D2-economics.md). Nothing here is redeemable and there is no
+    payout path -- that is a decision, not an unfinished feature.
+    """
+    meter: UsageMeter | None = getattr(request.app.state, "usage_meter", None)
+    ledger: CreditLedger | None = getattr(request.app.state, "ledger", None)
+    duration = max(0.0, time.time() - started_at)
+
+    try:
+        if meter is not None:
+            await meter.record(
+                UsageRecord(
+                    request_id=request_id,
+                    tenant_id=tenant_id,
+                    node_id=node.node_id,
+                    model=model,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    duration_seconds=duration,
+                    succeeded=succeeded,
+                )
+            )
+        # Only successful work accrues. Crediting a failed request would pay a node
+        # for returning an error, which is precisely the incentive
+        # docs/decisions/D1-execution-integrity.md exists to avoid creating.
+        if ledger is not None and succeeded:
+            await ledger.record_host_contribution(
+                node_id=node.node_id,
+                vram_gb=node.gpu.vram_total_gb,
+                duration_seconds=duration,
+            )
+    except Exception:
+        logger.exception("metering_failed", request_id=request_id, node_id=node.node_id)
+
+
 @router.get(
     "/v1/models",
     response_model=ModelListResponse,

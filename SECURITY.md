@@ -62,5 +62,5 @@ releases, this table gets filled in rather than deleted.
 Running a node or a coordinator carries risks that are not vulnerabilities in the
 code — you become the egress point for generated content, prompts you serve are other
 people's data, and Zenoh mesh links are plaintext unless you configure TLS. Those are
-documented in `docs/OPERATING.md`, which ships with the invite-code admission work
-(ROADMAP D4) and which you should read before running this for anyone but yourself.
+documented in [`docs/OPERATING.md`](docs/OPERATING.md), which you should read before
+running this for anyone but yourself.

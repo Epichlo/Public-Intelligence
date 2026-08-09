@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from scheduler.core.credit_ledger import CreditAccount
+    from scheduler.core.metering import UsageRecord
     from scheduler.models.node import Node
 
 
@@ -78,6 +79,24 @@ class SchedulerStore(Protocol):
 
     async def save_account(self, account: CreditAccount) -> None:
         """Insert or replace a credit account's balances."""
+        ...
+
+    async def load_usage(self, limit: int = 500) -> list[UsageRecord]:
+        """Return the most recent usage records, oldest first.
+
+        Bounded by `limit` because this table grows per *request*, unlike everything
+        else here which grows per node or per account. The caller keeps a tail; the
+        table keeps the history.
+        """
+        ...
+
+    async def save_usage(self, usage: UsageRecord) -> None:
+        """Append one served request.
+
+        Append-only by design. A usage record is a statement about something that
+        already happened, so there is nothing to update -- and an UPDATE path is how
+        a metering table quietly becomes editable.
+        """
         ...
 
     async def close(self) -> None:

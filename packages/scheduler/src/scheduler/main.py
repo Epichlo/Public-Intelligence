@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from scheduler import __version__
 from scheduler.api.batch import router as batch_router
+from scheduler.api.credentials import router as credentials_router
 from scheduler.api.health import router as health_router
 from scheduler.api.heartbeat import router as heartbeat_router
 from scheduler.api.ingress import router as ingress_router
@@ -18,9 +19,11 @@ from scheduler.api.nodes import router as nodes_router
 from scheduler.api.openai import router as openai_router
 from scheduler.api.schedule import router as schedule_router
 from scheduler.api.telemetry import router as telemetry_router
+from scheduler.api.usage import router as usage_router
 from scheduler.core.config import get_settings
 from scheduler.core.credit_ledger import CreditLedger
 from scheduler.core.logging import setup_logging
+from scheduler.core.metering import UsageMeter
 from scheduler.core.rate_limiter import TokenBucketLimiter
 from scheduler.core.zenoh_router import ZenohRouter
 from scheduler.persistence import SchedulerStore, SQLiteStore
@@ -82,6 +85,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     store = app.state.store
     await app.state.registry.load()
     await app.state.ledger.load()
+    await app.state.usage_meter.load()
 
     logger.info(
         "scheduler_started",
@@ -182,6 +186,10 @@ def create_app(
     # credits it yet -- accrual on real usage is ROADMAP 3.2/3.3. A durable ledger
     # of zeroes is still the thing 3.2 needs to already exist before it can write.
     app.state.ledger = CreditLedger(store=store)
+    # ROADMAP 3.2. Shares the store with the ledger deliberately: a usage record and
+    # the credit it produced are the same event, and putting them in one database
+    # means they cannot end up in two states after a crash.
+    app.state.usage_meter = UsageMeter(store=store)
     app.state.rate_limiter = rate_limiter or TokenBucketLimiter()
     app.state.jwt_public_key = jwt_public_key
     app.state.jwt_public_key_secondary = jwt_public_key_secondary
@@ -200,6 +208,8 @@ def create_app(
     app.include_router(ingress_router)
     app.include_router(openai_router)
     app.include_router(batch_router)
+    app.include_router(credentials_router)
+    app.include_router(usage_router)
 
     return app
 

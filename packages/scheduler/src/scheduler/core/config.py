@@ -108,6 +108,36 @@ class Settings(BaseSettings):
         ),
     )
 
+    jwt_private_key_path: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("SCHEDULER_JWT_PRIVATE_KEY_PATH", "JWT_PRIVATE_KEY_PATH"),
+        description=(
+            "Path to the PEM private key that signs requester credentials "
+            "(ROADMAP 3.1). A PATH, not the key itself: a PEM in an environment "
+            "variable ends up in process listings, crash dumps and log aggregators. "
+            "Unset means POST /v1/credentials answers 503."
+        ),
+    )
+    jwt_private_key_path_secondary: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "SCHEDULER_JWT_PRIVATE_KEY_PATH_SECONDARY", "JWT_PRIVATE_KEY_PATH_SECONDARY"
+        ),
+        description="Path to the second signing key, for issuing under kid 'secondary' during rotation.",
+    )
+    credential_max_ttl_hours: int = Field(
+        default=720,
+        validation_alias=AliasChoices(
+            "SCHEDULER_CREDENTIAL_MAX_TTL_HOURS", "CREDENTIAL_MAX_TTL_HOURS"
+        ),
+        description=(
+            "Longest lifetime POST /v1/credentials will issue, in hours. Default 30 "
+            "days. This is the ONLY bound on an issued credential: JWTs are stateless, "
+            "so there is no revocation, and a long-lived token is effectively "
+            "permanent until the signing key is rotated."
+        ),
+    )
+
     rate_limit_capacity: int = Field(
         default=5,
         validation_alias=AliasChoices("SCHEDULER_RATE_LIMIT_CAPACITY", "RATE_LIMIT_CAPACITY"),

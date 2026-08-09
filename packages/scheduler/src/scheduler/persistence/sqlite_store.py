@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 from pydantic import ValidationError
 
 from scheduler.core.credit_ledger import CreditAccount
+from scheduler.core.metering import UsageRecord
 from scheduler.models.node import Node
 
 if TYPE_CHECKING:
@@ -58,6 +59,27 @@ CREATE TABLE IF NOT EXISTS credit_accounts (
     consumed_credits REAL NOT NULL,
     updated_at       REAL NOT NULL
 );
+-- Real columns, not a JSON blob, for the same reason credit_accounts uses them: an
+-- operator has to be able to audit this with one `sqlite3 ... 'select ...'`. It is
+-- also the table that must be inspectable when someone asks what a node actually
+-- did, which is ROADMAP 3.4's whole purpose.
+--
+-- There is deliberately NO column that can hold prompt or completion text. That is
+-- the schema half of the guarantee `UsageRecord` makes in Python, and
+-- `tests/test_metering_privacy.py` is the enforcement of both.
+CREATE TABLE IF NOT EXISTS usage_records (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    request_id        TEXT NOT NULL,
+    tenant_id         TEXT NOT NULL,
+    node_id           TEXT NOT NULL,
+    model             TEXT NOT NULL,
+    prompt_tokens     INTEGER NOT NULL,
+    completion_tokens INTEGER NOT NULL,
+    duration_seconds  REAL NOT NULL,
+    succeeded         INTEGER NOT NULL,
+    recorded_at       REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS usage_by_node ON usage_records (node_id, recorded_at);
 CREATE TABLE IF NOT EXISTS schema_meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -239,6 +261,61 @@ class SQLiteStore:
         self._conn.commit()
 
     # --- lifecycle ---------------------------------------------------------
+
+    # --- usage -------------------------------------------------------------
+
+    async def load_usage(self, limit: int = 500) -> list[UsageRecord]:
+        """Most recent records, returned oldest-first so a tail append is natural."""
+        rows = self._conn.execute(
+            "SELECT request_id, tenant_id, node_id, model, prompt_tokens, "
+            "completion_tokens, duration_seconds, succeeded, recorded_at "
+            "FROM usage_records ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+
+        records: list[UsageRecord] = []
+        for row in reversed(rows):
+            try:
+                records.append(
+                    UsageRecord(
+                        request_id=row["request_id"],
+                        tenant_id=row["tenant_id"],
+                        node_id=row["node_id"],
+                        model=row["model"],
+                        prompt_tokens=row["prompt_tokens"],
+                        completion_tokens=row["completion_tokens"],
+                        duration_seconds=row["duration_seconds"],
+                        succeeded=bool(row["succeeded"]),
+                        recorded_at=row["recorded_at"],
+                    )
+                )
+            except ValidationError:
+                # Skip, do not raise: same rule as load_nodes. One unparseable row
+                # must not stop the Scheduler starting, and usage history is the
+                # least load-bearing thing here -- unlike a balance, nobody is owed
+                # it.
+                logger.warning("persistence_skipped_unparseable_usage_row")
+        return records
+
+    async def save_usage(self, usage: UsageRecord) -> None:
+        """Append one served request. There is no update path, by design."""
+        self._conn.execute(
+            "INSERT INTO usage_records (request_id, tenant_id, node_id, model, "
+            "prompt_tokens, completion_tokens, duration_seconds, succeeded, recorded_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                usage.request_id,
+                usage.tenant_id,
+                usage.node_id,
+                usage.model,
+                usage.prompt_tokens,
+                usage.completion_tokens,
+                usage.duration_seconds,
+                int(usage.succeeded),
+                usage.recorded_at,
+            ),
+        )
+        self._conn.commit()
 
     async def close(self) -> None:
         """Close the connection. Safe to call more than once.

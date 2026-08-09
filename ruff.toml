@@ -21,3 +21,20 @@
 # and always did. This makes the bare invocation correct too, which matters because
 # the bare invocation is what a contributor -- or an agent -- actually types.
 extend = "packages/scheduler/pyproject.toml"
+
+[lint.per-file-ignores]
+# The same exemption the packages grant their own suites, applied to the ROOT tests/.
+#
+# It does not carry over on its own: `per-file-ignores` patterns resolve relative to
+# the config file that declares them, so the scheduler's `"tests/**"` means
+# `packages/scheduler/tests/**` and never matched this directory. The gate has always
+# invoked ruff with `--config packages/scheduler/pyproject.toml`, so root `tests/` has
+# been linted WITHOUT the exemption -- which only became visible once this file made
+# the bare invocation authoritative too.
+#
+# Why the exemption exists at all: a test double must mirror the signature of the
+# thing it stands in for. A fake store's `load_usage(self, limit)` takes a `limit` it
+# never reads, because the real Protocol does; dropping the parameter would hide the
+# real API and let a signature change pass unnoticed. ARG-only, tests-only -- `src/`
+# has every rule on and is clean under all of them.
+"tests/**" = ["ARG001", "ARG002", "ARG005"]

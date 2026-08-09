@@ -41,9 +41,9 @@ the commit it covers.
 - **Credits are an accounting unit, not a currency.** They are not redeemable and
   there is no payout path — not "not yet", but a decision
   ([D2](docs/decisions/D2-economics.md)).
-- **There is no content filtering, no meaningful rate limiting, and no backups.**
-  `VERIFY.md` step 3 lists the known auth bypasses and default credentials, with
-  `file:line`. They are pre-existing and tracked, not hidden.
+- **There is no content filtering, no meaningful rate limiting, and no backups**, and
+  nothing verifies that a node ran the model it claims.
+  [`docs/OPERATING.md`](docs/OPERATING.md) lists what you take on by running this.
 
 ## What this project has decided, and what it hasn't
 
