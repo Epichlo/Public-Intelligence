@@ -286,9 +286,19 @@ def test_experimental_is_linted_but_its_tests_do_not_run():
     """
     script = _verify_script()
     assert "ruff check ./experimental" in script, "experimental/ is no longer linted"
-    assert "pytest ./experimental" not in script and "pytest experimental" not in script, (
-        "experimental/ tests are in the gate again -- the green count now includes "
-        "features that are cut from v1."
+
+    # Collected, never run. The distinction is the whole point: C2 wanted the
+    # SHIPPING test count to mean something, and it also wanted the code kept for a
+    # possible v2. Running them breaks the first; not importing them broke the
+    # second -- when C2 first moved these, every one of the 41 was unimportable
+    # because its imports still pointed at the modules that had just moved.
+    assert "--collect-only" in script, (
+        "experimental/ tests are no longer collected, so an unimportable one -- "
+        "which is what 'kept for v2' silently degrades into -- passes unnoticed."
+    )
+    assert "-m pytest ./experimental --collect-only" in script, (
+        "experimental/ tests appear to be RUN rather than collected; the green count "
+        "would then include features cut from v1."
     )
 
 

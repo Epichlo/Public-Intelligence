@@ -5,12 +5,13 @@ import logging
 
 import pytest
 import zenoh
-from node.core.transport import (
+from node.models.sharding import TensorPayload
+
+from experimental.node.transport import (
     BackpressuredReceiver,
     BackpressuredStreamRouter,
     SharedMemoryIPC,
 )
-from node.models.sharding import TensorPayload
 
 logger = logging.getLogger(__name__)
 

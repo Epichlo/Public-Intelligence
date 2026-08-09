@@ -3,8 +3,9 @@
 import struct
 
 import pytest
-from node.core.local_boundary import LocalBoundaryEngine
 from node.models.sharding import TensorPayload
+
+from experimental.node.local_boundary import LocalBoundaryEngine
 
 
 def test_local_boundary_engine_initialization() -> None:

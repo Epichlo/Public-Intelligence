@@ -2,9 +2,10 @@
 
 import math
 
-from scheduler.core.local_boundary import LocalBoundaryEngine
-from scheduler.core.quantization import FP8Quantizer
 from scheduler.models.pipeline import DraftBlockPayload, VerificationResult
+
+from experimental.scheduler.local_boundary import LocalBoundaryEngine
+from experimental.scheduler.quantization import FP8Quantizer
 
 
 def test_fp8_quantization_dequantization_precision() -> None:

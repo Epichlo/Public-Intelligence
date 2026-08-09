@@ -231,3 +231,37 @@ def test_the_rate_limit_answers_429_with_a_reason(
 
     assert first.status_code != 429, "the first request must get through"
     assert second.status_code == 429
+
+
+def test_a_node_dying_mid_stream_is_recorded_as_a_failure_and_credits_nobody(
+    key_pair: tuple[rsa.RSAPrivateKey, str], auth: dict[str, str]
+) -> None:
+    """The stream ends "cleanly" from the wrapper's point of view, and must not count.
+
+    `sse_generator` catches `NodeDispatchError` itself, emits an error chunk and
+    returns normally -- so the metering wrapper around it sees an ordinary
+    completion. Recording that as a success would credit a node for returning an
+    error, which is exactly the incentive
+    `docs/decisions/D1-execution-integrity.md` exists to avoid creating.
+
+    `test_a_partial_stream_is_still_metered` above asserts the record EXISTS; this
+    asserts what it says. The first version of that test checked only existence and
+    passed while the flag was wrong.
+    """
+    client = _app(key_pair)
+
+    async def _dying_stream() -> AsyncGenerator[str, None]:
+        yield "Paris"
+        raise NodeDispatchError(status=502, detail="node vanished")
+
+    with patch(
+        "scheduler.api.openai.open_inference_stream",
+        new=AsyncMock(return_value=_dying_stream()),
+    ):
+        _complete(client, auth, stream=True)
+
+    record = client.app.state.usage_meter.recent()[0]
+    assert record.succeeded is False, "a stream that failed mid-flight was recorded as a success"
+    assert client.app.state.ledger.balances().get(NODE_ID, 0.0) == 0.0, (
+        "the node was credited for a request that failed"
+    )

@@ -108,6 +108,20 @@ run_step "ruff format (scripts)" "$PY" -m ruff format --check ./scripts --config
 run_step "ruff check (experimental)"  "$PY" -m ruff check ./experimental --config "$RUFF_CFG"
 run_step "ruff format (experimental)" "$PY" -m ruff format --check ./experimental --config "$RUFF_CFG"
 
+# COLLECT the quarantined tests without RUNNING them. This is the difference
+# between "not in the gate" and "dead".
+#
+# When C2 first moved these, their imports still pointed at `node.core.transport`
+# and friends -- modules that had just been moved out from under them. All 41 tests
+# were unrunnable, and linting could not tell, because a stale import is valid
+# syntax. "Kept for v2" had quietly become "deleted with extra steps".
+#
+# --collect-only imports every module and reports nothing as passed, so the
+# shipping test count stays honest (C2's actual goal) while an unimportable
+# quarantined test still fails the gate.
+run_step "pytest --collect-only (experimental)" \
+    "$PY" -m pytest ./experimental --collect-only -q
+
 # The gate lints its own scripts. CI already installs shellcheck on Linux but
 # never ran it; a `[ "$x" != "PATTERN"* ]` comparison that silently never matched
 # sat in this very file until shellcheck was pointed at it.

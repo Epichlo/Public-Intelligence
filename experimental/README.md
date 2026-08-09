@@ -51,6 +51,21 @@ by 664 passing tests:
 All three existed because cut-feature plumbing was wired into live paths. That is the
 argument for this directory, and it is a stronger one than tidiness.
 
+## Running these
+
+```bash
+.venv/bin/python -m pytest experimental -q      # 41 tests, not part of the gate
+```
+
+They are **collected** by `scripts/verify.sh` and never run. That distinction is the
+difference between "not in the gate" and "dead": when this directory was first
+created, every one of these 41 tests still imported `node.core.transport` and friends
+-- the modules that had just been moved out from under them -- so the whole suite was
+unimportable and linting could not tell, because a stale import is valid syntax.
+"Kept for v2" had silently become "deleted with extra steps". `--collect-only`
+imports each module and reports nothing as passed, so the shipping count stays honest
+while an unimportable quarantined test still fails the gate.
+
 ## What is here
 
 | Module | Feature | Lines |

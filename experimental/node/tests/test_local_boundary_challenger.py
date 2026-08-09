@@ -13,7 +13,7 @@ from node.models.sharding import TensorPayload
 
 # Attempt to import LocalBoundaryEngine from node.core.local_boundary
 try:
-    from node.core.local_boundary import LocalBoundaryEngine
+    from experimental.node.local_boundary import LocalBoundaryEngine
 
     LOCAL_BOUNDARY_AVAILABLE = True
 except ImportError:

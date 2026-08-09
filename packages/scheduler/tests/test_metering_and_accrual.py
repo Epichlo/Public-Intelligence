@@ -199,6 +199,20 @@ def test_a_streamed_request_is_metered_when_the_stream_ends(
     assert records[0].succeeded is True
     assert client.app.state.ledger.balances()[NODE_ID] > 0.0
 
+    # The count must come from the GENERATED TEXT, not from the SSE frames wrapping
+    # it. "Paris is the capital" is 20 characters, so ~5 tokens at this estimator's
+    # 4-chars-per-token heuristic. Each frame adds a JSON envelope carrying the
+    # request id, the model name and the chunk scaffolding -- measuring those
+    # inflated the figure by more than an order of magnitude, and billed a host's
+    # dashboard for the protocol rather than for the work.
+    generated = "Paris is the capital"
+    assert records[0].completion_tokens > 0
+    assert records[0].completion_tokens <= len(generated), (
+        f"completion_tokens={records[0].completion_tokens} exceeds the character "
+        f"count of the generated text ({len(generated)}) -- the SSE framing is "
+        f"being counted as output"
+    )
+
 
 def test_metering_failure_does_not_fail_the_request(
     client: TestClient, auth: dict[str, str]

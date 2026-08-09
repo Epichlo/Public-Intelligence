@@ -2,9 +2,10 @@
 
 import math
 
-from node.core.local_boundary import LocalBoundaryEngine
-from node.core.quantization import FP8Quantizer
 from node.models.sharding import DraftBlockPayload, VerificationResult
+
+from experimental.node.local_boundary import LocalBoundaryEngine
+from experimental.node.quantization import FP8Quantizer
 
 
 def test_node_fp8_quantization_dequantization_precision() -> None:

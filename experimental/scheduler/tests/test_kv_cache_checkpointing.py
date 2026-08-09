@@ -3,11 +3,12 @@
 
 import pytest
 from scheduler.core.engine import SchedulingEngine
-from scheduler.core.kv_cache import KVCacheManager
 from scheduler.core.matchmaker import CapabilityMatchmaker
 from scheduler.models.node import GPUInfo, Node
 from scheduler.models.pipeline import KVCacheSnapshot, LayerRange, PipelineStage, StageType
 from scheduler.registry.node_registry import NodeRegistry
+
+from experimental.scheduler.kv_cache import KVCacheManager
 
 
 def test_kv_cache_manager_create_and_verify_snapshot() -> None:

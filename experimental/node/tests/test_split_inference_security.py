@@ -8,8 +8,9 @@ import struct
 
 import pytest
 from node.backends.mock import EchoBackend
-from node.core.local_boundary import LocalBoundaryEngine
 from node.models.sharding import LayerRange, PipelineStage, TensorPayload
+
+from experimental.node.local_boundary import LocalBoundaryEngine
 
 
 @pytest.fixture

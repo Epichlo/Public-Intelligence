@@ -304,6 +304,20 @@ async def create_chat_completion(
         )
         raise HTTPException(status_code=e.status, detail=e.detail) from e
 
+    # Written by `sse_generator`, read by `metered_sse` after it finishes.
+    #
+    # `sse_generator` handles NodeDispatchError itself -- it emits an error chunk and
+    # returns NORMALLY, because by then the response headers are long gone and there
+    # is no status code left to set. That means the wrapper cannot tell success from
+    # failure by watching for an exception: it sees a clean finish either way. This
+    # dict is how the generator reports what really happened.
+    #
+    # Getting this wrong credited a node for a request that failed, which is the
+    # precise incentive docs/decisions/D1-execution-integrity.md exists to avoid
+    # creating. Pinned by
+    # test_a_node_dying_mid_stream_is_recorded_as_a_FAILURE_and_credits_nobody.
+    stream_outcome: dict[str, Any] = {"generated_chars": 0, "failed": False}
+
     async def sse_generator() -> AsyncGenerator[str, None]:
         # 1) Send initial role chunk
         role_chunk = ChatCompletionChunk(
@@ -326,6 +340,10 @@ async def create_chat_completion(
         # into node_dispatch alongside the HTTP client that produces the framing.
         try:
             async for token_content in token_stream:
+                # The generated text, not the frame. The wrapper used to measure the
+                # length of the serialised `data: {...}` envelopes, which counts JSON
+                # punctuation, the model name and the request id once per token.
+                stream_outcome["generated_chars"] += len(token_content)
                 chunk_obj = ChatCompletionChunk(
                     id=task_id,
                     object="chat.completion.chunk",
@@ -344,6 +362,7 @@ async def create_chat_completion(
             # Failed after the stream had opened. Too late for a status code, and too late
             # to switch transports, so the requester is told inside the stream.
             logger.error("openai_stream_node_error", error=e.detail, status=e.status)
+            stream_outcome["failed"] = True
             err_chunk = ChatCompletionChunk(
                 id=task_id,
                 object="chat.completion.chunk",
@@ -362,6 +381,7 @@ async def create_chat_completion(
             return
         except Exception as e:
             logger.error("openai_stream_error", error=str(e))
+            stream_outcome["failed"] = True
             err_chunk = ChatCompletionChunk(
                 id=task_id,
                 object="chat.completion.chunk",
@@ -399,24 +419,28 @@ async def create_chat_completion(
     async def metered_sse() -> AsyncGenerator[str, None]:
         """Wrap the stream so usage is recorded however it ends.
 
-        Streaming is the path where metering is easy to get wrong: the response has
+        Streaming is the path where metering is easy to get wrong. The response has
         already started, so there is no return statement to hang the accounting on,
-        and an abandoned connection raises out of the generator rather than
-        finishing it. `finally` covers both -- a client that disconnects halfway
-        still consumed the node's time, and the record says `succeeded=False` rather
-        than not existing.
+        and there are two different kinds of ending to tell apart:
 
-        `completion_tokens` is counted from the chunks actually yielded, so a
-        truncated stream is metered for what it produced rather than for what it
-        intended to.
+        * **The generator raises.** A client that disconnects half way through does
+          this. `finally` catches it, and the record says the request did not
+          succeed -- the node spent real time either way.
+        * **The generator returns cleanly having failed.** `sse_generator` handles
+          `NodeDispatchError` itself, emits an error chunk and returns, because by
+          then there is no status code left to set. From out here that is
+          indistinguishable from success, which is why `stream_outcome` exists.
+          Reading only the exception credited a node for a failed request.
         """
-        completion_text_length = 0
-        ok = False
+        raised = False
         try:
             async for chunk in sse_generator():
-                completion_text_length += len(chunk)
                 yield chunk
-            ok = True
+        except BaseException:
+            # Includes GeneratorExit and CancelledError -- an abandoned connection
+            # is the common case here, not an exceptional one.
+            raised = True
+            raise
         finally:
             await _meter(
                 request,
@@ -425,13 +449,11 @@ async def create_chat_completion(
                 node=target_node,
                 model=req_data.model,
                 prompt_tokens=estimate_tokens(prompt_text),
-                # Length of the SSE frames, not of the text -- an over-count. The
-                # alternative was accumulating the generated text to measure it,
-                # which means holding a full completion in memory purely to produce
-                # a number, on the one path built to avoid exactly that.
-                completion_tokens=estimate_tokens("x" * completion_text_length),
+                # Counted from the generated text the generator actually emitted,
+                # not from the length of the SSE frames wrapping it.
+                completion_tokens=(int(stream_outcome["generated_chars"]) // 4),
                 started_at=started_at,
-                succeeded=ok,
+                succeeded=not raised and not stream_outcome["failed"],
             )
 
     return StreamingResponse(metered_sse(), media_type="text/event-stream")

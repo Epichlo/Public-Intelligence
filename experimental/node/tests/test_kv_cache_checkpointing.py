@@ -1,7 +1,8 @@
 """Unit and integration tests for Node Phase 4.8 Async KV-Cache Checkpointing."""
 
-from node.core.kv_cache import KVCacheManager
 from node.models.sharding import KVCacheSnapshot
+
+from experimental.node.kv_cache import KVCacheManager
 
 
 def test_node_kv_cache_manager_create_snapshot() -> None:
