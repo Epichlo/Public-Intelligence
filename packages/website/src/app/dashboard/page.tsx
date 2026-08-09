@@ -5,6 +5,7 @@ import { PageShell } from "@/components/page-shell";
 import { NodeControlToggle } from "@/components/node-control-toggle";
 import { TelemetryGauges, TelemetryData } from "@/components/telemetry-gauge";
 import { SandboxLogViewer } from "@/components/sandbox-log-viewer";
+import { ContributionSummary } from "@/components/contribution-summary";
 
 const defaultTelemetry: TelemetryData = {
   node_id: "local-host-node",
@@ -102,7 +103,9 @@ export default function DashboardPage() {
               </span>
             )}
           </div>
-          <TelemetryGauges telemetry={telemetry} />
+          <ContributionSummary nodeId={telemetry.node_id} />
+
+        <TelemetryGauges telemetry={telemetry} />
         </div>
 
         {/* Docker Sandbox Logs Section */}

@@ -124,8 +124,12 @@ upstream 401 as success.
 
 - **Broad website test coverage.** This establishes a harness and covers one route.
   The playground, SSE parsing and the components are ROADMAP 4.1.
-- **Type-checking the website.** `tsc` is a third toolchain step; eslint with the
-  TypeScript plugin catches the errors that were actually present.
+- ~~**Type-checking the website.**~~ **This exclusion was WRONG and was reversed on
+  2026-08-09.** The argument was that "eslint with the TypeScript plugin catches the
+  errors that were actually present" — true of the errors present *that day*, and not
+  a property of the tools. The first `tsc` run over this tree found **4 errors eslint
+  passed clean**, in a test file the gate was already running. eslint checks lint
+  rules; it does not type-check. `npm run typecheck` is now a gate step.
 - **mypy on `packages/*/tests`.** Only the root `tests/` is added; the package suites
   are a larger error budget and a separate decision.
 - **The rest of C8.** The six duplicated module pairs and the missing

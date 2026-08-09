@@ -192,6 +192,16 @@ fi
 WEBSITE_DIR="$REPO_ROOT/packages/website"
 if [ -d "$WEBSITE_DIR/node_modules" ]; then
     run_step "website lint" npm --prefix "$WEBSITE_DIR" run --silent lint
+    # `tsc` was ruled OUT of the gate by specs/the-gate-sees-the-website.md, on the
+    # argument that "eslint with the TypeScript plugin catches the errors that were
+    # actually present". That argument was true when it was written and is FALSE:
+    # the first time tsc was pointed at this tree it found 4 errors eslint had
+    # passed clean, in a test file the gate was already running.
+    #
+    # eslint checks lint rules; it does not type-check. Those are different jobs and
+    # the spec conflated them. The cost is one more toolchain step, which is already
+    # paid for by the two above it.
+    run_step "website types" npm --prefix "$WEBSITE_DIR" run --silent typecheck
     run_step "website tests" npm --prefix "$WEBSITE_DIR" run --silent test
 else
     printf '\n\033[33m── website lint + tests (skipped: packages/website/node_modules absent)\033[0m\n'

@@ -7,8 +7,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 function mockFetch(status = 200, body: unknown = { records: [] }) {
+  // Typed with the arguments fetch actually receives. Inferring them from an
+  // `async () => ...` gives a zero-length tuple, so `calls[0][0]` is a type error
+  // even though it works at runtime -- which is how the four errors that prompted
+  // adding `tsc` to the gate got here in the first place.
   const spy = vi.fn(
-    async () =>
+    async (_url: string, _init?: RequestInit) =>
       new Response(JSON.stringify(body), {
         status,
         headers: { "content-type": "application/json" },
@@ -57,7 +61,7 @@ describe("GET /api/usage", () => {
     const { GET } = await import("./route");
     await GET(get("?node=" + encodeURIComponent("../../v1/models")));
 
-    const url = spy.mock.calls[0][0] as string;
+    const url = spy.mock.calls[0][0];
     expect(url).toBe("http://scheduler.test/nodes/..%2F..%2Fv1%2Fmodels/usage");
     expect(url).not.toContain("/v1/models");
   });

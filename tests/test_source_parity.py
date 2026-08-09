@@ -334,6 +334,13 @@ def test_the_gate_checks_the_website() -> None:
     )
     assert "test" in package_json["scripts"], "packages/website has no `test` script."
 
+    # `tsc` as well as eslint. The C6 spec argued type-checking was unnecessary
+    # because "eslint catches the errors that were actually present"; pointing tsc
+    # at the tree immediately found 4 it had passed clean. Linting and type-checking
+    # are different jobs.
+    assert "typecheck" in package_json["scripts"], "packages/website has no `typecheck` script."
+    assert "website types" in script, "scripts/verify.sh no longer type-checks the website."
+
     # `passWithNoTests: false` is what stops the step going green on zero test
     # files, which would be the same silent-partial failure in a new costume.
     config = (REPO_ROOT / "packages" / "website" / "vitest.config.mts").read_text(encoding="utf-8")
