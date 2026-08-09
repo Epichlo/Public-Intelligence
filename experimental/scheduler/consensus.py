@@ -8,7 +8,6 @@ from typing import Any
 
 import structlog
 import zenoh
-
 from scheduler.registry.node_registry import NodeRegistry
 
 logger = structlog.stdlib.get_logger()

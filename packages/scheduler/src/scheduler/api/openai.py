@@ -133,7 +133,6 @@ async def create_chat_completion(
     scheduling_engine = getattr(request.app.state, "scheduling_engine", None)
 
     task_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
-    tx_hash = None
     target_node_id = None
     # Started before matchmaking, so the recorded duration is what the REQUESTER
     # waited, not just what the node spent generating. A host reading their
@@ -149,7 +148,7 @@ async def create_chat_completion(
 
     if scheduling_engine is not None:
         try:
-            tx_hash, target_node_id = await scheduling_engine.schedule_task(task_data)
+            _tx_hash, target_node_id = await scheduling_engine.schedule_task(task_data)
         except ValueError as e:
             logger.warning("openai_scheduling_failed", error=str(e))
             raise HTTPException(
@@ -176,23 +175,10 @@ async def create_chat_completion(
             detail=f"Target node '{target_node_id}' is no longer registered.",
         )
 
-    # 3. Propose to Raft Consensus Engine if active
-    consensus_engine = getattr(registry, "consensus_engine", None)
-    if consensus_engine is not None and consensus_engine.is_active():
-        try:
-            await consensus_engine.propose(
-                "allocate_task",
-                {
-                    "task_id": task_id,
-                    "node_id": target_node_id,
-                    "tx_hash": tx_hash or task_id,
-                    "action": "chat_completion",
-                    "data": {"model": req_data.model, "stream": req_data.stream},
-                },
-            )
-        except Exception as e:
-            logger.error("openai_consensus_proposal_failed", error=str(e))
-
+    # The Raft proposal block that sat here is gone (ROADMAP C2). It proposed
+    # through an engine whose only inbound path was an unauthenticated wildcard
+    # Zenoh subscriber, and its failure branch swallowed every exception -- so a
+    # broken consensus plane was invisible from here anyway.
     # 4. Dispatch to the node. Over the Zenoh mesh when it has been seen there -- the only
     # transport that reaches a node behind NAT, since `ip_address` is 127.0.0.1 for every
     # installer-provisioned node -- and by dialling its HTTP /infer otherwise. Transport

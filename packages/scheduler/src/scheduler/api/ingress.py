@@ -201,28 +201,9 @@ async def submit_task(
         logger.warning("ingress_scheduling_failed", error=str(e))
         raise HTTPException(status_code=400, detail=str(e)) from e
 
-    # 3. Consensus Engine Log Commitment
-    registry = getattr(request.app.state, "registry", None)
-    consensus_engine = getattr(registry, "consensus_engine", None)
-
-    if consensus_engine is not None and consensus_engine.is_active():
-        try:
-            await consensus_engine.propose(
-                "allocate_task",
-                {
-                    "task_id": task.task_id,
-                    "node_id": node_id,
-                    "tx_hash": tx_hash,
-                    "action": task.action,
-                    "data": task.data,
-                },
-            )
-        except Exception as e:
-            logger.error("ingress_consensus_proposal_failed", error=str(e))
-            raise HTTPException(
-                status_code=500,
-                detail=f"Consensus log commitment failed: {e}",
-            ) from e
+    # The consensus log-commitment block that sat here is gone (ROADMAP C2).
+    # It proposed through an engine whose only inbound path was an
+    # unauthenticated wildcard Zenoh subscriber; see zenoh_router.
 
     return {
         "status": "scheduled",

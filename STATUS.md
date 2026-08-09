@@ -4,17 +4,17 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-09 15:18 UTC
+**Generated:** 2026-08-09 15:38 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 387 | 0 | 0 | 13.92s |
-| Node | PASS | 259 | 0 | 1 | 6.62s |
-| Root E2E | PASS | 126 | 0 | 0 | 22.79s |
-| **Total** | **PASSING** | **772** | **0** | **1** | |
+| Scheduler | PASS | 389 | 0 | 0 | 8.53s |
+| Node | PASS | 259 | 0 | 1 | 6.74s |
+| Root E2E | PASS | 126 | 0 | 0 | 22.89s |
+| **Total** | **PASSING** | **774** | **0** | **1** | |
 
 Reproduce:
 
@@ -26,30 +26,30 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `61a8d47` stop hand-copying the node credential into the dashboard (roadmap 3.5)
-- **Author / date:** Atharv Deshpande — 2026-08-09 20:33:22 +0530
+- **Last commit:** `a9e673a` one copy of the mesh protocol, not two (roadmap C8)
+- **Author / date:** Atharv Deshpande — 2026-08-09 20:48:57 +0530
 - **Branch:** main
-- **Total commits:** 224
+- **Total commits:** 225
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence.git (fetch)
-- **Working tree:** 24 uncommitted change(s)
+- **Working tree:** 11 uncommitted change(s)
 
 ```
-  M .github/workflows/ci.yml
-   M CLAUDE.md
-   M CONTRIBUTING.md
-   M README.md
-   M install.sh
-   M packages/node/pyproject.toml
-   M packages/scheduler/pyproject.toml
-  D  packages/scheduler/src/scheduler/core/mesh_auth.py
-  D  packages/scheduler/src/scheduler/core/mesh_protocol.py
-  RM packages/node/src/node/core/mesh_auth.py -> packages/shared/src/pi_shared/mesh_auth.py
+  M ROADMAP.md
+   M experimental/README.md
+  RM packages/scheduler/src/scheduler/core/consensus.py -> experimental/scheduler/consensus.py
+  RM packages/scheduler/tests/test_consensus.py -> experimental/scheduler/tests/test_consensus.py
+   M packages/scheduler/src/scheduler/api/ingress.py
+   M packages/scheduler/src/scheduler/api/openai.py
+   M packages/scheduler/src/scheduler/core/zenoh_router.py
+   M packages/scheduler/src/scheduler/registry/node_registry.py
+   M packages/scheduler/tests/test_eviction_reporting.py
+   M packages/scheduler/tests/test_ingress_gateway.py
 ```
 
 ## CI
 
 - **Status:** UNVERIFIED
-- **Reason:** CI has never run for HEAD (61a8d473). The most recent run covers e7b06346, which is 15 commit(s) behind. Its conclusion ('success') says nothing about this code.
+- **Reason:** CI has never run for HEAD (a9e673a2). The most recent run covers e7b06346, which is 16 commit(s) behind. Its conclusion ('success') says nothing about this code.
 
 
 ## Repo facts

@@ -3,14 +3,12 @@
 import asyncio
 import json
 import time
-import uuid
 from datetime import UTC, datetime
 from typing import Any
 
 import structlog
 import zenoh
 
-from scheduler.core.consensus import RaftConsensusEngine
 from scheduler.core.mesh_auth import (
     PURPOSE_HEARTBEAT,
     PURPOSE_TELEMETRY,
@@ -80,9 +78,20 @@ class ZenohRouter:
         self.node_stale_after_seconds = _settings.node_stale_after_seconds
         self.stale_sweep_interval_seconds = _settings.stale_sweep_interval_seconds
 
-        # Generate unique scheduler ID and instantiate the consensus engine
-        scheduler_id = f"scheduler-{uuid.uuid4().hex[:8]}"
-        self.consensus_engine = RaftConsensusEngine(scheduler_id, self.registry, self.config)
+        # The Raft consensus engine used to be constructed here and started below.
+        # Removing it is ROADMAP C2's remaining half AND a security fix that 2.7
+        # missed: `start()` opened a SECOND Zenoh session and declared a subscriber
+        # on `public-intelligence/net/consensus/*` -- a wildcard key with no
+        # authentication -- whose handler parsed JSON from anyone and, on
+        # `AppendEntries` with a higher term, appended the sender's entries and
+        # applied them. `action: "unregister_node"` evicted any host; `"register"`
+        # INJECTED one, and an injected node is dispatched to, so it receives other
+        # people's prompts.
+        #
+        # 2.7 closed exactly this shape for telemetry, heartbeat and liveliness and
+        # did not touch the consensus plane. D5 decided the deployment is a single
+        # instance and Raft is out of v1, so there was nothing an authenticated
+        # version of it would do. The module is in experimental/.
         self._background_tasks: set[asyncio.Task[Any]] = set()
 
     def start(self) -> None:
@@ -118,11 +127,6 @@ class ZenohRouter:
             "public-intelligence/net/nodes/*/telemetry", self._on_telemetry
         )
 
-        # Start consensus engine
-        start_task = asyncio.create_task(self.consensus_engine.start())
-        self._background_tasks.add(start_task)
-        start_task.add_done_callback(self._background_tasks.discard)
-
         # Age nodes out. Nothing did this before -- a host left the registry only by
         # unregistering gracefully or by an UNAUTHENTICATED liveliness deathrattle,
         # which is the eviction hole 2.7 closes. Removing that hole without this
@@ -152,11 +156,6 @@ class ZenohRouter:
         if self.telemetry_subscriber is not None:
             self.telemetry_subscriber.undeclare()  # type: ignore[no-untyped-call]
             self.telemetry_subscriber = None
-
-        # Stop consensus engine
-        stop_task = asyncio.create_task(self.consensus_engine.stop())
-        self._background_tasks.add(stop_task)
-        stop_task.add_done_callback(self._background_tasks.discard)
 
         self.session.close()  # type: ignore[no-untyped-call]
         self.session = None
@@ -353,8 +352,10 @@ class ZenohRouter:
             return False
 
         # `unregister_node` reports whether the node is actually gone. It used to
-        # return None, so this logged an eviction on the strength of having asked --
-        # and on the consensus path, asking does not touch the registry at all.
+        # return None, so this logged an eviction on the strength of having asked.
+        # The consensus path that made "asking" and "doing" routinely different is
+        # gone (ROADMAP C2); the gap between the `exists` check above and this call
+        # is not, so the distinction is still worth keeping.
         # See specs/eviction-reports-what-it-did.md.
         removed = await self.registry.unregister_node(node_id)
         if not removed:

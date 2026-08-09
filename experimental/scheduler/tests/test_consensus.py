@@ -5,10 +5,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 import zenoh
-
-from scheduler.core.consensus import RaftConsensusEngine
 from scheduler.models.node import GPUInfo, Node
 from scheduler.registry.node_registry import NodeRegistry
+
+from experimental.scheduler.consensus import RaftConsensusEngine
 
 
 @pytest.fixture()
@@ -161,16 +161,28 @@ async def test_single_node_proposal_is_applied_to_registry(test_node: Node) -> N
     engine._is_active = True
     engine.peers = set()
     engine._send_heartbeats = AsyncMock()
-    registry.consensus_engine = engine
 
-    await registry.register(test_node)
+    # Proposed DIRECTLY on the engine rather than through `registry.register`.
+    #
+    # The registry used to route its writes through `consensus_engine.propose` when
+    # one was attached, and this test drove that seam. ROADMAP C2 removed the
+    # integration -- the engine's only inbound channel was an unauthenticated
+    # wildcard Zenoh subscriber that could evict and inject nodes -- so the registry
+    # now always mutates locally and there is no seam left to drive.
+    #
+    # The bug this guards is the engine's own, and is still worth guarding while the
+    # module is kept for a possible v2: `propose` only set `event_to_wait` when peers
+    # existed, while the immediate-commit branch required `required_quorum <= 1`,
+    # true only when peers is EMPTY. The two were mutually exclusive, so the apply
+    # call was unreachable and entries were appended and never applied.
+    await engine.propose("register", test_node.model_dump())
     assert await registry.exists(test_node.node_id) is True, (
-        "register() was proposed but never applied to the registry"
+        "the proposal was appended to the log and never applied"
     )
     assert engine.commit_index == 0, "commit index did not advance past the append"
 
-    await registry.unregister_node(test_node.node_id)
+    await engine.propose("unregister_node", {"node_id": test_node.node_id})
     assert await registry.exists(test_node.node_id) is False, (
-        "unregister_node() was proposed but never applied to the registry"
+        "the unregister proposal was appended to the log and never applied"
     )
     assert engine.commit_index == 1, "commit index did not advance past the append"

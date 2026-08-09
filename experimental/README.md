@@ -75,7 +75,8 @@ while an unimportable quarantined test still fails the gate.
 | `boundary_engine.py` | Re-export shim for the above | 5 × 2 |
 | `kv_cache.py` | KV-cache checkpointing and restitching | ~98 × 2 |
 | `quantization.py` | FP8/FP4 activation compression | 49 × 2 |
-| `*/tests/` | The suites covering them | 10 files |
+| `consensus.py` | Raft leader election and log replication (scheduler only) | 530 |
+| `*/tests/` | The suites covering them | 11 files |
 
 Two copies of each, because Node and Scheduler were separate repositories before the
 2026-08-04 monorepo migration. They are duplicated here as they were duplicated there;
@@ -83,18 +84,41 @@ converging them is not worth doing for code nothing runs.
 
 ## What is NOT here, and why
 
-**`consensus.py` (Raft, 530 lines) stays in `packages/scheduler`.** It is genuinely
-wired: `zenoh_router.py` constructs a `RaftConsensusEngine`, and `node_registry.py`,
-`api/ingress.py` and `api/openai.py` all branch on `consensus_engine.is_active()`.
-Extracting it is a real refactor on a live dispatch path, not a file move, and doing
-it blind alongside three security fixes would be the kind of change that breaks
-something quietly. It is inert in practice — the deployment is a single instance
-([D5](../docs/decisions/D5-decentralisation-claim.md)) — and it is tracked as
-remaining C2 work rather than claimed as done.
-
-**`models/sharding.py` and `models/pipeline.py` stay.** `node/backends/base.py` and
-`backends/mock.py` import `PipelineStage` and `TensorPayload` from them, and those
+**`models/sharding.py` and `models/pipeline.py` stay in `packages/`.** `node/backends/base.py`
+and `backends/mock.py` import `PipelineStage` and `TensorPayload` from them, and those
 are on the live backend interface.
+
+## `consensus.py` moved here on 2026-08-09, and this file was wrong about it
+
+An earlier version of this README said Raft "is inert in practice — the deployment is
+a single instance". **That was false, and the correction is the point.**
+
+`ZenohRouter.start()` constructed a `RaftConsensusEngine` and called `start()` on it
+on **every Scheduler boot**. When `zenoh.open()` succeeded — which is the normal
+case — it:
+
+- opened a **second Zenoh session**, alongside the router's own;
+- declared a subscriber on `public-intelligence/net/consensus/*`, a **wildcard key
+  with no authentication of any kind**;
+- started two background loops (election timeout, heartbeat);
+- set `is_active()` True, so the `is_active()` branches in `node_registry`,
+  `api/ingress` and `api/openai` were **live**, routing registry writes through Raft
+  on a one-node cluster.
+
+The subscriber's handler parsed JSON from anyone and dispatched on a `type` field.
+`AppendEntries` with a higher term made the Scheduler a follower of the sender and
+appended the sender's entries; `_apply_log_entries` then executed them —
+`action: "unregister_node"` **evicting any host**, and `action: "register"`
+**injecting one**. An injected node is dispatched to, so it receives other people's
+prompts.
+
+ROADMAP 2.7 closed exactly this shape for telemetry, heartbeats and liveliness, and
+its own summary named the worst case: *"anyone could evict any host."* It did not
+touch the consensus plane. `docs/decisions/D5-decentralisation-claim.md` had already
+decided the deployment is a single instance and Raft is out of v1, so there was
+nothing an authenticated version of this plane would do. It is no longer constructed,
+started, or branched on, and `tests/test_consensus_plane_is_not_open.py` fails if any
+of that returns.
 
 ## If you are reading this because you want to build on it
 

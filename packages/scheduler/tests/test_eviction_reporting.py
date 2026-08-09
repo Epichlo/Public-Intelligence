@@ -33,22 +33,6 @@ def make_node(node_id: str = NODE_ID) -> Node:
     )
 
 
-class IgnoringConsensusEngine:
-    """An active engine that accepts proposals and applies none of them.
-
-    Not a strawman: `unregister_node` proposes and returns immediately, so from the
-    caller's side a proposal that is dropped, queued, or lost in an election is
-    indistinguishable from one that applied. The point of the test is that the
-    caller must not *claim* the node was removed on the strength of having asked.
-    """
-
-    def is_active(self) -> bool:
-        return True
-
-    async def propose(self, action: str, payload: dict) -> None:
-        return None
-
-
 # --- the registry reports what it did ---------------------------------------
 
 
@@ -73,20 +57,24 @@ async def test_removing_an_absent_node_reports_false() -> None:
 
 
 @pytest.mark.anyio
-async def test_the_consensus_path_reports_the_truth_not_the_intent() -> None:
-    """A proposal that never applied must not be reported as a removal.
+async def test_unregister_reports_whether_the_node_is_actually_gone() -> None:
+    """ROADMAP 2.5's property, on the only path that still exists.
 
-    `unregister_node` cannot know whether the engine applied it, so it reports
-    whether the node is absent AFTERWARDS -- a weaker claim, and the true one.
+    This used to drive a fake consensus engine that dropped proposals, because on
+    that path `unregister_node` could not know whether the removal had applied and
+    so reported whether the node was absent *afterwards* -- a weaker claim, and the
+    true one. The consensus path is gone (ROADMAP C2), so the weaker phrasing is no
+    longer needed and the property is asserted directly: the return value tracks
+    what happened, not what was attempted.
     """
     registry = NodeRegistry()
     await registry.register(make_node())
-    registry.consensus_engine = IgnoringConsensusEngine()
 
-    removed = await registry.unregister_node(NODE_ID)
+    assert await registry.unregister_node(NODE_ID) is True
+    assert not await registry.exists(NODE_ID)
 
-    assert removed is False, "reported a removal that never happened"
-    assert await registry.exists(NODE_ID), "the node is still registered"
+    # And again, when there is nothing left to remove.
+    assert await registry.unregister_node(NODE_ID) is False
 
 
 # --- the router logs what happened ------------------------------------------
@@ -116,19 +104,29 @@ async def test_a_real_eviction_is_logged_as_one() -> None:
 
 @pytest.mark.anyio
 async def test_an_eviction_that_removed_nothing_is_not_logged_as_a_success() -> None:
-    """The exact defect ROADMAP 2.5 named, in its surviving form.
+    """The exact defect ROADMAP 2.5 named.
 
-    With an engine that drops proposals the node stays registered, and the old code
-    announced `zenoh_node_evicted_stale` anyway.
+    The old code announced `zenoh_node_evicted_stale` on the strength of having
+    *asked*, so a removal that changed nothing was logged as a success and "where
+    did node X go" was answered wrongly.
     """
-    registry = NodeRegistry()
-    await registry.register(make_node())
+
+    # A registry that reports the node present and then removes nothing.
+    #
+    # This used to be induced with a fake consensus engine that dropped proposals.
+    # That path is gone (ROADMAP C2), and with it the easy way to reach this state
+    # -- but not the state itself: `_evict_if_stale` checks `exists()` and then
+    # calls `unregister_node`, and another task can remove the node in between. The
+    # router's contract is what is under test, so the registry is the double.
+    class RemovesNothing(NodeRegistry):
+        async def exists(self, node_id: str) -> bool:
+            return True
+
+        async def unregister_node(self, node_id: str) -> bool:
+            return False
+
+    registry = RemovesNothing()
     router = ZenohRouter(registry)
-    # AFTER constructing the router: `ZenohRouter.__init__` builds a
-    # `RaftConsensusEngine` which registers itself on the registry, replacing a fake
-    # set beforehand. Setting it first made this test silently exercise the local
-    # path and report a successful eviction.
-    registry.consensus_engine = IgnoringConsensusEngine()
     router.node_stale_after_seconds = 0.0
 
     with capture_logs() as logs:

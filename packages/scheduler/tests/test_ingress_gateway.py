@@ -128,7 +128,15 @@ def test_ingress_submit_invalid_auth(
 def test_ingress_submit_authorized_handoff(
     key_pair: tuple[rsa.RSAPrivateKey, str], setup_test_app: MagicMock
 ) -> None:
-    """Verify that authorized requests pass JWT verification and forward to consensus."""
+    """An authorised request passes JWT verification and is scheduled.
+
+    It used to also assert the task was proposed to a Raft consensus engine. That
+    path is gone (ROADMAP C2): the engine's only inbound channel was an
+    unauthenticated wildcard Zenoh subscriber that could evict and inject nodes, and
+    D5 had already decided the deployment is a single instance. What the endpoint
+    owes its caller -- authentication, scheduling, and an honest response body -- is
+    unchanged and is what is asserted now.
+    """
     private_key, _ = key_pair
     mock_consensus = setup_test_app
     token = generate_token(private_key, tenant_id="tenant-A")
@@ -153,12 +161,8 @@ def test_ingress_submit_authorized_handoff(
     assert res_json["node_id"] == "test-node"
     assert "tx_hash" in res_json
 
-    mock_consensus.propose.assert_called_once()
-    called_args = mock_consensus.propose.call_args[0]
-    assert called_args[0] == "allocate_task"
-    assert called_args[1]["task_id"] == "task-abc"
-    assert called_args[1]["node_id"] == "test-node"
-    assert "tx_hash" in called_args[1]
+    # And nothing was proposed anywhere, because there is nowhere to propose to.
+    assert mock_consensus.propose.call_count == 0
 
 
 def test_ingress_token_bucket_rate_limiter(

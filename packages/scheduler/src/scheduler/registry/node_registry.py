@@ -58,7 +58,6 @@ class NodeRegistry:
         # Held outside the Node model for the same reason as the tokens: it must not be
         # serialisable into an API response, and a node must not be able to assert it.
         self._mesh_nodes: set[str] = set()
-        self.consensus_engine: Any = None
 
     async def load(self) -> None:
         """Refill the in-memory state from the store. Call once, at startup.
@@ -138,16 +137,13 @@ class NodeRegistry:
         return node_id in self._mesh_nodes
 
     async def register(self, node: Node) -> None:
-        """Register a new node.
-
-        If a consensus engine is active, propose the change atomically.
-        Otherwise, perform local registration immediately.
-        """
-        engine = getattr(self, "consensus_engine", None)
-        if engine is not None and engine.is_active():
-            await engine.propose("register", node.model_dump())
-        else:
-            await self.local_register(node)
+        """Register a new node."""
+        # The consensus proposal path that used to wrap this is gone (ROADMAP C2).
+        # It was not dead code: the engine started successfully on every boot, so
+        # `is_active()` was True and registry writes really did route through Raft
+        # on a one-node cluster. It was also the reachable end of an
+        # UNAUTHENTICATED wildcard subscriber -- see the note in zenoh_router.
+        await self.local_register(node)
 
     async def local_register(self, node: Node) -> None:
         """Actually perform local registration of the node.
@@ -167,16 +163,9 @@ class NodeRegistry:
                 await self._store.save_node(node)
 
     async def unregister(self, node_id: str) -> None:
-        """Remove a node and its heartbeat from the registry.
-
-        If a consensus engine is active, propose the change atomically.
-        Otherwise, perform local unregistration immediately.
-        """
-        engine = getattr(self, "consensus_engine", None)
-        if engine is not None and engine.is_active():
-            await engine.propose("unregister", {"node_id": node_id})
-        else:
-            await self.local_unregister(node_id)
+        """Remove a node and its heartbeat from the registry."""
+        # See `register` -- the consensus proposal path is gone (ROADMAP C2).
+        await self.local_unregister(node_id)
 
     async def local_unregister(self, node_id: str) -> None:
         """Actually perform local unregistration of the node."""
@@ -366,24 +355,17 @@ class NodeRegistry:
     async def unregister_node(self, node_id: str) -> bool:
         """Unregister a node and clear its dynamic herd dampeners.
 
-        If a consensus engine is active, propose the change atomically.
-        Otherwise, perform local unregistration immediately.
-
         Returns:
             Whether the node is gone as a result. This used to return None, so the
             caller logged "evicted" on the strength of having *asked* -- see
             specs/eviction-reports-what-it-did.md.
 
-            On the consensus path this method cannot know whether the proposal was
-            applied: `propose` returns immediately, and a dropped, queued or
-            election-lost proposal is indistinguishable from an applied one. So it
-            does not claim to have removed anything -- it reports whether the node
-            is absent afterwards. That is a weaker statement, and the true one.
+            2.5 had to weaken this to "is it absent afterwards", because on the
+            consensus path a dropped, queued or election-lost proposal was
+            indistinguishable from an applied one. That path is gone (ROADMAP C2),
+            so the answer is now simply whether the removal happened. The weaker
+            wording is kept in `local_unregister_node` where it is still accurate.
         """
-        engine = getattr(self, "consensus_engine", None)
-        if engine is not None and engine.is_active():
-            await engine.propose("unregister_node", {"node_id": node_id})
-            return not await self.exists(node_id)
         return await self.local_unregister_node(node_id)
 
     async def local_unregister_node(self, node_id: str) -> bool:
