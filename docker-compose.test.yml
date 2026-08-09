@@ -3,8 +3,13 @@
 #   docker compose -f docker-compose.test.yml up --build
 #   curl -H "X-Network-Auth-Token: local-dev-token" http://localhost:8000/nodes
 #
-# This file had never been run. It carried two faults that would each have stopped
-# it on the first attempt:
+# THIS FILE HAS STILL NEVER BEEN RUN. Docker was not available in the environment
+# that last edited it, so everything below is reviewed and not executed. ROADMAP 1.5
+# stays PARTIAL until someone runs it -- and the claim it would substantiate (a node
+# on a separate machine serving a request) is the load-bearing one for this whole
+# project. See docs/PREMISES.md P2.
+#
+# Faults found in it so far, none of which running it was needed to find:
 #
 #   1. `NODE_ID` -- the Node's Settings read `NODE_NODE_ID` (env_prefix `NODE_`
 #      plus field `node_id`), so both workers silently kept the default id and the
@@ -12,6 +17,18 @@
 #   2. No auth token on any service. Roadmap 0.1 made the Node's control API fail
 #      closed and the Scheduler authenticate to nodes with the credential presented
 #      at registration. With none set, every registration and dispatch 401s.
+#   3. `NODE_ZENOH_LISTEN_ENDPOINTS` on both workers -- `zenoh_listen_endpoints` is
+#      a SCHEDULER field and the Node has no such setting, so it was silently
+#      ignored. A node dials out and holds the session (ROADMAP 1.1); it does not
+#      listen, so the lines were removed rather than renamed.
+#   4. No gateway signing key. Since ROADMAP C4 an unconfigured Scheduler refuses
+#      every request rather than falling back to a key of unknown provenance, so
+#      this file could only have demonstrated 401s.
+#
+# 1 and 2 were fixed by reading. 3 and 4 were found by
+# `tests/test_compose_env_matches_settings.py`, which checks every variable here
+# against the fields the services actually read -- the class of defect that made 1
+# invisible in the first place.
 #
 # The token below is a throwaway for local use. It is not a secret and must not be
 # reused anywhere reachable.
@@ -31,9 +48,20 @@ services:
       - SCHEDULER_LOG_LEVEL=debug
       - SCHEDULER_ENVIRONMENT=development
       - SCHEDULER_NETWORK_AUTH_TOKEN=local-dev-token
-      # Both services must agree on this or telemetry envelopes fail to
-      # decrypt. It otherwise defaults to a value published in this repo
-      # (ROADMAP 2.2), so local runs are kept off that default.
+      # Mesh envelopes are keyed on each NODE's own credential as of ROADMAP 2.7,
+      # so there is no fleet-wide telemetry secret to agree on any more. A comment
+      # here used to say both services had to share TELEMETRY_SECRET_KEY; that
+      # setting no longer exists.
+      #
+      # Required since ROADMAP C4: with no public key the gateway refuses every
+      # request, deliberately. Generate a pair and export the public half before
+      # bringing this up, or /v1/chat/completions will only ever answer 401:
+      #
+      #   .venv/bin/python scripts/mint_token.py --generate-keypair
+      #   export SCHEDULER_JWT_PUBLIC_KEY="$(cat .secrets/jwt_public_key.pem)"
+      #
+      # Mint a caller token with `scripts/mint_token.py` once it is up.
+      - SCHEDULER_JWT_PUBLIC_KEY=${SCHEDULER_JWT_PUBLIC_KEY:-}
     networks:
       - pi-test-net
     healthcheck:
@@ -56,7 +84,6 @@ services:
       - NODE_PORT=8080
       - NODE_SCHEDULER_URL=http://scheduler:8000
       - NODE_NETWORK_AUTH_TOKEN=local-dev-token
-      - NODE_ZENOH_LISTEN_ENDPOINTS=["tcp/0.0.0.0:7448"]
       - NODE_BOOTSTRAP_ROUTERS=["tcp/scheduler:7447"]
     depends_on:
       scheduler:
@@ -77,7 +104,6 @@ services:
       - NODE_PORT=8080
       - NODE_SCHEDULER_URL=http://scheduler:8000
       - NODE_NETWORK_AUTH_TOKEN=local-dev-token
-      - NODE_ZENOH_LISTEN_ENDPOINTS=["tcp/0.0.0.0:7449"]
       - NODE_BOOTSTRAP_ROUTERS=["tcp/scheduler:7447"]
     depends_on:
       scheduler:

@@ -86,3 +86,52 @@ async def node_usage(node_id: str, meter: MeterDep, ledger: LedgerDep) -> dict[s
         "totals": totals,
         "recent": [r.model_dump() for r in meter.recent(node_id=node_id, limit=25)],
     }
+
+
+@router.get("/metrics")
+async def metrics(request: Request, meter: MeterDep) -> dict[str, Any]:
+    """Aggregate counters for an operator or a scrape (ROADMAP 4.2).
+
+    4.2 says: "Structured logs exist; no aggregation, no alerting. You currently
+    learn something broke by reading CI." This is the aggregation half. Alerting is
+    not here and is not pretended: something outside this process has to poll and
+    decide, and shipping a half-built alerter would be worse than shipping none.
+
+    **JSON rather than Prometheus text format.** A Prometheus exposition endpoint
+    implies a scrape contract -- metric naming, label cardinality, HELP/TYPE lines --
+    and getting that subtly wrong is harder to notice than not having it. This is a
+    small, honest surface that says what it counts. Adopting Prometheus later is a
+    serialiser change, not a redesign.
+
+    Windowed over the meter's in-memory tail, which the response states rather than
+    implies. Same reasoning as `/usage`: a counter presented as all-time that silently
+    resets when a buffer wraps is worse than no counter.
+    """
+    records = meter.recent(limit=meter.MAX_RECENT)
+    registry = request.app.state.registry
+    nodes = await registry.list()
+
+    failed = sum(1 for r in records if not r.succeeded)
+    by_node: dict[str, int] = {}
+    for record in records:
+        by_node[record.node_id] = by_node.get(record.node_id, 0) + 1
+
+    return {
+        "window": "recent",
+        "window_size": meter.MAX_RECENT,
+        "nodes_registered": len(nodes),
+        "requests_in_window": len(records),
+        "requests_failed_in_window": failed,
+        # The number an operator actually watches. Reported as a fraction of the
+        # window rather than as a rate per second: the window is a request count,
+        # not a time interval, so a per-second figure would be invented.
+        "failure_ratio_in_window": (failed / len(records)) if records else 0.0,
+        "prompt_tokens_in_window": sum(r.prompt_tokens for r in records),
+        "completion_tokens_in_window": sum(r.completion_tokens for r in records),
+        "requests_by_node_in_window": by_node,
+        # Named so nobody reads the block above as lifetime totals.
+        "note": (
+            "All counters are over the most recent window_size requests held in "
+            "memory, not since process start. The store holds full history."
+        ),
+    }

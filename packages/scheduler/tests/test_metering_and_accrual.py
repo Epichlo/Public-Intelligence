@@ -24,11 +24,13 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 
+from scheduler.core.config import Settings, get_settings
 from scheduler.core.rate_limiter import TokenBucketLimiter
 from scheduler.main import create_app
 from scheduler.models.node import GPUInfo, Node
 
 NODE_ID = "node-meter-1"
+FLEET_TOKEN = "test-token"
 
 
 @pytest.fixture(scope="module")
@@ -54,6 +56,10 @@ def client(key_pair: tuple[rsa.RSAPrivateKey, str]) -> TestClient:
         # one test would trip.
         rate_limiter=TokenBucketLimiter(capacity=100, refill_rate=100.0),
     )
+    # The read surface is guarded by the fleet credential, and `verify_auth_token`
+    # is a no-op when none is configured -- so without this the 401 tests would pass
+    # for the wrong reason on an unconfigured app.
+    app.dependency_overrides[get_settings] = lambda: Settings(network_auth_token=FLEET_TOKEN)
     app.state.registry._nodes[NODE_ID] = Node(
         node_id=NODE_ID,
         hostname="host-1",
@@ -228,3 +234,76 @@ def test_a_hosts_totals_are_reported_for_their_node_only(
     meter = client.app.state.usage_meter
     assert meter.totals_for_node(NODE_ID)["requests"] == 1.0
     assert meter.totals_for_node("some-other-node")["requests"] == 0.0
+
+
+# --- the read side (3.4, 4.2) ----------------------------------------------
+
+
+def test_usage_endpoints_require_a_credential(client: TestClient) -> None:
+    """Usage records name tenants and nodes, so none of this is public."""
+    for path in ("/usage", f"/nodes/{NODE_ID}/usage", "/metrics"):
+        assert client.get(path).status_code == 401, path
+
+
+def test_a_host_sees_contributed_never_earned(client: TestClient, auth: dict[str, str]) -> None:
+    """D2 cut redemption, so the dashboard must not promise earnings.
+
+    Asserted on the response keys rather than on prose, because the wording is the
+    product decision: `credits_earned` would be a claim the project has explicitly
+    declined to make.
+    """
+    with patch(
+        "scheduler.api.openai.infer_once",
+        new=AsyncMock(return_value={"response": "Paris."}),
+    ):
+        _complete(client, auth)
+
+    body = client.get(
+        f"/nodes/{NODE_ID}/usage", headers={"X-Network-Auth-Token": FLEET_TOKEN}
+    ).json()
+
+    assert "credits_contributed" in body
+    assert "credits_earned" not in body
+    assert body["credits_are_redeemable"] is False
+    assert body["credits_contributed"] > 0
+
+
+def test_usage_responses_state_that_their_totals_are_windowed(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    """A counter read as all-time that silently resets when the buffer wraps is worse
+    than no counter, so every windowed figure is labelled at the point of use."""
+    headers = {"X-Network-Auth-Token": FLEET_TOKEN}
+
+    fleet = client.get("/usage", headers=headers).json()
+    assert fleet["window"] == "recent"
+    assert fleet["window_size"] == client.app.state.usage_meter.MAX_RECENT
+
+    metrics = client.get("/metrics", headers=headers).json()
+    assert metrics["window"] == "recent"
+    assert "not since process start" in metrics["note"]
+
+
+def test_metrics_reports_the_failure_ratio_an_operator_watches(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    """ROADMAP 4.2's aggregation half: something other than CI can now notice breakage."""
+    from scheduler.core.node_dispatch import NodeDispatchError
+
+    with patch(
+        "scheduler.api.openai.infer_once",
+        new=AsyncMock(return_value={"response": "Paris."}),
+    ):
+        _complete(client, auth)
+    with patch(
+        "scheduler.api.openai.infer_once",
+        new=AsyncMock(side_effect=NodeDispatchError(status=502, detail="down")),
+    ):
+        _complete(client, auth)
+
+    body = client.get("/metrics", headers={"X-Network-Auth-Token": FLEET_TOKEN}).json()
+
+    assert body["requests_in_window"] == 2
+    assert body["requests_failed_in_window"] == 1
+    assert body["failure_ratio_in_window"] == 0.5
+    assert body["requests_by_node_in_window"][NODE_ID] == 2
