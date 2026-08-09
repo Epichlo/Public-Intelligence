@@ -4,17 +4,17 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-09 13:41 UTC
+**Generated:** 2026-08-09 15:18 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 346 | 0 | 0 | 11.45s |
-| Node | PASS | 259 | 0 | 1 | 5.77s |
-| Root E2E | PASS | 123 | 0 | 0 | 22.69s |
-| **Total** | **PASSING** | **728** | **0** | **1** | |
+| Scheduler | PASS | 387 | 0 | 0 | 13.92s |
+| Node | PASS | 259 | 0 | 1 | 6.62s |
+| Root E2E | PASS | 126 | 0 | 0 | 22.79s |
+| **Total** | **PASSING** | **772** | **0** | **1** | |
 
 Reproduce:
 
@@ -26,25 +26,30 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `9689ae2` aggregate what the logs already knew, and check the compose file nobody can run (roadmap 4.2 partial, 1.5 still partial)
-- **Author / date:** Atharv Deshpande — 2026-08-09 18:50:05 +0530
+- **Last commit:** `61a8d47` stop hand-copying the node credential into the dashboard (roadmap 3.5)
+- **Author / date:** Atharv Deshpande — 2026-08-09 20:33:22 +0530
 - **Branch:** main
-- **Total commits:** 218
+- **Total commits:** 224
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence.git (fetch)
-- **Working tree:** 5 uncommitted change(s)
+- **Working tree:** 24 uncommitted change(s)
 
 ```
-  M .gitignore
-   M STATUS.md
-   M VERIFY.md
-   M scripts/generate_status.py
-  ?? tests/test_status_reports_ci_honestly.py
+  M .github/workflows/ci.yml
+   M CLAUDE.md
+   M CONTRIBUTING.md
+   M README.md
+   M install.sh
+   M packages/node/pyproject.toml
+   M packages/scheduler/pyproject.toml
+  D  packages/scheduler/src/scheduler/core/mesh_auth.py
+  D  packages/scheduler/src/scheduler/core/mesh_protocol.py
+  RM packages/node/src/node/core/mesh_auth.py -> packages/shared/src/pi_shared/mesh_auth.py
 ```
 
 ## CI
 
 - **Status:** UNVERIFIED
-- **Reason:** CI has never run for HEAD (9689ae25). The most recent run covers e7b06346, which is 9 commit(s) behind. Its conclusion ('success') says nothing about this code.
+- **Reason:** CI has never run for HEAD (61a8d473). The most recent run covers e7b06346, which is 15 commit(s) behind. Its conclusion ('success') says nothing about this code.
 
 
 ## Repo facts
@@ -64,8 +69,10 @@ Ratcheted by `tests/test_source_parity.py` — these may not increase.
 
 | Pair | Drift |
 | --- | --- |
-| mesh_protocol | 0 |
-| mesh_auth | 0 |
+| quantization (experimental) | 0 |
+| kv_cache (experimental) | 2 |
+| local_boundary (experimental) | 2 |
+| transport (experimental) | 22 |
 
 ---
 

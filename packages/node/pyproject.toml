@@ -18,6 +18,10 @@ dependencies = [
     "ollama>=0.2.0",
     "eclipse-zenoh",
     "cryptography",
+    # The shared mesh protocol (ROADMAP C8). Both services must agree on these
+    # BYTE FOR BYTE -- if the two former copies drifted, the Scheduler silently
+    # stopped accepting envelopes from real nodes, with nothing raised.
+    "public-intelligence-shared",
     "psutil",
     # Both were imported at module scope while undeclared, and both resolved anyway
     # in the shared dev venv -- httpx because `ollama` happens to pull it, structlog

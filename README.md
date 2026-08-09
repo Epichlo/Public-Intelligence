@@ -75,7 +75,8 @@ One venv for everything:
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install -e "packages/node[dev]" -e "packages/scheduler[dev]"
+.venv/bin/python -m pip install -e packages/shared \
+  -e "packages/node[dev]" -e "packages/scheduler[dev]"
 ./scripts/install-hooks.sh
 ./scripts/verify.sh          # the single gate: lint, types, tests, security, installer
 ```

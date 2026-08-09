@@ -37,16 +37,18 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #   autonomous_orchestrator -> DELETED (ROADMAP 2.10). It returned
 #     verification_passed=True for a stub that ran nothing.
 DUPLICATE_PAIRS: dict[str, tuple[str, str, int]] = {
-    "mesh_protocol": (
-        "packages/node/src/node/core/mesh_protocol.py",
-        "packages/scheduler/src/scheduler/core/mesh_protocol.py",
-        0,
-    ),
-    "mesh_auth": (
-        "packages/node/src/node/core/mesh_auth.py",
-        "packages/scheduler/src/scheduler/core/mesh_auth.py",
-        0,
-    ),
+    # EMPTY, and that is the finish line rather than an oversight.
+    #
+    # `mesh_protocol` and `mesh_auth` left on 2026-08-09: they moved to
+    # `packages/shared` (ROADMAP C8), so there is one copy and nothing to ratchet.
+    # `tests/test_mesh_protocol_parity.py` now asserts the stronger property --
+    # exactly one copy exists and the re-export shims stay thin -- which needs no
+    # budget, because a pair held at zero drift is still one forgetful commit away
+    # from drifting and the failure was silent.
+    #
+    # The other four (quantization, kv_cache, local_boundary, transport) moved to
+    # `experimental/` under C2 and are still ratcheted below, because they are still
+    # duplicated -- they just are not shipped.
 }
 
 # The same ratchet, applied to the quarantined copies. They are not shipped, so a
@@ -95,10 +97,38 @@ def _drift(a: Path, b: Path) -> int:
     )
 
 
-@pytest.mark.parametrize("name", sorted(DUPLICATE_PAIRS))
+# Both tables, in one parametrisation.
+#
+# EXPERIMENTAL_PAIRS was declared when C2 moved those modules and then PARAMETRIZED
+# OVER NOTHING -- the dict existed, no test read it, and the commit message claimed
+# "tests/test_source_parity.py still ratchets the experimental copies". It did not.
+# A dead variable that a commit message describes as a check is worse than no
+# variable, because it reads like coverage.
+#
+# Merged rather than duplicated into a second pair of tests, so a table added later
+# cannot be forgotten in the same way: the parametrisation is over ALL_PAIRS.
+ALL_PAIRS: dict[str, tuple[str, str, int]] = {**DUPLICATE_PAIRS, **EXPERIMENTAL_PAIRS}
+
+
+def test_no_shipping_module_is_duplicated_any_more() -> None:
+    """ROADMAP C8's finish line, asserted rather than left as an empty table.
+
+    An empty parametrisation reports as SKIPPED, which reads like coverage and is
+    exactly this project's failure mode. This says the thing out loud: the shipped
+    tree has no duplicated module pairs left, and adding one back has to be a
+    deliberate edit to `DUPLICATE_PAIRS` with a budget and a reason.
+    """
+    assert DUPLICATE_PAIRS == {}, (
+        f"shipping code has duplicated pairs again: {sorted(DUPLICATE_PAIRS)}. "
+        f"Prefer packages/shared over a drift budget -- a pair held at zero drift "
+        f"is one forgetful commit from drifting, and mesh divergence fails silently."
+    )
+
+
+@pytest.mark.parametrize("name", sorted(ALL_PAIRS))
 def test_duplicate_pair_has_not_drifted_further(name: str) -> None:
     """A duplicated module may not diverge beyond its recorded budget."""
-    left, right, budget = DUPLICATE_PAIRS[name]
+    left, right, budget = ALL_PAIRS[name]
     a, b = REPO_ROOT / left, REPO_ROOT / right
 
     if not a.exists() or not b.exists():
@@ -114,14 +144,14 @@ def test_duplicate_pair_has_not_drifted_further(name: str) -> None:
     )
 
 
-@pytest.mark.parametrize("name", sorted(DUPLICATE_PAIRS))
+@pytest.mark.parametrize("name", sorted(ALL_PAIRS))
 def test_duplicate_pair_budget_is_not_stale(name: str) -> None:
     """A converged pair must have its budget lowered, or the ratchet stops working.
 
     Without this, budgets only ever describe the worst the pair has ever been, and
     a pair could silently re-drift back up to an obsolete allowance.
     """
-    left, right, budget = DUPLICATE_PAIRS[name]
+    left, right, budget = ALL_PAIRS[name]
     a, b = REPO_ROOT / left, REPO_ROOT / right
 
     if not a.exists() or not b.exists():

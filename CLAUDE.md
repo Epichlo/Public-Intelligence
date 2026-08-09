@@ -30,7 +30,8 @@ One venv, one interpreter, everything. Set it up once per clone:
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install -e "packages/node[dev]" -e "packages/scheduler[dev]"
+.venv/bin/python -m pip install -e packages/shared \
+  -e "packages/node[dev]" -e "packages/scheduler[dev]"
 ./scripts/install-hooks.sh
 ```
 
@@ -68,13 +69,20 @@ checking — reporting "CI unverifiable" for a change whose CI run had already f
 Prose cannot notice when it goes stale. Only judgment lives here now; measurements
 live in `STATUS.md`.
 
-**Several core modules are duplicated across Node and Scheduler** — `quantization.py`,
-`local_boundary.py`, `kv_cache.py`, `transport.py`, `mesh_protocol.py`, and the
-`GPUInfo` pair — plus a third copy of the artifact store at `src/shared/storage/`.
-They exist because the two services *were* separate git repositories with no shared
-installable package. The monorepo migration removes that constraint; collapsing them
-into `packages/shared/` is the immediate follow-up. **Before adding a module, check whether its twin exists.** If
-you change one of a pair, change both.
+**`packages/shared/` now exists** (ROADMAP C8), and `mesh_protocol.py` / `mesh_auth.py`
+live there as `pi_shared`, with thin re-export shims at the old import paths. There is
+one copy; there is nothing to keep in step. Put a module there when the two services
+disagreeing about it would fail **silently** — mesh divergence is the case that
+matters, because the Scheduler just stops accepting real nodes and nothing raises.
+
+**Four pairs are still duplicated, in `experimental/`** — `quantization.py`,
+`local_boundary.py`, `kv_cache.py`, `transport.py`. They are cut from v1 and are not
+shipped, so converging them buys nothing; `tests/test_source_parity.py` ratchets them
+where they sit. The artifact store's three copies are down to one at
+`packages/node/src/node/storage/`.
+
+**Before adding a module, check whether its twin exists.** If you change one of a
+remaining pair, change both.
 
 This is now enforced, not just requested: `tests/test_source_parity.py` records a
 drift budget per pair and fails if one drifts further, and

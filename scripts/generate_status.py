@@ -483,16 +483,31 @@ def repo_facts_section() -> list[str]:
     # not shipped or not present. tests/test_source_parity.py still ratchets the
     # experimental copies -- measurement continues, it just stopped being reported as
     # if it described the product.
+    # The SHIPPED tree has no duplicated pairs left (ROADMAP C8): mesh_protocol and
+    # mesh_auth moved to packages/shared, and there is one copy. What remains
+    # duplicated lives in experimental/, is not shipped, and is ratcheted by
+    # tests/test_source_parity.py -- reported here so "no drift" cannot be read as
+    # "no duplication anywhere".
     pairs = [
         (
-            "mesh_protocol",
-            "packages/node/src/node/core/mesh_protocol.py",
-            "packages/scheduler/src/scheduler/core/mesh_protocol.py",
+            "quantization (experimental)",
+            "experimental/node/quantization.py",
+            "experimental/scheduler/quantization.py",
         ),
         (
-            "mesh_auth",
-            "packages/node/src/node/core/mesh_auth.py",
-            "packages/scheduler/src/scheduler/core/mesh_auth.py",
+            "kv_cache (experimental)",
+            "experimental/node/kv_cache.py",
+            "experimental/scheduler/kv_cache.py",
+        ),
+        (
+            "local_boundary (experimental)",
+            "experimental/node/local_boundary.py",
+            "experimental/scheduler/local_boundary.py",
+        ),
+        (
+            "transport (experimental)",
+            "experimental/node/transport.py",
+            "experimental/scheduler/transport.py",
         ),
     ]
     drift_rows = []

@@ -16,7 +16,6 @@ Byte equality alone would be satisfied by two files that are identical and both 
 this also round-trips a real request signed by one copy against the other.
 """
 
-import hashlib
 from pathlib import Path
 
 import pytest
@@ -28,30 +27,44 @@ SCHEDULER_COPY = (
 )
 
 NODE_ID = "node-parity"
-TOKEN = "parity-token"
 
 
-def test_both_copies_exist() -> None:
-    assert NODE_COPY.is_file(), f"missing {NODE_COPY}"
-    assert SCHEDULER_COPY.is_file(), f"missing {SCHEDULER_COPY}"
+def test_there_is_exactly_one_copy_of_each_shared_module() -> None:
+    """ROADMAP C8. The byte-identity ratchets are gone because the duplication is.
 
+    These used to assert that two copies matched. Asserting there is only one is a
+    strictly stronger claim and needs no budget: a pair held at zero drift is one
+    forgetful commit away from drifting, and the failure mode was SILENT -- the
+    Scheduler simply stops accepting envelopes from real nodes, with nothing raised.
 
-def test_copies_are_byte_identical() -> None:
-    """If this fails, a change landed on one copy only.
-
-    Fix by making the two files identical again -- not by relaxing this test. A divergence
-    here means the Scheduler and the Node disagree about the wire format, which shows up as
-    every mesh request being rejected for a bad signature.
+    The shims left behind at `node/core/` and `scheduler/core/` re-export
+    `pi_shared` and must stay thin, or the duplication comes back inside them.
     """
-    node_bytes = NODE_COPY.read_bytes()
-    scheduler_bytes = SCHEDULER_COPY.read_bytes()
+    for module in ("mesh_auth", "mesh_protocol"):
+        canonical = REPO_ROOT / "packages/shared/src/pi_shared" / f"{module}.py"
+        assert canonical.exists(), f"{module} is missing from packages/shared"
 
-    assert hashlib.sha256(node_bytes).hexdigest() == hashlib.sha256(scheduler_bytes).hexdigest(), (
-        "mesh_protocol.py has diverged between Node and Scheduler.\n"
-        f"  {NODE_COPY.relative_to(REPO_ROOT)}: {len(node_bytes)} bytes\n"
-        f"  {SCHEDULER_COPY.relative_to(REPO_ROOT)}: {len(scheduler_bytes)} bytes\n"
-        "Copy one over the other; do not edit this test."
-    )
+        for package in ("node", "scheduler"):
+            shim = REPO_ROOT / f"packages/{package}/src/{package}/core/{module}.py"
+            assert shim.exists(), f"{package}'s {module} re-export shim is missing"
+
+            body = [
+                line
+                for line in shim.read_text(encoding="utf-8").splitlines()
+                if line.strip() and not line.strip().startswith("#")
+            ]
+            # Docstring plus two import lines. Anything more is logic living in a
+            # file whose whole purpose is to not have any.
+            assert len(body) <= 12, (
+                f"{package}/core/{module}.py is no longer a thin re-export "
+                f"({len(body)} significant lines) -- the duplication is growing back"
+            )
+            assert "pi_shared" in "\n".join(body), (
+                f"{package}/core/{module}.py no longer re-exports pi_shared"
+            )
+
+
+TOKEN = "parity-token"
 
 
 def test_a_request_signed_by_the_scheduler_verifies_on_the_node() -> None:
@@ -148,22 +161,6 @@ NODE_AUTH_COPY = REPO_ROOT / "packages" / "node" / "src" / "node" / "core" / "me
 SCHEDULER_AUTH_COPY = (
     REPO_ROOT / "packages" / "scheduler" / "src" / "scheduler" / "core" / "mesh_auth.py"
 )
-
-
-def test_both_mesh_auth_copies_exist() -> None:
-    assert NODE_AUTH_COPY.is_file(), f"missing {NODE_AUTH_COPY}"
-    assert SCHEDULER_AUTH_COPY.is_file(), f"missing {SCHEDULER_AUTH_COPY}"
-
-
-def test_mesh_auth_copies_are_byte_identical() -> None:
-    """Budget 0. Fix by making them identical, never by relaxing this."""
-    node_digest = hashlib.sha256(NODE_AUTH_COPY.read_bytes()).hexdigest()
-    scheduler_digest = hashlib.sha256(SCHEDULER_AUTH_COPY.read_bytes()).hexdigest()
-
-    assert node_digest == scheduler_digest, (
-        "mesh_auth.py copies have diverged. A change landed on one side only, and "
-        "the two ends of the mesh no longer agree on what a valid envelope is."
-    )
 
 
 def test_an_envelope_sealed_by_the_node_opens_on_the_scheduler() -> None:

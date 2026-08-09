@@ -16,7 +16,8 @@ One venv, one interpreter, everything:
 git clone https://github.com/Epichlo/Public-Intelligence.git
 cd Public-Intelligence
 python3 -m venv .venv
-.venv/bin/python -m pip install -e "packages/node[dev]" -e "packages/scheduler[dev]"
+.venv/bin/python -m pip install -e packages/shared \
+  -e "packages/node[dev]" -e "packages/scheduler[dev]"
 ./scripts/install-hooks.sh          # pre-push hook that runs the gate
 cd packages/website && npm ci       # only if you are touching the website
 ```

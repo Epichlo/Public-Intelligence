@@ -419,6 +419,7 @@ setup_virtual_environment() {
 
     if [[ "$DRY_RUN" == "true" ]]; then
         log_dry_run "Would create virtual environment at ${VENV_DIR} if missing."
+        log_dry_run "Would run: ${VENV_DIR}/bin/pip install -e ${PROJECT_ROOT}/packages/shared"
         log_dry_run "Would run: ${VENV_DIR}/bin/pip install -e ${PROJECT_ROOT}/packages/node"
         return 0
     fi
@@ -432,6 +433,11 @@ setup_virtual_environment() {
 
     log_info "Installing public-intelligence-node package and dependencies..."
     "${VENV_DIR}/bin/pip" install --upgrade pip setuptools wheel >/dev/null 2>&1 || true
+    # shared FIRST. packages/node declares `public-intelligence-shared` as a
+    # dependency, and that name is not on PyPI -- installing it from the local path
+    # is what makes the node's own install resolve rather than failing on a lookup
+    # for a package that does not exist anywhere. ROADMAP C8.
+    "${VENV_DIR}/bin/pip" install -e "${PROJECT_ROOT}/packages/shared"
     "${VENV_DIR}/bin/pip" install -e "${PROJECT_ROOT}/packages/node"
     log_success "Successfully installed public-intelligence-node executable in virtual environment."
 }

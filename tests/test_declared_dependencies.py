@@ -32,6 +32,8 @@ DISTRIBUTION_NAME = {
     "jwt": "pyjwt",
     "pydantic_settings": "pydantic-settings",
     "yaml": "pyyaml",
+    # ROADMAP C8. Imported as `pi_shared`, distributed as this.
+    "pi_shared": "public-intelligence-shared",
 }
 
 # First-party, so never a declared dependency. `shared` and `src` used to be here

@@ -136,6 +136,7 @@ fi
 # --- types -----------------------------------------------------------------
 # Both packages set strict = true. This was configured and never run, which is
 # how a `logger.warning(msg, error=...)` TypeError shipped on a startup path.
+run_step "mypy (shared)"     "$PY" -m mypy packages/shared/src
 run_step "mypy (node)"       "$PY"  -m mypy packages/node/src
 run_step "mypy (scheduler)"  "$PY" -m mypy packages/scheduler/src
 
