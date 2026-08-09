@@ -16,6 +16,7 @@ Wired into VERIFY.md step 6.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import shutil
 import subprocess
@@ -203,14 +204,52 @@ def ci_signal() -> tuple[str, str]:
     if shutil.which("gh") is None:
         return "UNVERIFIABLE", "gh CLI not installed -- cannot query run history"
 
-    code, out = run(["gh", "run", "list", "--limit", "1", "--json", "conclusion,headSha"])
+    code, out = run(["gh", "run", "list", "--limit", "20", "--json", "conclusion,headSha"])
     if code != 0:
         return "UNVERIFIABLE", f"gh run list failed: {out[:160]}"
     if not out.strip() or out.strip() == "[]":
         return "UNVERIFIABLE", "gh returned no runs for this repo"
-    if '"conclusion":"success"' in out.replace(" ", ""):
-        return "PASS", "latest run concluded success"
-    return "FAIL", f"latest run did not succeed: {out[:160]}"
+
+    try:
+        runs = json.loads(out)
+    except json.JSONDecodeError:
+        return "UNVERIFIABLE", f"could not parse gh output: {out[:160]}"
+
+    # THE COMMIT MATTERS, NOT THE RECENCY.
+    #
+    # This used to report the latest run's conclusion as this repo's CI status,
+    # regardless of which commit that run covered. On 2026-08-09 that printed
+    # "CI: PASS" while HEAD was EIGHT COMMITS ahead of anything CI had ever seen --
+    # a green badge for code that had never been built.
+    #
+    # It is the same failure this file exists to prevent, inside the file itself:
+    # a measurement presented as current that describes a moment that has passed.
+    # CLAUDE.md records a session reporting "CI unverifiable" for a change whose CI
+    # run had already failed; this is that error with the sign flipped.
+    hcode, head = run(["git", "rev-parse", "HEAD"])
+    head = head.strip()
+    if hcode != 0 or not head:
+        return "UNVERIFIABLE", "could not resolve HEAD to compare against run history"
+
+    for entry in runs:
+        if entry.get("headSha") == head:
+            if entry.get("conclusion") == "success":
+                return "PASS", f"run for HEAD ({head[:8]}) concluded success"
+            return "FAIL", f"run for HEAD ({head[:8]}) concluded {entry.get('conclusion')!r}"
+
+    latest = runs[0]
+    behind = "unknown"
+    bcode, count = run(["git", "rev-list", "--count", f"{latest.get('headSha')}..HEAD"])
+    if bcode == 0 and count.strip():
+        behind = count.strip()
+    return (
+        "UNVERIFIED",
+        (
+            f"CI has never run for HEAD ({head[:8]}). The most recent run covers "
+            f"{str(latest.get('headSha'))[:8]}, which is {behind} commit(s) behind. "
+            f"Its conclusion ({latest.get('conclusion')!r}) says nothing about this code."
+        ),
+    )
 
 
 def submodule_signals() -> list[tuple[str, str, str]]:
@@ -405,15 +444,26 @@ def repo_facts_section() -> list[str]:
     lines.append("")
 
     # --- .gitmodules ---
+    # The polarity here was INVERTED and stayed that way after the monorepo
+    # migration. Absent `.gitmodules` used to mean a broken clone; since 2026-08-04
+    # the packages are ordinary directories, and its absence is the CORRECT state --
+    # `.github/workflows/ci.yml`'s fresh-clone job explicitly fails if the file comes
+    # back. STATUS.md was reporting the right configuration as a defect.
     gm = ROOT / ".gitmodules"
     if gm.exists():
         code, out = run(["git", "config", "-f", str(gm), "--get-regexp", r"submodule\..*\.path"])
         mapped = sorted(line.split()[-1] for line in out.splitlines() if line.strip())
-        lines.append(f"- **`.gitmodules`:** present, maps {', '.join(mapped) or '(nothing)'}")
+        lines.append(
+            f"- **`.gitmodules`:** **PRESENT and it should not be** — maps "
+            f"{', '.join(mapped) or '(nothing)'}. The packages are ordinary "
+            f"directories since the monorepo migration; CI's fresh-clone job fails "
+            f"when this file exists."
+        )
     else:
         lines.append(
-            "- **`.gitmodules`:** **MISSING** — a fresh clone gets empty submodule "
-            "directories and `pip install -e ./Node` fails immediately."
+            "- **`.gitmodules`:** absent, which is correct — `packages/` are ordinary "
+            "directories since the 2026-08-04 monorepo migration, and CI's "
+            "fresh-clone job asserts this file does not come back."
         )
 
     # --- interpreters and pinned tools ---

@@ -4,17 +4,17 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-07 07:02 UTC
+**Generated:** 2026-08-09 13:41 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 311 | 0 | 0 | 11.72s |
-| Node | PASS | 280 | 0 | 1 | 3.33s |
-| Root E2E | PASS | 73 | 0 | 0 | 22.13s |
-| **Total** | **PASSING** | **664** | **0** | **1** | |
+| Scheduler | PASS | 346 | 0 | 0 | 11.45s |
+| Node | PASS | 259 | 0 | 1 | 5.77s |
+| Root E2E | PASS | 123 | 0 | 0 | 22.69s |
+| **Total** | **PASSING** | **728** | **0** | **1** | |
 
 Reproduce:
 
@@ -26,26 +26,25 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `40bd291` docs: put the product decisions in front of the code (audit 2026-08-07)
-- **Author / date:** Atharv Deshpande — 2026-08-07 12:20:59 +0530
+- **Last commit:** `9689ae2` aggregate what the logs already knew, and check the compose file nobody can run (roadmap 4.2 partial, 1.5 still partial)
+- **Author / date:** Atharv Deshpande — 2026-08-09 18:50:05 +0530
 - **Branch:** main
-- **Total commits:** 208
+- **Total commits:** 218
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence.git (fetch)
-- **Working tree:** 6 uncommitted change(s)
+- **Working tree:** 5 uncommitted change(s)
 
 ```
-  M ROADMAP.md
-   M packages/scheduler/src/scheduler/api/openai.py
-  D  packages/scheduler/tests/test_openai_split_inference.py
-   M packages/scheduler/tests/test_openai_split_inference_challenger.py
-  ?? packages/scheduler/tests/test_split_inference_refused.py
-  ?? specs/stop-returning-fabricated-completions.md
+  M .gitignore
+   M STATUS.md
+   M VERIFY.md
+   M scripts/generate_status.py
+  ?? tests/test_status_reports_ci_honestly.py
 ```
 
 ## CI
 
-- **Status:** PASS
-- **Reason:** latest run concluded success
+- **Status:** UNVERIFIED
+- **Reason:** CI has never run for HEAD (9689ae25). The most recent run covers e7b06346, which is 9 commit(s) behind. Its conclusion ('success') says nothing about this code.
 
 
 ## Repo facts
@@ -56,7 +55,7 @@ _Measured, not asserted. Re-run to refresh._
 | --- | --- | --- | --- |
 | root | `https://github.com/Epichlo/Public-Intelligence.git` | main | origin/main |
 
-- **`.gitmodules`:** **MISSING** — a fresh clone gets empty submodule directories and `pip install -e ./Node` fails immediately.
+- **`.gitmodules`:** absent, which is correct — `packages/` are ordinary directories since the 2026-08-04 monorepo migration, and CI's fresh-clone job asserts this file does not come back.
 - **root venv interpreter:** Python 3.14.6
 - **ruff:** ruff 0.16.1 (pinned in both pyproject `[dev]` extras)
 
@@ -65,11 +64,8 @@ Ratcheted by `tests/test_source_parity.py` — these may not increase.
 
 | Pair | Drift |
 | --- | --- |
-| quantization | 0 |
-| kv_cache | 2 |
-| local_boundary | 2 |
-| autonomous_orchestrator | 14 |
-| transport | 22 |
+| mesh_protocol | 0 |
+| mesh_auth | 0 |
 
 ---
 

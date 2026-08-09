@@ -5,6 +5,13 @@
 *.pem
 *.key
 
+# The whole directory, not just the extensions above. `scripts/mint_token.py`
+# writes the JWT signing key here, and `SCHEDULER_JWT_PRIVATE_KEY_PATH` points at
+# it. The .pem rule already covered those two files -- but a secret written here
+# with no extension (a bare token, a JSON credential) would NOT have been ignored,
+# and this repo is worked on with `git add -A`. Found during the VERIFY step 5 pass.
+.secrets/
+
 # Python
 __pycache__/
 *.py[cod]
