@@ -148,3 +148,59 @@ def test_the_dry_run_prints_what_the_real_run_writes() -> None:
         "install.sh --dry-run reports values the real run does not write. The "
         f"dry-run is a gate step, so a lie here is a lie CI repeats: {mismatches}"
     )
+
+
+def test_the_installer_gives_the_dashboard_the_node_credential(tmp_path: Path) -> None:
+    """ROADMAP 3.5. The two files must hold the SAME token, written by one process.
+
+    The dashboard talks to the node's control API, which fails closed, so it needs
+    the credential the node was just given. Until now that meant reading
+    `packages/node/.env` by hand and pasting the value into a second file --
+    "acceptable for you, not for a contributor".
+
+    Run for real against a throwaway copy rather than asserted from the source,
+    because ROADMAP 2.8 established that every step of `--dry-run` returns early
+    after printing what it *would* do: the dry-run cannot prove two files agree.
+    """
+    import shutil
+    import subprocess
+
+    work = tmp_path / "repo"
+    shutil.copytree(
+        REPO_ROOT,
+        work,
+        ignore=shutil.ignore_patterns(
+            ".git", ".venv", "node_modules", "__pycache__", "*.db", ".next"
+        ),
+        # Copy symlinks as symlinks. install.sh creates a runner symlink at the repo
+        # root, and a dangling one -- which is what a stale link from a previous
+        # layout looks like -- makes a dereferencing copy raise.
+        symlinks=True,
+    )
+
+    result = subprocess.run(
+        ["bash", str(work / "install.sh"), "--skip-venv", "--skip-docker", "--force"],
+        capture_output=True,
+        text=True,
+        timeout=300,
+        cwd=work,
+    )
+    assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-3000:]
+
+    node_env = (work / "packages/node/.env").read_text(encoding="utf-8")
+    web_env = (work / "packages/website/.env.local").read_text(encoding="utf-8")
+
+    def value(text: str, key: str) -> str:
+        for line in text.splitlines():
+            if line.startswith(f"{key}="):
+                return line.split("=", 1)[1].strip()
+        raise AssertionError(f"{key} not found in:\n{text}")
+
+    node_token = value(node_env, "NODE_NETWORK_AUTH_TOKEN")
+    web_token = value(web_env, "NODE_AUTH_TOKEN")
+
+    assert node_token, "the node was given no credential at all"
+    assert web_token == node_token, (
+        "the dashboard's NODE_AUTH_TOKEN does not match the node's "
+        "NODE_NETWORK_AUTH_TOKEN, so the dashboard will get 401 from the node"
+    )

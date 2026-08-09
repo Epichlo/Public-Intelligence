@@ -42,11 +42,19 @@ PATH_PATTERNS = [
     re.compile(r"[\"'](packages[/\\][A-Za-z0-9_./\\-]+)[\"']"),
 ]
 
-# A `Node`/`Scheduler`/`website` path SEGMENT: preceded by a separator, followed by
-# one, or by a quote or end of line. Matches `${PROJECT_ROOT}/Node/.env` and
-# `"${PROJECT_ROOT}/Node"` alike. Plain `[/\\]Node` without the lookahead would hit
-# `packages/node` on case-insensitive filesystems and any prose mentioning a path.
-STALE_LAYOUT = re.compile(r"[/\\](Node|Scheduler|website)(?=[/\\\"'\s]|$)")
+# A `Node`/`Scheduler`/`website` path SEGMENT at the REPO ROOT: preceded by a
+# separator, followed by one, or by a quote or end of line. Matches
+# `${PROJECT_ROOT}/Node/.env` and `"${PROJECT_ROOT}/Node"` alike. Plain `[/\\]Node`
+# without the lookahead would hit `packages/node` on case-insensitive filesystems
+# and any prose mentioning a path.
+#
+# The negative lookbehind for `packages` is what stops this flagging the CORRECT
+# post-monorepo paths. It was missing, and `packages/website` -- which is where the
+# website now lives -- was reported as pre-monorepo layout the first time the
+# installer referenced it (ROADMAP 3.5). The check had been passing only because
+# install.sh had never mentioned the website at all, so a ratchet against the old
+# layout would have blocked the new one.
+STALE_LAYOUT = re.compile(r"(?<!packages)[/\\](Node|Scheduler|website)(?=[/\\\"'\s]|$)")
 
 # Paths the installer CREATES rather than reads. Their absence is the normal state
 # of a fresh checkout, so requiring them to exist would be wrong.

@@ -37,6 +37,16 @@ node_modules/
 .coverage
 htmlcov/
 
+# The runner symlink is created by install.sh (setup_executables), so it is a build
+# artifact and was never a source file. It had been TRACKED and DANGLING since the
+# 2026-08-04 monorepo migration, pointing at `Node/.venv/bin/public-intelligence-node`
+# -- a path that migration deleted. Every fresh clone therefore got a broken link,
+# and it broke naive recursive copies of the tree. Found during the ROADMAP 3.5 work.
+public-intelligence-node
+
+# Website environment written by install.sh with the node's credential (ROADMAP 3.5).
+packages/website/.env.local
+
 # Default Scheduler state file (ROADMAP C3 turned persistence on by default).
 scheduler-state.db
 scheduler-state.db-*

@@ -120,8 +120,20 @@ export function PlaygroundControls({
           placeholder="Bearer eyJhbGciOiJSUzI1Ni..."
           className="w-full rounded-lg border border-border/60 bg-zinc-950 px-3 py-2 text-xs text-foreground placeholder:text-zinc-600 focus:border-emerald-500 focus:outline-none disabled:opacity-50 font-mono"
         />
+        {/*
+          This said "Optional custom RS256 Bearer JWT token header for multi-tenant
+          gateway authorization" (ROADMAP 3.5). It is not optional -- the gateway has
+          required a JWT since long before this, and since ROADMAP C4 an unconfigured
+          Scheduler refuses everyone rather than falling back to a default key. Calling
+          it optional sent a new user to a 401 with no idea where to get a credential,
+          which is exactly the gap 3.5 names.
+        */}
         <p className="text-[10px] text-muted-foreground">
-          Optional custom RS256 Bearer JWT token header for multi-tenant gateway authorization.
+          <strong>Required.</strong> The gateway rejects unauthenticated requests. Ask
+          the operator of your Scheduler for one — they issue it with{" "}
+          <code className="font-mono">POST /v1/credentials</code>, or from a shell with{" "}
+          <code className="font-mono">scripts/mint_token.py</code>. It is scoped to a
+          tenant and expires; 30 days by default.
         </p>
       </div>
     </div>
