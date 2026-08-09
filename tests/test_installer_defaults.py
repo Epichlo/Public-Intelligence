@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import ast
 import re
+import sys
 from pathlib import Path
 
 import pytest
@@ -150,6 +151,16 @@ def test_the_dry_run_prints_what_the_real_run_writes() -> None:
     )
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "POSIX installer; Windows hosts use install.ps1. `bash` on a Windows runner "
+        "resolves to WSL, which has no distribution installed -- so this ran the "
+        "wrong interpreter and failed with 'Windows Subsystem for Linux has no "
+        "installed distributions'. scripts/verify.sh already skips install.sh on "
+        "Windows for the same reason; running it from pytest bypassed that guard."
+    ),
+)
 def test_the_installer_gives_the_dashboard_the_node_credential(tmp_path: Path) -> None:
     """ROADMAP 3.5. The two files must hold the SAME token, written by one process.
 

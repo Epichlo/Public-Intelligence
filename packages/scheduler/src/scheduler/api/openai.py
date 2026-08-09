@@ -6,7 +6,6 @@ from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Annotated, Any
 
 if TYPE_CHECKING:
-    from scheduler.models.node import Node
     from scheduler.registry.node_registry import NodeRegistry
 
 import structlog
@@ -24,6 +23,17 @@ from scheduler.core.node_dispatch import (
     infer_once,
     open_inference_stream,
 )
+
+# RUNTIME import, not TYPE_CHECKING. This module has no `from __future__ import
+# annotations`, so every annotation is evaluated when the function is DEFINED --
+# on Python 3.11 and 3.12. Python 3.14 defers them (PEP 649) and tolerates a
+# TYPE_CHECKING-only name, which is why the local gate was green and all six
+# 3.11/3.12 CI legs failed with `NameError: name 'Node' is not defined`.
+#
+# CLAUDE.md already warns that FastAPI resolves annotations at runtime; this is the
+# same hazard reaching a plain helper. Pinned by
+# tests/test_runtime_annotations_resolve.py, which catches it on any interpreter.
+from scheduler.models.node import Node
 from scheduler.models.openai import (
     ChatCompletionChunk,
     ChatCompletionChunkChoice,

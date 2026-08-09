@@ -18,15 +18,13 @@ See `specs/node-reachability.md`.
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any
+from collections.abc import AsyncIterator
+from typing import Any
 
 import httpx
 import structlog
 
 from scheduler.core.mesh_inference_client import MeshNodeError, MeshUnavailableError
-
-if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
 
 logger = structlog.stdlib.get_logger()
 

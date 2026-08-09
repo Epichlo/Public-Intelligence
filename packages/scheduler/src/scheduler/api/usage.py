@@ -16,16 +16,19 @@ surface (ROADMAP 2.6). Usage records name tenants and nodes, so this is not publ
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request
 
 from scheduler.api.auth import verify_auth_token
 
-if TYPE_CHECKING:
-    from scheduler.core.canary import CanaryVerifier
-    from scheduler.core.credit_ledger import CreditLedger
-    from scheduler.core.metering import UsageMeter
+# Runtime imports, not TYPE_CHECKING. FastAPI and pydantic resolve annotations at
+# runtime, and on Python 3.11/3.12 they are evaluated at definition time regardless.
+# A TYPE_CHECKING-only name here is a NameError waiting for the right interpreter --
+# see tests/test_runtime_annotations_resolve.py and the CI failure of 2026-08-09.
+from scheduler.core.canary import CanaryVerifier
+from scheduler.core.credit_ledger import CreditLedger
+from scheduler.core.metering import UsageMeter
 
 router = APIRouter(tags=["usage"], dependencies=[Depends(verify_auth_token)])
 
@@ -42,8 +45,8 @@ def get_ledger(request: Request) -> CreditLedger:
     return ledger
 
 
-MeterDep = Annotated["UsageMeter", Depends(get_meter)]
-LedgerDep = Annotated["CreditLedger", Depends(get_ledger)]
+MeterDep = Annotated[UsageMeter, Depends(get_meter)]
+LedgerDep = Annotated[CreditLedger, Depends(get_ledger)]
 
 
 @router.get("/usage")
