@@ -1,6 +1,19 @@
 # ROADMAP — v1
 
-Status: **Stage 0-2 built. Stage D answered on 2026-08-07 (D7 excepted); C, 3 and 4 in progress.**
+Status: **Stages 0–3 and C complete. Stage D answered and implemented (D7 open by
+design). Stage 4 done except alerting. 1.5 is the one thing left that matters.**
+
+What is NOT done, and why, so this line does not have to be re-derived:
+
+- **1.5 — no node on a separate machine has served a request.** Docker was
+  unavailable in the environment that last worked here, so `docker-compose.test.yml`
+  has still never run. [D8](docs/decisions/D8-the-wedge.md) makes NAT traversal the
+  differentiator, so this is the load-bearing claim of the product and it is
+  unearned.
+- **D7 — a second pair of eyes.** Open on purpose; it cannot be closed by the party
+  asking. See [`docs/PREMISES.md`](docs/PREMISES.md).
+- **4.2 alerting.** Aggregation shipped; something outside the process has to poll
+  and decide, and a half-built alerter would be worse than none.
 
 This supersedes `docs/ROADMAP.md`, which describes phases 4.6–4.9 as "Realized"
 based on code that does not do what the labels claim. Where the two disagree,

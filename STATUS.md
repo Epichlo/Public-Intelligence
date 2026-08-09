@@ -4,16 +4,16 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-09 15:48 UTC
+**Generated:** 2026-08-09 15:51 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 389 | 0 | 0 | 8.15s |
-| Node | PASS | 259 | 0 | 1 | 5.80s |
-| Root E2E | PASS | 126 | 0 | 0 | 22.82s |
+| Scheduler | PASS | 389 | 0 | 0 | 8.58s |
+| Node | PASS | 259 | 0 | 1 | 5.93s |
+| Root E2E | PASS | 126 | 0 | 0 | 23.00s |
 | **Total** | **PASSING** | **774** | **0** | **1** | |
 
 Reproduce:
@@ -26,24 +26,21 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `84262af` shut down the unauthenticated Raft plane (roadmap C2, completing it)
-- **Author / date:** Atharv Deshpande — 2026-08-09 21:08:46 +0530
+- **Last commit:** `9e562d8` test the SSE parser, and stop showing malformed frames as model output (roadmap 4.1)
+- **Author / date:** Atharv Deshpande — 2026-08-09 21:18:08 +0530
 - **Branch:** main
-- **Total commits:** 226
+- **Total commits:** 227
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence.git (fetch)
-- **Working tree:** 4 uncommitted change(s)
+- **Working tree:** 1 uncommitted change(s)
 
 ```
-  M ROADMAP.md
-   M packages/website/src/app/playground/page.tsx
-  ?? packages/website/src/lib/sse.test.ts
-  ?? packages/website/src/lib/sse.ts
+  M VERIFY.md
 ```
 
 ## CI
 
 - **Status:** UNVERIFIED
-- **Reason:** CI has never run for HEAD (84262af7). The most recent run covers e7b06346, which is 17 commit(s) behind. Its conclusion ('success') says nothing about this code.
+- **Reason:** CI has never run for HEAD (9e562d8e). The most recent run covers e7b06346, which is 18 commit(s) behind. Its conclusion ('success') says nothing about this code.
 
 
 ## Repo facts

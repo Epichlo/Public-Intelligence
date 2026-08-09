@@ -219,87 +219,77 @@ Fill this in. It is the whole point of the file.
 
 ```
 Date:        2026-08-09
-Change:      Stage D answered (D1-D8), N3, Stage C (C1-C10), 2.10, Stage 3
-             (3.1-3.4, 3.6), Stage 4 (4.1-4.3), and 1.5 re-examined.
-             Nine commits, 2de17ba..HEAD.
-Specs:       specs/stage-d-decisions-and-licence.md
-             specs/the-gate-sees-the-website.md
-             (later commits are documented in their own messages and in
-             docs/decisions/; several changed shape mid-flight and the commit
-             message is the honest record of why)
+Change:      Stage D (D1-D8) answered AND both mechanisms implemented; N3; Stage C
+             (C1-C10) complete; 2.10; Stage 3 (3.1-3.6) complete; Stage 4 (4.1-4.3);
+             1.5 re-examined. Seventeen commits, 2de17ba..HEAD.
 
   1. Test suite ......... PASS
   2. Spec match ......... PASS
   3. Secrets & bypasses . PASS
   4. Duplication ........ PASS
-  5. Nothing tracked .... PASS (one gap found and fixed during this step)
-  6. STATUS regenerated . PASS (one generator bug found and fixed during this step)
+  5. Nothing tracked .... PASS
+  6. STATUS regenerated . PASS
 
-VERDICT: PASS -- with CI explicitly UNVERIFIED. See below.
+VERDICT: PASS -- with CI and ROADMAP 1.5 explicitly UNVERIFIED. See below.
 
 Evidence, all from this session:
 
-1. `./scripts/verify.sh` -> `PASS 22 checks`, commit 9689ae25, clean tree, zero
-   skipped. Suites: Node 259 passed / 1 skipped, Scheduler 346 passed, root E2E
-   119 passed, website 16 passed across 3 files. The gate was 15 checks at the
-   start of this session.
+1. `./scripts/verify.sh` -> `PASS 25 checks`, zero skipped. Node 259 passed /
+   1 skipped, Scheduler 389, root E2E 126, website 36 across 5 files. Plus 43
+   quarantined tests in `experimental/`, COLLECTED by the gate and run on demand.
+   The gate was 15 checks and 664 tests at the start of this session.
 
-   Net test movement is deliberate and not all upward: the Scheduler suite lost
-   ~15 tests to `experimental/` (C2) and gained more than that back. The SHIPPING
-   count going down while coverage went up was the point of C2.
+2. Two specs written before their code; later commits document themselves. The
+   spec that was WRONG -- `the-gate-sees-the-website.md`, which excluded `tsc` on
+   the argument that eslint suffices -- is corrected in place rather than quietly,
+   after `tsc` found 4 errors eslint passed clean.
 
-   Every new behavioural test in these commits was observed failing first. Where
-   red-green was not possible -- pinning behaviour that was already correct (4.3)
-   -- the tests were mutation-checked instead, and one mutation that "survived"
-   turned out to have been applied to a dead branch, which is recorded rather
-   than quietly re-run.
+3. Greps above. The known-issues table is EMPTY. Remaining hits are env var names
+   in `AliasChoices`, four website test fixtures, and the private-key PATH
+   settings -- the key is referenced by path, never by value, precisely so a PEM
+   never lands in an environment variable or a log aggregator.
 
-2. Two specs were written before their code. Later commits document themselves;
-   `docs/decisions/` carries the eight product decisions and what each one costs.
-   Nothing was built that a decision record listed as out of scope -- D2 cut the
-   payout machinery and no payout code exists.
+4. Zero duplicated pairs in shipping code: `mesh_protocol` and `mesh_auth` moved
+   to `packages/shared` and the byte-identity ratchets were replaced by the
+   stronger claim that only one copy exists. Four pairs remain in `experimental/`
+   and ARE now ratcheted -- they were not before, because `EXPERIMENTAL_PAIRS`
+   had been declared and parametrized over nothing while a commit message of mine
+   said otherwise.
 
-3. Greps run above. **The known-issues table is EMPTY for the first time**: the
-   hardcoded fallback RSA public key at `ingress.py:16` is gone (C4). Remaining
-   hits are env var *names* in `AliasChoices`, four website test fixtures, and
-   three prose uses of the word "bypass" in comments explaining bypass
-   PREVENTION. No `allow_origins=["*"]` outside a comment.
+5. `.env`, `.secrets/`, `packages/website/.env.local`, `scheduler-state.db` and
+   the runner symlink are all ignored. No tracked file contains a private key.
 
-4. `tests/test_source_parity.py` + `test_mesh_protocol_parity.py` -> 26 passed.
-   Two shipping pairs remain, both at drift budget 0. Five pairs moved to
-   `experimental/` and are still ratcheted there.
+6. `STATUS.md` regenerated. CI reports UNVERIFIED against HEAD, correctly.
 
-5. **A real gap, found by this step and fixed in it.** `.secrets/` holds the JWT
-   signing key. `*.pem` covered the two files present, but the DIRECTORY was not
-   ignored -- so a secret written there with no extension (a bare token, a JSON
-   credential) would have been committed by the `git add -A` this repo is worked
-   on with. `.secrets/` is now ignored outright. Nothing secret was ever tracked;
-   verified with a content grep, not only a filename grep.
+What this session FOUND, none of it caught by the 664 tests that were green when
+it started -- and this is the part worth reading:
 
-6. **A second real gap, found by this step and fixed in it.**
-   `scripts/generate_status.py` reported the LATEST workflow run's conclusion as
-   this repo's CI status, ignoring which commit it covered. It printed
-   **"CI: PASS"** while HEAD was nine commits ahead of anything CI had ever
-   built. That is this file's own failure mode occurring inside the file's own
-   generator. It now matches the run to HEAD and answers UNVERIFIED otherwise,
-   with the distance stated. Pinned by `tests/test_status_reports_ci_honestly.py`,
-   which fails if the old logic returns.
+- **Every streamed completion was republished to the Zenoh mesh in plaintext**, on
+  a wildcard-subscribable key, with no subscriber in the codebase.
+- **Streaming deadlocked after 4 chunks** waiting for an ACK nothing ever sends.
+- **Every node opened an unauthenticated wildcard subscriber** that read and
+  unlinked host shared memory by attacker-supplied name.
+- **The Scheduler ran an unauthenticated Raft plane on every boot** whose handler
+  could EVICT ANY HOST and INJECT NEW ONES -- and an injected node is dispatched
+  to, so it receives other people's prompts. This is the most serious of the four,
+  and I had described it in my own words as "inert in practice" before reading it.
+- `/v1/batch` fabricated its results; the playground showed malformed SSE frames
+  to the user as model output; the chat proxy sent the fleet secret as a Bearer
+  JWT; `STATUS.md` printed "CI: PASS" for code CI had never built.
 
 UNVERIFIED, stated rather than glossed:
 
 - **CI.** It has never run for any commit in this session. `origin/main` is at
-  `e7b0634`; HEAD is nine commits ahead and unpushed. The latest green run
-  describes code that predates all of this work. STATUS.md now says so.
-- **ROADMAP 1.5, and it is the important one.** Docker is unavailable in this
-  environment, so `docker-compose.test.yml` still has never run. **No node on a
+  `e7b0634`; HEAD is seventeen commits ahead and unpushed.
+- **ROADMAP 1.5, still the important one.** Docker is unavailable in this
+  environment, so `docker-compose.test.yml` has still never run. **No node on a
   genuinely separate machine has ever served a request.** D8 makes NAT traversal
-  the project's differentiator and `docs/PREMISES.md` P2 flags it as the weakest
-  premise, so the single load-bearing claim remains unsubstantiated. Two further
-  faults in that file were found statically and fixed; running it is what would
-  earn the claim.
-- **D7.** Deliberately open. Every judgement in these nine commits was made by
-  one party, including the judgement that they are sound.
-- **The invite codes (D4) and the canary (D1)** are decided and NOT implemented.
-  `docs/OPERATING.md` and `docs/ACCEPTABLE_USE.md` say so where an operator will
-  read it, rather than describing the intended system.
+  the differentiator and `docs/PREMISES.md` P2 flags it as the weakest premise, so
+  the single load-bearing claim of the product remains unsubstantiated.
+- **D7.** Deliberately open. Every judgement in these seventeen commits was made
+  by one party, including the judgement that they are sound. This session found
+  four security holes and two false statements *in my own work from earlier in the
+  same session*, which is the argument for D7 rather than against it.
+- **Canary limits.** It proves a node runs *a* model, not *the* model it
+  advertised. Recorded as `docs/PREMISES.md` P4, not solved.
 ```
