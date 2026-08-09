@@ -78,7 +78,7 @@ export default function ArchitecturePage() {
             </h2>
             <p className="text-muted-foreground max-w-3xl">
               Four-layer architecture vision: application APIs, orchestration coordination,
-              decentralized transport, and local hardware runtime. The coordination layer is the
+              peer-to-peer transport, and local hardware runtime. The coordination layer is the
               active development focus.
             </p>
           </header>

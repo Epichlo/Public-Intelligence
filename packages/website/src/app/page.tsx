@@ -16,13 +16,14 @@ export default function Home() {
               Public Intelligence
             </h1>
             <p className="max-w-2xl text-xl leading-normal text-muted-foreground sm:text-2xl font-light">
-              Building a globally distributed, community-owned AI infrastructure.
+              An OpenAI-compatible control plane for hardware you already own.
             </p>
           </div>
           <p className="max-w-2xl text-base leading-relaxed text-muted-foreground/80">
-            Public Intelligence is an open engineering initiative researching
-            and building decentralized AI infrastructure that enables
-            communities to collectively host frontier open-source AI models.
+            Point it at machines you or people you trust control, and it gives you one
+            authenticated endpoint that routes across all of them &mdash; including the
+            ones behind NAT, with no port forwarding and no VPN. It is not a
+            marketplace and there is no network to join: you run both halves.
           </p>
           
           <div className="flex flex-wrap items-center gap-4 pt-2">
@@ -79,7 +80,7 @@ export default function Home() {
               System Values
             </h2>
             <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
-              Architectural decisions are guided by long-term durability and decentralized accessibility.
+              Architectural decisions are guided by long-term durability and by keeping data on hardware the operator controls.
             </p>
           </div>
           
@@ -172,16 +173,21 @@ export default function Home() {
           </div>
           <div className="grid gap-6 md:grid-cols-3 pt-2">
             <div className="md:col-span-1">
-              <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground/60 mb-1">Current Milestone</p>
+              <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground/60 mb-1">Status</p>
               <h2 id="milestone-heading" className="text-lg font-semibold text-foreground">
-                Phase 4 — WAN Networking & Pipeline Parallelism
+                Pre-alpha &mdash; not usable by anyone yet
               </h2>
             </div>
             <div className="md:col-span-2">
               <p className="text-sm leading-relaxed text-muted-foreground">
-                The core distributed infrastructure is realized. The next focus
-                is a visual control plane that makes node onboarding, network
-                health, and inference execution observable.
+                This block previously read &ldquo;the core distributed infrastructure
+                is realized&rdquo;. It was not, and saying so is the specific failure
+                this project keeps auditing itself for. What is true: a node registers,
+                heartbeats over an authenticated mesh, and serves an OpenAI-compatible
+                request. What is not: <strong>no node on a genuinely separate machine
+                has ever served one</strong> &mdash; the transport is tested against a
+                real router, in one process on loopback. Split inference, sharding,
+                FP8 and speculative decoding are cut from v1 and answer 501.
               </p>
             </div>
           </div>

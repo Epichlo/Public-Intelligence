@@ -51,7 +51,7 @@ export default function PlaygroundPage() {
   const [topP, setTopP] = useState(0.9);
   const [maxTokens, setMaxTokens] = useState(1024);
   const [systemPrompt, setSystemPrompt] = useState(
-    "You are a helpful, respectful, and honest assistant participating in the Public Intelligence decentralized AI network."
+    "You are a helpful, respectful, and honest assistant."
   );
   const [jwtToken, setJwtToken] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);

@@ -50,7 +50,7 @@ export default function VisionPage() {
                 expensive and operationally complex.
               </p>
               <p className="text-sm leading-relaxed text-muted-foreground sm:text-base">
-                Public Intelligence is researching and building a distributed alternative that lowers the barrier to hosting powerful systems, keeping computational access open and decentralized.
+                Public Intelligence is researching and building a distributed alternative that lowers the barrier to hosting powerful systems, keeping computational access open and keeping data on hardware its operator controls. The coordinator is a single instance and a single point of trust, so the word &ldquo;decentralized&rdquo; is deliberately not used for it.
               </p>
             </div>
           </div>

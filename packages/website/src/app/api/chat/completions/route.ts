@@ -15,17 +15,29 @@ export async function POST(request: Request) {
     // Never synthesise credentials. A request that arrives without an
     // Authorization header is unauthenticated and must be rejected here rather
     // than forwarded under a fallback identity.
+    //
+    // The fallback used to read SCHEDULER_NETWORK_AUTH_TOKEN, which is the FLEET
+    // SHARED SECRET -- the value of the `X-Network-Auth-Token` header used by node
+    // registration, the read surface and credential issuance. The gateway wants an
+    // RS256 JWT here, so that branch could never have authenticated anything, and
+    // while failing it put a fleet-wide credential into an Authorization header on
+    // every unauthenticated request. Two credentials with two trust levels had been
+    // given one name. SCHEDULER_PLAYGROUND_JWT is what it was always describing.
+    //
+    // The caller's own header wins, so a deployment with a fallback configured does
+    // not silently run every request as the operator -- which would collapse
+    // per-tenant metering and rate limiting onto one identity.
     if (authHeader) {
       headers["Authorization"] = authHeader;
-    } else if (process.env.SCHEDULER_NETWORK_AUTH_TOKEN) {
-      // Server-side operator credential: must itself be a valid RS256 JWT.
-      headers["Authorization"] = `Bearer ${process.env.SCHEDULER_NETWORK_AUTH_TOKEN}`;
+    } else if (process.env.SCHEDULER_PLAYGROUND_JWT) {
+      headers["Authorization"] = `Bearer ${process.env.SCHEDULER_PLAYGROUND_JWT}`;
     } else {
       return NextResponse.json(
         {
           detail:
             "Missing Authorization header. Supply a Bearer RS256 JWT in the " +
-            "playground's token field, or configure SCHEDULER_NETWORK_AUTH_TOKEN.",
+            "playground's token field, or configure SCHEDULER_PLAYGROUND_JWT with " +
+            "a token from POST /v1/credentials.",
         },
         { status: 401 }
       );
