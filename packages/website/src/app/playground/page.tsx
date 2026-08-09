@@ -8,11 +8,7 @@ import { ErrorRateLimitBanner, PlaygroundError } from "@/components/playground/e
 import { PlaygroundControls } from "@/components/playground/playground-controls";
 import { ChatMessages, ChatMessage } from "@/components/playground/chat-messages";
 import { PromptInput } from "@/components/playground/prompt-input";
-
-function estimateTokens(text: string): number {
-  if (!text) return 0;
-  return Math.max(1, Math.floor(text.length / 4));
-}
+import { estimateTokens, parseSseLine, splitSseBuffer } from "@/lib/sse";
 
 /**
  * Error bodies arrive from three shapes and were previously read through `any`.
@@ -197,62 +193,45 @@ export default function PlaygroundPage() {
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
+        // Parsing lives in @/lib/sse so it can be tested (ROADMAP 4.1). It used to
+        // be inline here, tangled with the state setters below, and this is the one
+        // part of the website where being subtly wrong is invisible: a dropped
+        // delta reads as the model not saying that word.
+        const { lines, rest } = splitSseBuffer(buffer);
+        buffer = rest;
 
         for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed || !trimmed.startsWith("data: ")) continue;
+          const { delta: deltaContent, done: streamDone } = parseSseLine(line);
+          if (streamDone) break;
+          if (!deltaContent) continue;
 
-          const dataStr = trimmed.slice(6).trim();
-          if (dataStr === "[DONE]") break;
-
-          try {
-            const parsed = JSON.parse(dataStr);
-            const deltaContent =
-              parsed.choices?.[0]?.delta?.content ||
-              parsed.choices?.[0]?.text ||
-              "";
-
-            if (deltaContent) {
-              if (firstTokenTime === null) {
-                firstTokenTime = Date.now();
-                const ttft = firstTokenTime - startTime;
-                setMetrics((prev) => ({ ...prev, ttftMs: ttft }));
-              }
-
-              accumulatedText += deltaContent;
-              completionTokenCount += estimateTokens(deltaContent);
-
-              const now = Date.now();
-              const elapsedSec = Math.max(0.01, (now - startTime) / 1000);
-              const speed = completionTokenCount / elapsedSec;
-
-              setMetrics((prev) => ({
-                ...prev,
-                elapsedTimeSec: elapsedSec,
-                tokensPerSec: speed,
-                completionTokens: completionTokenCount,
-              }));
-
-              // Update assistant message text in real time
-              setMessages((prevMsgs) =>
-                prevMsgs.map((m) =>
-                  m.id === assistantId ? { ...m, content: accumulatedText } : m
-                )
-              );
-            }
-          } catch {
-            // Raw text delta fallback
-            if (dataStr && dataStr !== "[DONE]") {
-              accumulatedText += dataStr;
-              setMessages((prevMsgs) =>
-                prevMsgs.map((m) =>
-                  m.id === assistantId ? { ...m, content: accumulatedText } : m
-                )
-              );
-            }
+          if (firstTokenTime === null) {
+            firstTokenTime = Date.now();
+            setMetrics((prev) => ({ ...prev, ttftMs: firstTokenTime! - startTime }));
           }
+
+          accumulatedText += deltaContent;
+          completionTokenCount += estimateTokens(deltaContent);
+
+          const elapsedSec = Math.max(0.01, (Date.now() - startTime) / 1000);
+          setMetrics((prev) => ({
+            ...prev,
+            elapsedTimeSec: elapsedSec,
+            tokensPerSec: completionTokenCount / elapsedSec,
+            completionTokens: completionTokenCount,
+          }));
+
+          // Update assistant message text in real time
+          setMessages((prevMsgs) =>
+            prevMsgs.map((m) =>
+              m.id === assistantId ? { ...m, content: accumulatedText } : m
+            )
+          );
+          // The `catch` that used to sit here appended the RAW LINE to the
+          // transcript whenever JSON.parse threw -- so a malformed frame showed
+          // `{"choices":[{"delta":` to the user as if the model had said it.
+          // `parseSseLine` skips a bad frame: the fragment is lost, the
+          // conversation is not.
         }
       }
 

@@ -4,16 +4,16 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-09 15:38 UTC
+**Generated:** 2026-08-09 15:48 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 389 | 0 | 0 | 8.53s |
-| Node | PASS | 259 | 0 | 1 | 6.74s |
-| Root E2E | PASS | 126 | 0 | 0 | 22.89s |
+| Scheduler | PASS | 389 | 0 | 0 | 8.15s |
+| Node | PASS | 259 | 0 | 1 | 5.80s |
+| Root E2E | PASS | 126 | 0 | 0 | 22.82s |
 | **Total** | **PASSING** | **774** | **0** | **1** | |
 
 Reproduce:
@@ -26,30 +26,24 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `a9e673a` one copy of the mesh protocol, not two (roadmap C8)
-- **Author / date:** Atharv Deshpande — 2026-08-09 20:48:57 +0530
+- **Last commit:** `84262af` shut down the unauthenticated Raft plane (roadmap C2, completing it)
+- **Author / date:** Atharv Deshpande — 2026-08-09 21:08:46 +0530
 - **Branch:** main
-- **Total commits:** 225
+- **Total commits:** 226
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence.git (fetch)
-- **Working tree:** 11 uncommitted change(s)
+- **Working tree:** 4 uncommitted change(s)
 
 ```
   M ROADMAP.md
-   M experimental/README.md
-  RM packages/scheduler/src/scheduler/core/consensus.py -> experimental/scheduler/consensus.py
-  RM packages/scheduler/tests/test_consensus.py -> experimental/scheduler/tests/test_consensus.py
-   M packages/scheduler/src/scheduler/api/ingress.py
-   M packages/scheduler/src/scheduler/api/openai.py
-   M packages/scheduler/src/scheduler/core/zenoh_router.py
-   M packages/scheduler/src/scheduler/registry/node_registry.py
-   M packages/scheduler/tests/test_eviction_reporting.py
-   M packages/scheduler/tests/test_ingress_gateway.py
+   M packages/website/src/app/playground/page.tsx
+  ?? packages/website/src/lib/sse.test.ts
+  ?? packages/website/src/lib/sse.ts
 ```
 
 ## CI
 
 - **Status:** UNVERIFIED
-- **Reason:** CI has never run for HEAD (a9e673a2). The most recent run covers e7b06346, which is 16 commit(s) behind. Its conclusion ('success') says nothing about this code.
+- **Reason:** CI has never run for HEAD (84262af7). The most recent run covers e7b06346, which is 17 commit(s) behind. Its conclusion ('success') says nothing about this code.
 
 
 ## Repo facts
