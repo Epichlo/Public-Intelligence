@@ -122,10 +122,13 @@ Stated so you do not discover it by needing it:
   survives a process restart and is wiped by every redeploy — durability that looks
   like it works. Put it on real disk and back it up yourself.
 - **No high availability.** One process.
-- **No verification that a node ran the model it claims.** [D1](decisions/D1-execution-integrity.md)
-  chose admission control over detection for v1, and the canary mechanism it describes
-  is **not implemented**. A trusted host that starts returning garbage will not be
-  caught by anything here.
+- **No proof that a node ran the model it *claims*.** Canary verification
+  ([D1](decisions/D1-execution-integrity.md)) is implemented and catches a node that
+  is not running a model at all — a fixed string, an echo, an empty completion — and
+  quarantines it from dispatch after three consecutive failures, visible at
+  `GET /nodes/canary`. **It cannot tell a 1B model from the 70B one a node
+  advertised**, because both answer the canaries correctly. That gap is real and is
+  recorded as `docs/PREMISES.md` P4, not solved.
 - **No support.** See [`../SECURITY.md`](../SECURITY.md) for the one channel that
   exists, and its honest response times.
 

@@ -1,7 +1,7 @@
 # D1 — How does a requester know a node actually ran the model?
 
 **Date:** 2026-08-07
-**Status:** Decided
+**Status:** Decided; both mechanisms **implemented** 2026-08-09
 **Question owner:** the whole architecture — matchmaking, the ledger, and the pitch
 all change with the answer.
 
@@ -55,8 +55,16 @@ not have).
 
 - `POST /nodes` requires an invite code — [D4](D4-sybil-resistance.md), implemented
   in `scheduler/core/invites.py`.
-- Canary verification lives in `scheduler/core/canary.py`, with quarantine state on
-  the node record and exclusion applied in the matchmaker.
+- Canary verification lives in `scheduler/core/canary.py`, with exclusion applied in
+  the matchmaker **before every capability filter** — a node returning `token_556`
+  satisfies every VRAM and model requirement perfectly, so checking capability first
+  would let it through on the strength of the lie.
+- Quarantine state is deliberately **not persisted**: it is an observation about a
+  process that died with the Scheduler, and 2.1's rule is to persist facts rather
+  than observations. Restoring one would keep a node out of the fleet on evidence
+  about a run that has ended.
+- A quarantined node stays registered and keeps heartbeating; it is skipped, not
+  removed, so an operator can see it and see why at `GET /nodes/canary`.
 - **Nothing may claim verified execution that has not been verified.** The ledger
   records which node served each request (ROADMAP 3.2) so that a later dispute has
   evidence; it does not assert the answer was correct.

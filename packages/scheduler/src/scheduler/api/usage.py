@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, Request
 from scheduler.api.auth import verify_auth_token
 
 if TYPE_CHECKING:
+    from scheduler.core.canary import CanaryVerifier
     from scheduler.core.credit_ledger import CreditLedger
     from scheduler.core.metering import UsageMeter
 
@@ -85,6 +86,34 @@ async def node_usage(node_id: str, meter: MeterDep, ledger: LedgerDep) -> dict[s
         "totals_window_size": meter.MAX_RECENT,
         "totals": totals,
         "recent": [r.model_dump() for r in meter.recent(node_id=node_id, limit=25)],
+    }
+
+
+@router.get("/nodes/canary")
+async def canary_status(request: Request) -> dict[str, Any]:
+    """Which nodes have failed canary checks, and on what evidence (decision D1).
+
+    A quarantined node stays registered and keeps heartbeating -- it is skipped by
+    the matchmaker, not removed from the registry -- so this is where an operator
+    finds out that a host in their own fleet is returning text no model produced.
+    Without it the only signal is a log line nobody is watching for.
+
+    Read the numbers with D1's limits in mind: passing proves a node is running *a*
+    model, not *the* model it advertised. See `docs/PREMISES.md` P4.
+    """
+    verifier: CanaryVerifier | None = getattr(request.app.state, "canary", None)
+    if verifier is None:
+        return {"enabled": False, "nodes": {}}
+
+    summary = verifier.summary()
+    return {
+        "enabled": True,
+        "quarantined": sorted(k for k, v in summary.items() if v["quarantined"]),
+        "nodes": summary,
+        "proves": (
+            "that a node is running a model at all -- not that it ran the model it "
+            "advertised. See docs/decisions/D1-execution-integrity.md."
+        ),
     }
 
 

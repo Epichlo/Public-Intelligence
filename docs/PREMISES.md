@@ -60,7 +60,9 @@ real node in this fleet, **because there is no fleet**.
 
 **Supports:** [D1](decisions/D1-execution-integrity.md), [D4](decisions/D4-sybil-resistance.md).
 **Evidence:** with no redemption (P3), the incentive to return garbage collapses to
-"waste someone's time". Canary verification catches a host not running a model at all.
+"waste someone's time". Canary verification (implemented 2026-08-09,
+`scheduler/core/canary.py`) catches a host not running a model at all -- a fixed
+string, an echo, an empty completion -- and quarantines it from dispatch.
 **Falsifier:** a trusted host degrades silently — a wrong model, a broken quantisation,
 a stale weight file — and canaries at `temperature=0` do not catch it because the
 canary is answerable by a smaller model too. **This is a known partial gap**, not a

@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from scheduler.core.canary import CanaryVerifier
 from scheduler.core.strategy import SchedulingStrategy
 from scheduler.models.node import Node
 from scheduler.registry.node_registry import NodeRegistry
@@ -10,13 +11,17 @@ from scheduler.registry.node_registry import NodeRegistry
 class CapabilityMatchmaker(SchedulingStrategy):
     """Concrete scheduling strategy based on hardware capability and dynamic telemetry load."""
 
-    def __init__(self, registry: NodeRegistry) -> None:
+    def __init__(self, registry: NodeRegistry, canary: CanaryVerifier | None = None) -> None:
         """Initialize the matchmaker with a registry reference for telemetry lookup.
 
         Args:
             registry: Reference to the active NodeRegistry instance.
+            canary: Optional canary verifier (decision D1). When supplied,
+                quarantined nodes are excluded from dispatch. `None` keeps the
+                pre-D1 behaviour, which is what every existing test constructs.
         """
         self.registry = registry
+        self.canary = canary
 
     def filter_nodes(self, task_requirements: dict[str, Any], live_nodes: list[Node]) -> list[Node]:
         """Filter live nodes based on hard VRAM, model, and backend requirements.
@@ -30,6 +35,21 @@ class CapabilityMatchmaker(SchedulingStrategy):
         """
         eligible = []
         for node in live_nodes:
+            # 0. Canary quarantine (decision D1).
+            #
+            # FIRST, and before any capability check, because this is the only
+            # filter that is about whether the node is telling the truth rather
+            # than about what it can do. A node returning `token_556` satisfies
+            # every requirement below it perfectly.
+            #
+            # Exclusion here rather than at registration is deliberate: a
+            # quarantined node stays registered, keeps heartbeating and remains
+            # visible in `GET /nodes`, so an operator can see it is being skipped
+            # and why. Silently dropping it from the registry would look like the
+            # node had gone away.
+            if self.canary is not None and self.canary.is_quarantined(node.node_id):
+                continue
+
             # 1. Model Support Match
             model_req = task_requirements.get("model_name") or task_requirements.get("model")
             if model_req and model_req not in node.available_models:

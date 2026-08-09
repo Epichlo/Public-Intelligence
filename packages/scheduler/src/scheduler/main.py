@@ -20,6 +20,7 @@ from scheduler.api.openai import router as openai_router
 from scheduler.api.schedule import router as schedule_router
 from scheduler.api.telemetry import router as telemetry_router
 from scheduler.api.usage import router as usage_router
+from scheduler.core.canary import CanaryVerifier
 from scheduler.core.config import get_settings
 from scheduler.core.credit_ledger import CreditLedger
 from scheduler.core.invites import InviteRegistry
@@ -198,6 +199,11 @@ def create_app(
     # Decision D4. Admission is enforced only once a code exists; see
     # InviteRegistry.enforcing for why the fallback is open rather than closed.
     app.state.invites = InviteRegistry(store=store)
+    # Decision D1. Deliberately NOT persisted: a quarantine verdict is an
+    # observation about a process that died with the Scheduler, and 2.1's rule
+    # is to persist facts rather than observations. Restoring one would keep a
+    # node out of the fleet on evidence about a run that has ended.
+    app.state.canary = CanaryVerifier()
     app.state.rate_limiter = rate_limiter or TokenBucketLimiter()
     app.state.jwt_public_key = jwt_public_key
     app.state.jwt_public_key_secondary = jwt_public_key_secondary
@@ -205,7 +211,7 @@ def create_app(
     from scheduler.core.engine import SchedulingEngine
     from scheduler.core.matchmaker import CapabilityMatchmaker
 
-    strategy = CapabilityMatchmaker(app.state.registry)
+    strategy = CapabilityMatchmaker(app.state.registry, canary=app.state.canary)
     app.state.scheduling_engine = SchedulingEngine(app.state.registry, strategy)
 
     app.include_router(health_router)

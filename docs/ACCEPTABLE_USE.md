@@ -70,10 +70,10 @@ Issue short-lived tokens (`POST /v1/credentials` caps at
 `SCHEDULER_CREDENTIAL_MAX_TTL_HOURS`, default 30 days) rather than relying on
 revocation that does not exist.
 
-There is also **no way to detect a host returning garbage.** [D1](decisions/D1-execution-integrity.md)
-chose admission control over detection for v1, and its canary mechanism is not built.
-Enforcement against a misbehaving *host* is therefore reactive and depends on someone
-noticing.
+Canary verification ([D1](decisions/D1-execution-integrity.md)) detects a host that is
+not running a model at all and quarantines it from dispatch automatically; check
+`GET /nodes/canary`. It does **not** detect a host serving a smaller model than it
+advertised, so enforcement against that still depends on someone noticing.
 
 ## Reporting
 
