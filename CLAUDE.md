@@ -115,12 +115,20 @@ never assigns `self.inference_backend` anything but `EchoBackend`. `LocalBoundar
 uses a 155-word vocabulary and seeded random matrices. The working inference path is
 the non-split one that proxies to Ollama. Don't describe split inference as working.
 
-**There are known auth bypasses and hardcoded credentials in the live code** —
-listed with file:line in `VERIFY.md` step 3. They are pre-existing and unfixed. Do
-not report them as clean, and do not let them mask a new one.
+**`VERIFY.md` step 3's known-issues table is EMPTY, and the greps still return
+hits.** Both halves matter. The remaining hits are benign and enumerated there —
+`AliasChoices` declaring env var *names*, website test fixtures, and the private-key
+*path* settings. Do not report the greps as clean; check each hit against that list,
+because a new one hides among them. This paragraph previously said there were known
+bypasses "listed with file:line", which stopped being true when the last of them was
+fixed on 2026-08-07.
 
-**No persistence anywhere.** `NodeRegistry` and `CreditLedger` are in-memory dicts.
-Restart loses all state.
+**The Scheduler persists, and this paragraph used to deny it.** `SchedulerStore` with
+a SQLite implementation backs the registry, the credit ledger, the usage meter and
+invites, and ROADMAP C3 turned it on by default. What is *deliberately* not persisted
+is observations — heartbeats, telemetry, mesh reachability — because restoring them
+would make dispatch prefer a Zenoh session that died with the process. Persist facts,
+not observations.
 
 ## Reporting rules
 

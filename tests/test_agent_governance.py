@@ -253,6 +253,8 @@ def test_reading_the_verified_zone_is_allowed(command: str) -> None:
         "rm -f .verify-receipt.json && git check-ignore -q zones/verified/x.json",
         "echo hi > /tmp/note && cat zones/verified/latest.verified.json",
         "mkdir -p zones/claimed && ls zones/verified/",
+        "cat zones/verified/latest.verified.json 2>/dev/null",
+        "grep -c step zones/verified/latest.verified.json 2>/dev/null | head -1",
     ],
 )
 def test_a_write_elsewhere_does_not_condemn_a_read_of_the_zone(command: str) -> None:

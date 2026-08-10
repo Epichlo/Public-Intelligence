@@ -4,21 +4,21 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-10 13:21 UTC
+**Generated:** 2026-08-10 13:42 UTC
 **Test status:** FAILING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | FAIL | 383 | 6 | 0 | 12.68s |
-| Node | FAIL | 258 | 1 | 1 | 4.50s |
-| Root E2E | PASS | 183 | 0 | 0 | 28.52s |
-| **Total** | **FAILING** | **824** | **7** | **1** | |
+| Scheduler | FAIL | 383 | 6 | 0 | 11.68s |
+| Node | FAIL | 258 | 1 | 1 | 4.53s |
+| Root E2E | PASS | 200 | 0 | 0 | 29.98s |
+| **Total** | **FAILING** | **841** | **7** | **1** | |
 
 Notes:
-- **Scheduler**: 6 failed, 383 passed, 1 warning in 12.68s
-- **Node**: 1 failed, 258 passed, 1 skipped, 1 warning in 4.50s
+- **Scheduler**: 6 failed, 383 passed, 1 warning in 11.68s
+- **Node**: 1 failed, 258 passed, 1 skipped, 1 warning in 4.53s
 
 Reproduce:
 
@@ -30,24 +30,21 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `fbd6e88` fix the CI failure the local gate structurally could not catch
-- **Author / date:** Atharv Deshpande — 2026-08-09 22:33:28 +0530
+- **Last commit:** `4da52fc` make the agent structurally unable to certify itself (architecture pillars 1-3)
+- **Author / date:** Claude — 2026-08-10 13:28:13 +0000
 - **Branch:** claude/autonomous-architecture-decision-sqtiuy
-- **Total commits:** 92
+- **Total commits:** 93
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence (fetch)
-- **Working tree:** 15 uncommitted change(s)
+- **Working tree:** 7 uncommitted change(s)
 
 ```
-  M .github/workflows/ci.yml
-   M .gitignore
+  M .claude/hooks/block-protected-paths.py
    M CLAUDE.md
-   M scripts/verify.sh
-   M specs/the-gate-sees-the-website.md
-   M tests/test_source_parity.py
-  ?? .claude/agents/
-  ?? .claude/hooks/
-  ?? .claude/rules/
-  ?? .claude/settings.json
+   M ROADMAP.md
+   M tests/test_agent_governance.py
+  ?? scripts/watch_scheduler.py
+  ?? specs/something-outside-the-process-notices.md
+  ?? tests/test_alerting.py
 ```
 
 ## CI
@@ -64,7 +61,7 @@ _Measured, not asserted. Re-run to refresh._
 
 | Repo | Remote | Branch | Tracking |
 | --- | --- | --- | --- |
-| root | `https://github.com/Epichlo/Public-Intelligence` | claude/autonomous-architecture-decision-sqtiuy | **none** |
+| root | `https://github.com/Epichlo/Public-Intelligence` | claude/autonomous-architecture-decision-sqtiuy | origin/claude/autonomous-architecture-decision-sqtiuy |
 
 - **`.gitmodules`:** absent, which is correct — `packages/` are ordinary directories since the 2026-08-04 monorepo migration, and CI's fresh-clone job asserts this file does not come back.
 - **root venv interpreter:** Python 3.11.15

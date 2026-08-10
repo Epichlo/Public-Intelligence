@@ -85,7 +85,10 @@ def _writes_to_verified_zone(command: str) -> bool:
     for segment in re.split(r"\||;|&&|\n", normalised):
         if "zones/verified" not in segment:
             continue
-        if ">" in segment:
+        # Check where a redirect actually POINTS, not merely that one exists.
+        # `cat zones/verified/x 2>/dev/null` redirects stderr to /dev/null and writes
+        # nothing; the first version read the bare `>` as a write and denied a read.
+        if any("zones/verified" in target for target in re.findall(r">>?\s*([^\s;|&]+)", segment)):
             return True
         tokens = segment.strip().split()
         if tokens and tokens[0] not in READ_ONLY:
