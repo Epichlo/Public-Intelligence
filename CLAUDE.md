@@ -48,8 +48,28 @@ exactly one definition of "does this pass". Adding a check means editing
 `tests/test_source_parity.py` fails if CI grows its own check list again.
 
 Run `./scripts/install-hooks.sh` once per clone to get a pre-push hook that runs
-the gate before any push. It writes `.verify-receipt.json`; if that file's commit
-is not `HEAD`, whatever it says is about code that no longer exists.
+the gate before any push. The gate writes `zones/verified/latest.verified.json`
+recording what ran and against which tree; if its `commit` or `state_fingerprint`
+is not the tree in front of you, whatever it says is about code that no longer
+exists.
+
+## The governance layer enforces the rules above
+
+`.claude/` turns the three rules in Workflow from requests into OS-level facts:
+
+- `.claude/rules/` — path-scoped rules loaded as project memory.
+  **`.claude/rules/verification.md` is the load-bearing one:** the agent that wrote
+  code may not decide it is verified.
+- `.claude/hooks/require-proof-stop.py` — a Stop hook that refuses to end a session
+  that changed code without a matching passing bundle. It recomputes the fingerprint
+  rather than believing the file.
+- `.claude/hooks/block-protected-paths.py` — denies writes to secrets and to
+  `zones/verified/`, including via shell redirection.
+- `.claude/agents/` — `implementer` writes code and may not declare it verified;
+  `independent-verifier` runs in its own worktree with `Write`/`Edit` denied.
+
+`zones/claimed/` is what an agent believes. `zones/verified/` is what the gate
+measured. See `zones/README.md` and `docs/CLAUDE_CODE_ARCHITECTURE.md`.
 
 `tests/` at the repo root holds the cross-package tests — the node/scheduler wire
 contract and the duplicate-module ratchets. They assert relationships *between* the

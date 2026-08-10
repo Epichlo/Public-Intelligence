@@ -4,17 +4,21 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-09 15:51 UTC
-**Test status:** PASSING
+**Generated:** 2026-08-10 13:21 UTC
+**Test status:** FAILING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 389 | 0 | 0 | 8.58s |
-| Node | PASS | 259 | 0 | 1 | 5.93s |
-| Root E2E | PASS | 126 | 0 | 0 | 23.00s |
-| **Total** | **PASSING** | **774** | **0** | **1** | |
+| Scheduler | FAIL | 383 | 6 | 0 | 12.68s |
+| Node | FAIL | 258 | 1 | 1 | 4.50s |
+| Root E2E | PASS | 183 | 0 | 0 | 28.52s |
+| **Total** | **FAILING** | **824** | **7** | **1** | |
+
+Notes:
+- **Scheduler**: 6 failed, 383 passed, 1 warning in 12.68s
+- **Node**: 1 failed, 258 passed, 1 skipped, 1 warning in 4.50s
 
 Reproduce:
 
@@ -26,21 +30,32 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `9e562d8` test the SSE parser, and stop showing malformed frames as model output (roadmap 4.1)
-- **Author / date:** Atharv Deshpande — 2026-08-09 21:18:08 +0530
-- **Branch:** main
-- **Total commits:** 227
-- **Remote:** origin	https://github.com/Epichlo/Public-Intelligence.git (fetch)
-- **Working tree:** 1 uncommitted change(s)
+- **Last commit:** `fbd6e88` fix the CI failure the local gate structurally could not catch
+- **Author / date:** Atharv Deshpande — 2026-08-09 22:33:28 +0530
+- **Branch:** claude/autonomous-architecture-decision-sqtiuy
+- **Total commits:** 92
+- **Remote:** origin	https://github.com/Epichlo/Public-Intelligence (fetch)
+- **Working tree:** 15 uncommitted change(s)
 
 ```
-  M VERIFY.md
+  M .github/workflows/ci.yml
+   M .gitignore
+   M CLAUDE.md
+   M scripts/verify.sh
+   M specs/the-gate-sees-the-website.md
+   M tests/test_source_parity.py
+  ?? .claude/agents/
+  ?? .claude/hooks/
+  ?? .claude/rules/
+  ?? .claude/settings.json
 ```
 
 ## CI
 
-- **Status:** UNVERIFIED
-- **Reason:** CI has never run for HEAD (9e562d8e). The most recent run covers e7b06346, which is 18 commit(s) behind. Its conclusion ('success') says nothing about this code.
+- **Status:** UNVERIFIABLE
+- **Reason:** gh CLI not installed -- cannot query run history
+
+> CI status is reported as UNVERIFIABLE rather than assumed. Do not record a CI pass anywhere until this reads PASS.
 
 
 ## Repo facts
@@ -49,10 +64,10 @@ _Measured, not asserted. Re-run to refresh._
 
 | Repo | Remote | Branch | Tracking |
 | --- | --- | --- | --- |
-| root | `https://github.com/Epichlo/Public-Intelligence.git` | main | origin/main |
+| root | `https://github.com/Epichlo/Public-Intelligence` | claude/autonomous-architecture-decision-sqtiuy | **none** |
 
 - **`.gitmodules`:** absent, which is correct — `packages/` are ordinary directories since the 2026-08-04 monorepo migration, and CI's fresh-clone job asserts this file does not come back.
-- **root venv interpreter:** Python 3.14.6
+- **root venv interpreter:** Python 3.11.15
 - **ruff:** ruff 0.16.1 (pinned in both pyproject `[dev]` extras)
 
 **Duplicated modules** (differing significant lines; imports and comments excluded).

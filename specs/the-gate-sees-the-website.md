@@ -69,9 +69,14 @@ nothing". Both halves needed correcting:
 shellcheck step. A Python contributor should not need a Node toolchain to run the
 gate; CI installs it and therefore always runs them. The cost is stated rather than
 hidden: skipped steps are now tracked in a `SKIPPED` array, printed in the summary as
-`N check(s) DID NOT RUN`, recorded in `.verify-receipt.json`, and followed by the
+`N check(s) DID NOT RUN`, recorded in the receipt, and followed by the
 sentence *"this PASS is weaker than a CI PASS"*. Previously shellcheck's skip was
 printed once and then invisible in the verdict.
+
+> **Corrected 2026-08-10.** This paragraph named `.verify-receipt.json`, which no
+> longer exists: `specs/the-agent-cannot-certify-itself.md` replaced it with
+> `zones/verified/latest.verified.json`, one artifact rather than two. The `skipped`
+> list still travels with the verdict, which is the part this decision was about.
 
 **CI installs Node dependencies in its existing install step, not as a check.**
 `tests/test_source_parity.py` forbids `ruff|mypy|bandit|pytest` in `ci.yml` — CI must

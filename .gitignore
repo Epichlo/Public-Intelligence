@@ -33,9 +33,19 @@ node_modules/
 
 # Logs
 *.log
-.verify-receipt.json
 .coverage
 htmlcov/
+
+# Agent governance zones. Per-commit machine output, ignored for the same reason
+# `.verify-receipt.json` was -- which is the artifact these replace, so that name is
+# deliberately gone rather than left behind for a future session to read as current.
+# `zones/README.md` is the tracked part: it documents the contract, not a verdict.
+zones/claimed/
+zones/verified/
+
+# Personal Claude Code overrides. `.claude/settings.json` IS committed -- it carries
+# the permission deny list and the hooks, which are project policy rather than taste.
+.claude/settings.local.json
 
 # The runner symlink is created by install.sh (setup_executables), so it is a build
 # artifact and was never a source file. It had been TRACKED and DANGLING since the

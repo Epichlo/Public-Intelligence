@@ -270,6 +270,7 @@ LINT_EXEMPT_DIRS = {
     ".venv": "third-party code",
     ".git": "not source",
     "docs": "prose; any Python here is illustrative",
+    ".agents": "scratch output from a superseded agent harness; not imported by anything",
 }
 
 
@@ -283,13 +284,20 @@ def test_every_python_directory_is_linted_by_the_gate() -> None:
     This is the ratchet for the pattern above. It does not check that the linting
     is *correct* -- only that the directory is not sitting outside "the only
     definition of does this pass" while appearing to be inside it.
+
+    **Dotted directories used to be skipped outright**, which made this ratchet blind
+    to the one place it mattered most: `.claude/hooks/` holds the code that decides
+    whether a task may complete, and it would have been unlinted and unnoticed -- the
+    same silent-partial failure a fourth time, in the enforcement layer itself. The
+    walk now covers them, and the capture pattern allows a leading dot so `./.claude`
+    counts as linted.
     """
     script = _verify_script()
-    linted = set(re.findall(r"-m ruff (?:check|format)[^\n]*?\./(\w+)", script))
+    linted = set(re.findall(r"-m ruff (?:check|format)[^\n]*?\./([\w.]+)", script))
 
     unlinted = []
     for child in sorted(REPO_ROOT.iterdir()):
-        if not child.is_dir() or child.name.startswith("."):
+        if not child.is_dir():
             continue
         if child.name in LINT_EXEMPT_DIRS:
             continue

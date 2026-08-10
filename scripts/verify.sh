@@ -12,9 +12,12 @@
 #   ./scripts/verify.sh              # everything
 #   ./scripts/verify.sh --quick      # skip the root E2E suite and the installer
 #
-# On success it writes .verify-receipt.json recording the commit that was
-# verified. A "this is done" claim is checkable against that file: if the receipt's
-# SHA is not HEAD, the claim is about code that no longer exists.
+# It writes zones/verified/latest.verified.json recording what ran and against which
+# tree. A "this is done" claim is checkable against that file, and
+# .claude/hooks/require-proof-stop.py checks it automatically: if the bundle's commit
+# or fingerprint is not the tree in front of you, the claim is about code that no
+# longer exists. This replaces the old .verify-receipt.json -- one artifact, not two,
+# because a stale second copy is precisely what a later session reads as current.
 
 set -uo pipefail
 
@@ -99,6 +102,16 @@ run_step "ruff format (tests)" "$PY" -m ruff format --check ./tests --config "$R
 # file, the defect found was the check's ABSENCE, not a check's failure.
 run_step "ruff check (scripts)"  "$PY" -m ruff check ./scripts --config "$RUFF_CFG"
 run_step "ruff format (scripts)" "$PY" -m ruff format --check ./scripts --config "$RUFF_CFG"
+
+# .claude/hooks/ decides whether a task is allowed to COMPLETE. It is the last code
+# in this repo that should be exempt from the gate, and it was very nearly exempt by
+# accident: the ratchet in tests/test_source_parity.py skipped any directory whose
+# name starts with a dot, so these files would have sat outside "the only definition
+# of does this pass" while appearing to be inside it. That is the same silent-partial
+# failure as tests/ (2.9), the website (C6) and scripts/ (C7) -- four for four now.
+# The ratchet was widened to walk dotted directories in the same change.
+run_step "ruff check (hooks)"  "$PY" -m ruff check ./.claude --config "$RUFF_CFG"
+run_step "ruff format (hooks)" "$PY" -m ruff format --check ./.claude --config "$RUFF_CFG"
 
 # experimental/ is LINTED but its tests are NOT RUN. ROADMAP C2 asked to exclude it
 # from the gate; excluding it entirely would let ~2,000 lines rot, and linting is
@@ -239,17 +252,34 @@ if [ "$QUICK" -eq 0 ] && [ "$IS_WINDOWS" -eq 0 ] && [ -f ./install.sh ]; then
     run_step "install.sh (real, throwaway copy)" bash ./scripts/verify_install.sh
 fi
 
-# --- receipt ---------------------------------------------------------------
+# --- evidence bundle -------------------------------------------------------
+# Written here and NOWHERE ELSE, which is the whole basis of the split described in
+# zones/README.md: producing this file requires having run the checks above, so it is
+# a by-product of measuring rather than a statement anyone can compose. An agent
+# cannot forge it -- .claude/hooks/block-protected-paths.py denies the write
+# (including via shell redirection) and .claude/settings.json carries a `deny` rule,
+# which no later scope or permission mode can override.
+#
+# `state_fingerprint` is what makes the evidence EXPIRE, and it is the fix for a real
+# hole in the blueprint this came from: that Stop hook took the newest bundle by mtime
+# and trusted it, so running the gate, editing one line, and stopping left a PASS
+# standing about code that no longer existed. .claude/hooks/require-proof-stop.py
+# recomputes the fingerprint instead of believing this file.
+#
+# zones/ is gitignored, so writing this does not perturb the fingerprint it records.
 SHA="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
 DIRTY="false"
 [ -n "$(git status --porcelain 2>/dev/null)" ] && DIRTY="true"
+FINGERPRINT="$("$PY" "$REPO_ROOT/scripts/state_fingerprint.py" 2>/dev/null || echo unknown)"
 VERDICT="pass"
 [ ${#FAILED[@]} -gt 0 ] && VERDICT="FAIL"
 
+mkdir -p "$REPO_ROOT/zones/verified"
 {
     printf '{\n'
     printf '  "verdict": "%s",\n' "$VERDICT"
     printf '  "commit": "%s",\n' "$SHA"
+    printf '  "state_fingerprint": "%s",\n' "$FINGERPRINT"
     printf '  "working_tree_dirty": %s,\n' "$DIRTY"
     printf '  "generated_at": "%s",\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf '  "quick_mode": %s,\n' "$([ "$QUICK" -eq 1 ] && echo true || echo false)"
@@ -269,7 +299,7 @@ VERDICT="pass"
         local_first=0
     done
     printf '\n  ]\n}\n'
-} > "$REPO_ROOT/.verify-receipt.json"
+} > "$REPO_ROOT/zones/verified/latest.verified.json"
 
 # --- summary ---------------------------------------------------------------
 printf '\n\033[1m────────────────────────────────────────\033[0m\n'

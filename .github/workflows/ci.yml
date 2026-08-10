@@ -80,12 +80,16 @@ jobs:
         shell: bash
         run: ./scripts/verify.sh
 
-      - name: Upload verify receipt
+      # CI is the third trust tier: it runs the same gate on a clean checkout, where
+      # nothing was skipped. Publishing the bundle is not a CHECK -- the check list
+      # still lives entirely in scripts/verify.sh, which is what
+      # tests/test_source_parity.py::test_ci_delegates_to_the_verify_script pins.
+      - name: Upload evidence bundle
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: verify-receipt-${{ matrix.os }}-py${{ matrix.python-version }}
-          path: .verify-receipt.json
+          name: evidence-bundle-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: zones/verified/latest.verified.json
           if-no-files-found: ignore
 
   fresh-clone:
