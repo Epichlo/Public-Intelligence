@@ -4,21 +4,17 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-10 20:05 UTC
-**Test status:** FAILING
+**Generated:** 2026-08-11 01:06 UTC
+**Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | FAIL | 383 | 6 | 0 | 9.58s |
-| Node | FAIL | 258 | 1 | 1 | 3.00s |
-| Root E2E | PASS | 202 | 0 | 0 | 27.17s |
-| **Total** | **FAILING** | **843** | **7** | **1** | |
-
-Notes:
-- **Scheduler**: 6 failed, 383 passed, 1 warning in 9.58s
-- **Node**: 1 failed, 258 passed, 1 skipped, 1 warning in 3.00s
+| Scheduler | PASS | 389 | 0 | 0 | 12.42s |
+| Node | PASS | 259 | 0 | 1 | 3.40s |
+| Root E2E | PASS | 202 | 0 | 0 | 27.03s |
+| **Total** | **PASSING** | **850** | **0** | **1** | |
 
 Reproduce:
 
@@ -30,16 +26,17 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `cef720a` something outside the process notices (roadmap 4.2, completing it)
-- **Author / date:** Claude — 2026-08-10 19:47:14 +0000
+- **Last commit:** `a8c49a6` parse the command, do not split it on punctuation
+- **Author / date:** Claude — 2026-08-11 01:01:14 +0000
 - **Branch:** claude/autonomous-architecture-decision-sqtiuy
-- **Total commits:** 94
+- **Total commits:** 95
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence (fetch)
-- **Working tree:** 2 uncommitted change(s)
+- **Working tree:** 3 uncommitted change(s)
 
 ```
-  M .claude/hooks/block-protected-paths.py
-   M tests/test_agent_governance.py
+  M packages/node/tests/test_runtime.py
+   M packages/scheduler/tests/test_zenoh_integration.py
+   M packages/scheduler/tests/test_zenoh_mesh_reachability.py
 ```
 
 ## CI

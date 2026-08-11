@@ -44,6 +44,10 @@ def _router(registry: NodeRegistry) -> ZenohRouter:
     """A router with no Zenoh session -- these tests drive its callbacks directly."""
     config = zenoh.Config()
     config.insert_json5("scouting/multicast/enabled", "false")
+    # Explicit IPv4 loopback listener -- see test_zenoh_integration.py. The zenoh
+    # default is `tcp/[::]:0`, an IPv6 wildcard, which is EAFNOSUPPORT on an
+    # IPv4-only host. Assertions unchanged; the environment assumption is now stated.
+    config.insert_json5("listen/endpoints", '["tcp/127.0.0.1:0"]')
     return ZenohRouter(registry, config=config)
 
 

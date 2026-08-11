@@ -212,6 +212,10 @@ async def test_telemetry_emitter_lifecycle() -> None:
     # Start mock Zenoh session for loopback testing
     config = zenoh.Config()
     config.insert_json5("scouting/multicast/enabled", "false")
+    # Explicit IPv4 loopback listener -- see test_zenoh_integration.py. The zenoh
+    # default is `tcp/[::]:0`, an IPv6 wildcard, which is EAFNOSUPPORT on an
+    # IPv4-only host. Assertions unchanged; the environment assumption is now stated.
+    config.insert_json5("listen/endpoints", '["tcp/127.0.0.1:0"]')
 
     with zenoh.open(config) as session:
         emitter = TelemetryEmitter(

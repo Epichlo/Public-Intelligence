@@ -59,6 +59,12 @@ async def test_zenoh_heartbeat_routing(test_node: Node, node_id: str) -> None:
     pub_config = zenoh.Config()
     pub_config.insert_json5("connect/endpoints", '["tcp/127.0.0.1:7449"]')
     pub_config.insert_json5("scouting/multicast/enabled", "false")
+    # An explicit IPv4 loopback listener. Without it zenoh falls back to its
+    # default `tcp/[::]:0`, which is an IPv6 wildcard -- so every one of these
+    # tests dies with EAFNOSUPPORT on an IPv4-only host (containers, CI images,
+    # networks with IPv6 disabled). The assertions are untouched; this only makes
+    # an environment assumption that was implicit into one that is stated.
+    pub_config.insert_json5("listen/endpoints", '["tcp/127.0.0.1:0"]')
 
     try:
         # 3. Create a local Zenoh session and publisher to publish mock heartbeat
@@ -141,6 +147,12 @@ async def test_zenoh_liveliness_deathrattle(test_node: Node, node_id: str) -> No
     pub_config = zenoh.Config()
     pub_config.insert_json5("connect/endpoints", '["tcp/127.0.0.1:7450"]')
     pub_config.insert_json5("scouting/multicast/enabled", "false")
+    # An explicit IPv4 loopback listener. Without it zenoh falls back to its
+    # default `tcp/[::]:0`, which is an IPv6 wildcard -- so every one of these
+    # tests dies with EAFNOSUPPORT on an IPv4-only host (containers, CI images,
+    # networks with IPv6 disabled). The assertions are untouched; this only makes
+    # an environment assumption that was implicit into one that is stated.
+    pub_config.insert_json5("listen/endpoints", '["tcp/127.0.0.1:0"]')
 
     try:
         # 3. Create a local Zenoh session and declare a liveliness token
@@ -190,6 +202,12 @@ async def test_zenoh_telemetry_mapping(test_node: Node, node_id: str) -> None:
     pub_config = zenoh.Config()
     pub_config.insert_json5("connect/endpoints", '["tcp/127.0.0.1:7451"]')
     pub_config.insert_json5("scouting/multicast/enabled", "false")
+    # An explicit IPv4 loopback listener. Without it zenoh falls back to its
+    # default `tcp/[::]:0`, which is an IPv6 wildcard -- so every one of these
+    # tests dies with EAFNOSUPPORT on an IPv4-only host (containers, CI images,
+    # networks with IPv6 disabled). The assertions are untouched; this only makes
+    # an environment assumption that was implicit into one that is stated.
+    pub_config.insert_json5("listen/endpoints", '["tcp/127.0.0.1:0"]')
 
     try:
         # 3. Create a local Zenoh session and publisher
@@ -257,6 +275,12 @@ async def test_zenoh_telemetry_tampered_payload_rejection(test_node: Node, node_
     pub_config = zenoh.Config()
     pub_config.insert_json5("connect/endpoints", '["tcp/127.0.0.1:7452"]')
     pub_config.insert_json5("scouting/multicast/enabled", "false")
+    # An explicit IPv4 loopback listener. Without it zenoh falls back to its
+    # default `tcp/[::]:0`, which is an IPv6 wildcard -- so every one of these
+    # tests dies with EAFNOSUPPORT on an IPv4-only host (containers, CI images,
+    # networks with IPv6 disabled). The assertions are untouched; this only makes
+    # an environment assumption that was implicit into one that is stated.
+    pub_config.insert_json5("listen/endpoints", '["tcp/127.0.0.1:0"]')
 
     try:
         # 3. Create a local Zenoh session and publisher
@@ -319,6 +343,12 @@ async def test_zenoh_telemetry_stale_timestamp_rejection(test_node: Node, node_i
     pub_config = zenoh.Config()
     pub_config.insert_json5("connect/endpoints", '["tcp/127.0.0.1:7453"]')
     pub_config.insert_json5("scouting/multicast/enabled", "false")
+    # An explicit IPv4 loopback listener. Without it zenoh falls back to its
+    # default `tcp/[::]:0`, which is an IPv6 wildcard -- so every one of these
+    # tests dies with EAFNOSUPPORT on an IPv4-only host (containers, CI images,
+    # networks with IPv6 disabled). The assertions are untouched; this only makes
+    # an environment assumption that was implicit into one that is stated.
+    pub_config.insert_json5("listen/endpoints", '["tcp/127.0.0.1:0"]')
 
     try:
         with zenoh.open(pub_config) as session:
@@ -369,6 +399,12 @@ async def test_zenoh_telemetry_future_timestamp_rejection(test_node: Node, node_
     pub_config = zenoh.Config()
     pub_config.insert_json5("connect/endpoints", '["tcp/127.0.0.1:7454"]')
     pub_config.insert_json5("scouting/multicast/enabled", "false")
+    # An explicit IPv4 loopback listener. Without it zenoh falls back to its
+    # default `tcp/[::]:0`, which is an IPv6 wildcard -- so every one of these
+    # tests dies with EAFNOSUPPORT on an IPv4-only host (containers, CI images,
+    # networks with IPv6 disabled). The assertions are untouched; this only makes
+    # an environment assumption that was implicit into one that is stated.
+    pub_config.insert_json5("listen/endpoints", '["tcp/127.0.0.1:0"]')
 
     try:
         with zenoh.open(pub_config) as session:
