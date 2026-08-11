@@ -36,6 +36,16 @@ BOOTSTRAP_ROUTERS=()
 # Empty is valid: a Scheduler that has issued no invite codes registers anyone, which
 # is every existing deployment. One that has issued any answers 403 without this.
 INVITE_CODE="${INVITE_CODE:-}"
+# The operator's FLEET credential, which is a different thing from the per-install
+# token generated below. `/nodes/register` is guarded by `verify_auth_token`, which
+# compares this header against the Scheduler's own token -- so a randomly generated
+# value can never satisfy it, and a host installed the documented way loops on 401
+# forever. That was observed on a real second machine before this flag existed.
+#
+# Empty keeps the generated token, which is correct against a Scheduler that sets no
+# fleet token. See specs/what-two-machines-found.md for why one header carrying two
+# meanings is a design problem this flag works around rather than solves.
+NETWORK_AUTH_TOKEN="${NETWORK_AUTH_TOKEN:-}"
 
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -71,6 +81,10 @@ usage() {
     echo "  --invite-code CODE"
     echo "                  Invite code from the operator (scripts/mint_invite.py)."
     echo "                  Required by a Scheduler that has issued any; see docs/decisions/D4."
+    echo "  --network-auth-token TOKEN"
+    echo "                  The operator's fleet credential. Registration is checked"
+    echo "                  against it, so the per-install token generated here cannot"
+    echo "                  satisfy a Scheduler that sets one -- the symptom is a 401 loop."
     echo "  --bootstrap-router ADDR"
     echo "                  Zenoh router to dial, e.g. tcp/10.0.0.5:7447. Repeatable."
     echo "                  Default: none, meaning scout the local network only."
@@ -97,6 +111,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --invite-code)
             INVITE_CODE="$2"
+            shift 2
+            ;;
+        --network-auth-token)
+            NETWORK_AUTH_TOKEN="$2"
             shift 2
             ;;
         --bootstrap-router)
@@ -292,6 +310,14 @@ configure_environment() {
         AUTH_TOKEN_VAL=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
     fi
 
+    # An operator-supplied fleet token replaces the generated one. Registration is
+    # checked against the Scheduler's value, so a random one is refused; generating
+    # it anyway and then overriding keeps the fallback for the no-fleet-token case.
+    if [[ -n "$NETWORK_AUTH_TOKEN" ]]; then
+        AUTH_TOKEN_VAL="$NETWORK_AUTH_TOKEN"
+        log_info "Using the operator-supplied network auth token."
+    fi
+
     # Computed BEFORE the dry-run branch on purpose. These used to be computed after
     # it, so `--dry-run` printed NODE_SCHEDULER_URL=http://localhost:8080 while the
     # real run wrote https://scheduler-publicintelligence.onrender.com -- two answers
@@ -319,7 +345,16 @@ configure_environment() {
         log_dry_run "  NODE_BOOTSTRAP_ROUTERS=${BOOTSTRAP_ROUTERS_JSON}"
         log_dry_run "  NODE_ZENOH_GOSSIP_SCOUTING=true"
         log_dry_run "  NODE_ZENOH_MULTICAST_SCOUTING=true"
-        log_dry_run "  NODE_NETWORK_AUTH_TOKEN=<64-char random hex, generated per install>"
+        # Says which of the two it will be. Hardcoding "generated per install" here
+        # made the dry-run describe a value the real run would NOT write as soon as
+        # --network-auth-token existed -- which is ROADMAP C1's defect exactly, on
+        # the same script, reintroduced by the flag that fixed W5. The dry-run is a
+        # gate step; a gate step that prints a lie verifies a lie.
+        if [[ -n "$NETWORK_AUTH_TOKEN" ]]; then
+            log_dry_run "  NODE_NETWORK_AUTH_TOKEN=<the --network-auth-token you passed>"
+        else
+            log_dry_run "  NODE_NETWORK_AUTH_TOKEN=<64-char random hex, generated per install>"
+        fi
         log_dry_run "  NODE_INVITE_CODE=${INVITE_CODE:-<unset -- ok unless the Scheduler enforces invites>}"
         return 0
     fi

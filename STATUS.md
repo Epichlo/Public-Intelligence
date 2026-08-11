@@ -4,17 +4,17 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-11 01:06 UTC
+**Generated:** 2026-08-11 17:36 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 389 | 0 | 0 | 12.42s |
-| Node | PASS | 259 | 0 | 1 | 3.40s |
-| Root E2E | PASS | 202 | 0 | 0 | 27.03s |
-| **Total** | **PASSING** | **850** | **0** | **1** | |
+| Scheduler | PASS | 395 | 0 | 0 | 11.87s |
+| Node | PASS | 259 | 0 | 1 | 3.36s |
+| Root E2E | PASS | 215 | 0 | 0 | 27.02s |
+| **Total** | **PASSING** | **869** | **0** | **1** | |
 
 Reproduce:
 
@@ -26,17 +26,22 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `a8c49a6` parse the command, do not split it on punctuation
-- **Author / date:** Claude — 2026-08-11 01:01:14 +0000
+- **Last commit:** `488796a` correct two things this roadmap said about its own state
+- **Author / date:** Claude — 2026-08-11 15:37:13 +0000
 - **Branch:** claude/autonomous-architecture-decision-sqtiuy
-- **Total commits:** 95
+- **Total commits:** 97
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence (fetch)
-- **Working tree:** 3 uncommitted change(s)
+- **Working tree:** 8 uncommitted change(s)
 
 ```
-  M packages/node/tests/test_runtime.py
-   M packages/scheduler/tests/test_zenoh_integration.py
-   M packages/scheduler/tests/test_zenoh_mesh_reachability.py
+  M ROADMAP.md
+   M install.ps1
+   M install.sh
+   M packages/scheduler/src/scheduler/api/openai.py
+   M packages/scheduler/src/scheduler/core/credit_ledger.py
+  ?? packages/scheduler/tests/test_cpu_host_contribution.py
+  ?? specs/what-two-machines-found.md
+  ?? tests/test_installer_parity.py
 ```
 
 ## CI

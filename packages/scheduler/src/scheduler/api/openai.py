@@ -515,10 +515,13 @@ async def _meter(
         # for returning an error, which is precisely the incentive
         # docs/decisions/D1-execution-integrity.md exists to avoid creating.
         if ledger is not None and succeeded:
+            # `ram_total_gb` is passed so a CPU-only host accrues at all. It is
+            # ignored when the node has VRAM, so no GPU host is repriced by this.
             await ledger.record_host_contribution(
                 node_id=node.node_id,
                 vram_gb=node.gpu.vram_total_gb,
                 duration_seconds=duration,
+                ram_gb=node.ram_total_gb,
             )
     except Exception:
         logger.exception("metering_failed", request_id=request_id, node_id=node.node_id)

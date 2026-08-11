@@ -48,6 +48,22 @@ class CreditLedger:
 
     CREDITS_PER_GB_VRAM_HOUR: float = 100.0
 
+    # Fallback rate for hosts with no GPU, whose scarce resource is memory.
+    #
+    # Without it a CPU-only host accrues EXACTLY zero forever: the VRAM term is a
+    # product, and `vram_total_gb` is 0.0 for such a node. That was not a rounding
+    # artefact, it was the whole formula -- found on the machine that first served a
+    # real request over the mesh, which was recorded as having contributed nothing.
+    # ROADMAP 1.2 deliberately made these nodes dispatchable; 3.3 then measured
+    # contribution in a unit they can never have.
+    #
+    # **One tenth is a guess.** Nobody has measured what a GPU-hour is worth against
+    # a CPU-hour on this network, because there is no network (D6) -- the same
+    # honesty the watcher's thresholds carry. Only the DIRECTION is defensible: a
+    # GPU-hour is the scarce thing being shared, so crediting CPU work at parity
+    # would make contributing no GPU the cheapest way to earn.
+    CREDITS_PER_GB_RAM_HOUR: float = 10.0
+
     def __init__(self, store: SchedulerStore | None = None) -> None:
         """Initialize CreditLedger.
 
@@ -96,22 +112,34 @@ class CreditLedger:
         return self._accounts[account_id]
 
     async def record_host_contribution(
-        self, node_id: str, vram_gb: float, duration_seconds: float
+        self, node_id: str, vram_gb: float, duration_seconds: float, ram_gb: float = 0.0
     ) -> CreditAccount:
-        """Accrue earned credits to a compute host based on VRAM-Hours provided.
+        """Accrue credits to a host for work it actually did.
+
+        VRAM-hours where there is a GPU, RAM-hours where there is not. The RAM term
+        is a **fallback, not an addition**: a GPU host's credit is unchanged by
+        declaring its RAM, because crediting both would quietly raise what every
+        existing host earns -- a repricing dressed as a bug fix, which D2 settled is
+        not something to do by accident.
 
         Args:
             node_id: Node identifier.
-            vram_gb: Total VRAM allocated in GB.
+            vram_gb: Total VRAM in GB. 0.0 on a CPU-only host.
             duration_seconds: Duration hosted in seconds.
+            ram_gb: Total system RAM in GB, used only when `vram_gb` is zero.
+                Defaults to 0.0 so existing callers keep the previous behaviour.
 
         Returns:
             Updated CreditAccount.
         """
         vram_gb = max(0.0, float(vram_gb))
+        ram_gb = max(0.0, float(ram_gb))
         duration_seconds = max(0.0, float(duration_seconds))
         hours = duration_seconds / 3600.0
-        earned = vram_gb * hours * self.CREDITS_PER_GB_VRAM_HOUR
+        if vram_gb > 0.0:
+            earned = vram_gb * hours * self.CREDITS_PER_GB_VRAM_HOUR
+        else:
+            earned = ram_gb * hours * self.CREDITS_PER_GB_RAM_HOUR
         account = self.get_or_create_account(node_id)
         account.earned_credits += earned
         account.updated_at = time.time()

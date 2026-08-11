@@ -1,23 +1,50 @@
 # ROADMAP — v1
 
-Status: **Stages 0–4, C and D are complete except for two items that cannot be
-closed from inside a container: 1.5 and D7.** Every buildable item is done.
+Status: **Stages 0–4, C and D are complete. 1.5 is half earned — a second machine
+served a real request over the mesh on 2026-08-11, but not across a real NAT.
+D7 and W7 are open.**
 
 What is NOT done, and why, so this line does not have to be re-derived:
 
-- **1.5 — no node on a separate machine has served a request.** Docker is
-  unavailable in every environment that has worked here, so
-  `docker-compose.test.yml` has still never run.
-  [D8](docs/decisions/D8-the-wedge.md) makes NAT traversal the differentiator, so
-  this is the load-bearing claim of the product and it is **unearned**. As of
-  2026-08-10 the owner has stated that running this on a second device is not
-  possible for now, which makes this a standing limitation rather than a queued
-  task. Nothing below should be read as compensating for it.
+- **1.5 — half earned on 2026-08-11, and the half that is left is the one D8 needs.**
+  A node ran on a second physical machine, registered, held a Zenoh session, and
+  served a real completion dispatched over the mesh (`node_dispatch_mesh` in the
+  Scheduler log, `reachability: mesh` in the registry). Its `ip_address` was
+  `127.0.0.1` throughout — a useless address — which is exactly what 1.1 predicted
+  and had never been demonstrated against a machine the Scheduler could not dial.
+  **What is still unearned: a real NAT.** Both machines were on adjacent private
+  subnets of one network (`172.20.162.94` and `172.20.163.67`); no NAT boundary was
+  crossed. [D8](docs/decisions/D8-the-wedge.md) makes traversal *the* differentiator,
+  so until a host on a genuinely separate network serves a request — a phone hotspot
+  is the cheapest such test — the load-bearing claim of the product remains
+  unproven. `docker-compose.test.yml` has still never run.
 - **D7 — a second pair of eyes.** Open on purpose; it cannot be closed by the party
   asking. See [`docs/PREMISES.md`](docs/PREMISES.md). The agent governance layer
   added on 2026-08-10 raises the cost of a false completion claim; it does not
   supply a reviewer who can say "this premise is wrong", and it is built and checked
   by the same party as everything else.
+
+### What the second machine found (2026-08-11)
+
+Getting one node onto one other computer took six manual workarounds. Every one was
+a real defect, none was visible to 850 passing tests and a green gate, and five were
+Windows-only — because `scripts/verify_install.sh` runs `install.sh` for real and
+**nothing has ever executed `install.ps1`**. That file sat outside "the only
+definition of does this pass" for its entire life: the fifth instance of that
+pattern after `tests/` (2.9), the website (C6), `scripts/` (C7) and `.claude/`, and
+the first found by a user rather than a ratchet.
+
+| # | Defect | Status |
+|---|--------|--------|
+| W1 | `install.ps1` installed `packages/node` without `packages/shared`, so pip could not resolve the local dependency C8 introduced. | **done** |
+| W2 | `install.ps1` could not pass an invite code — no parameter, no `.env` line — so D4 refused every Windows host. | **done** |
+| W3 | **`install.ps1` reported success over a failed install.** `$ErrorActionPreference` does not trap native exit codes, so after pip failed it printed *"Installation Complete! Host Node is Ready"*, launched a daemon that could not import its package, called it *"launched successfully"*, and exited 0. Third time this repo has shipped that defect, in a third language, after 2.10 and C9. Now guarded by `Assert-LastExitCode` after every native call, ratcheted structurally by `tests/test_installer_parity.py` — the first version of that test passed against a gutted guard, because it only checked the string was present. | **done** |
+| W4 | The run command `install.ps1` printed had no `cd`, and settings resolve `env_file=".env"` against the working directory — so following the installer's own instructions produced a node on pure defaults, dialling its own localhost. | **done** |
+| W5 | **No installer could supply the credential registration requires.** `/nodes/register` is guarded by `verify_auth_token`, which compares against the Scheduler's fleet token; both installers instead *generated* a random one, which by construction never matches. Both now accept it (`--network-auth-token` / `-NetworkAuthToken`). | **done** |
+| W6 | **A CPU-only host could never accrue credit.** `earned = vram_gb * hours * rate`, and such a node reports `0.0` VRAM — so the machine that closed half of 1.5 was recorded as having contributed exactly nothing. 1.2 made these nodes dispatchable; 3.3 measured them in a unit they cannot have. Now falls back to RAM-hours at one tenth the rate, additively, so no GPU host is repriced. | **done** |
+| W7 | **One header carries two meanings, and that is a design problem rather than a bug.** `register_node` stores `X-Network-Auth-Token` as the node's own credential, while `verify_auth_token` has already required that same header to equal the fleet secret — so the per-node credential 2.7 keys mesh envelopes on can only ever *be* the fleet secret when one is configured. W5 lets an installer supply it; it does not separate the two meanings. Needs a decision record, a second header, and a migration. | **OPEN** |
+
+See `specs/what-two-machines-found.md`.
 
 **The 7 Zenoh tests that used to fail in a sandbox now pass, and the paragraph that
 stood here was wrong.** It said they bound `tcp/[::]:0` because "the container has no
