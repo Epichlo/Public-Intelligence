@@ -255,6 +255,11 @@ def test_reading_the_verified_zone_is_allowed(command: str) -> None:
         "mkdir -p zones/claimed && ls zones/verified/",
         "cat zones/verified/latest.verified.json 2>/dev/null",
         "grep -c step zones/verified/latest.verified.json 2>/dev/null | head -1",
+        # A pipe INSIDE a quoted argument is not a shell pipe. Splitting the raw
+        # string on "|" turned this into a fragment starting `join(","))"'`, which
+        # is in no whitelist, so reading the evidence was denied.
+        "jq -r '.skipped|join(\",\")' zones/verified/latest.verified.json",
+        "jq -r '.steps[] | select(.result != \"pass\")' zones/verified/latest.verified.json",
     ],
 )
 def test_a_write_elsewhere_does_not_condemn_a_read_of_the_zone(command: str) -> None:

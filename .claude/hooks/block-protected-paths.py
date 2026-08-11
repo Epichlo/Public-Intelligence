@@ -21,7 +21,7 @@ enforcement lives at the Stop hook and in CI.
 """
 
 import json
-import re
+import shlex
 import sys
 
 # Substrings that make a path protected. `.env.example` is the documented sample and
@@ -82,18 +82,48 @@ def _writes_to_verified_zone(command: str) -> bool:
     if "zones/verified" not in normalised:
         return False
 
-    for segment in re.split(r"\||;|&&|\n", normalised):
-        if "zones/verified" not in segment:
+    try:
+        segments = _segments(normalised)
+    except ValueError:
+        # Unbalanced quotes: no reliable parse, so no reliable judgement. The
+        # settings.json `deny` rule still covers Edit/Write unconditionally.
+        return False
+
+    for tokens in segments:
+        if not any("zones/verified" in token for token in tokens):
             continue
-        # Check where a redirect actually POINTS, not merely that one exists.
-        # `cat zones/verified/x 2>/dev/null` redirects stderr to /dev/null and writes
-        # nothing; the first version read the bare `>` as a write and denied a read.
-        if any("zones/verified" in target for target in re.findall(r">>?\s*([^\s;|&]+)", segment)):
-            return True
-        tokens = segment.strip().split()
-        if tokens and tokens[0] not in READ_ONLY:
+        # Where a redirect POINTS, not merely that one exists. `cat zones/verified/x
+        # 2>/dev/null` sends stderr to /dev/null and writes nothing.
+        for index, token in enumerate(tokens):
+            redirects = token in (">", ">>") and index + 1 < len(tokens)
+            if redirects and "zones/verified" in tokens[index + 1]:
+                return True
+        if tokens[0] not in READ_ONLY:
             return True
     return False
+
+
+def _segments(command: str) -> list[list[str]]:
+    """Split a command into pipeline segments of shell tokens, respecting quotes.
+
+    `str.split()` on `|` and `;` is wrong in a way that matters: it breaks
+    `jq '.a|join(",")' file` into fragments whose first token is `join(","))"'`,
+    which is in no whitelist, so a read gets denied. Three legitimate commands were
+    refused that way before this used a real lexer.
+
+    `punctuation_chars=True` makes shlex emit `|`, `;`, `&&`, `>` as their own
+    tokens while leaving quoted strings intact.
+    """
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+
+    segments: list[list[str]] = [[]]
+    for token in lexer:
+        if token in (";", "|", "||", "&&", "&"):
+            segments.append([])
+        else:
+            segments[-1].append(token)
+    return [segment for segment in segments if segment]
 
 
 def main() -> int:

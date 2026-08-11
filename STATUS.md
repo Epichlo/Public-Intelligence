@@ -4,21 +4,21 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-10 13:42 UTC
+**Generated:** 2026-08-10 20:05 UTC
 **Test status:** FAILING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | FAIL | 383 | 6 | 0 | 11.68s |
-| Node | FAIL | 258 | 1 | 1 | 4.53s |
-| Root E2E | PASS | 200 | 0 | 0 | 29.98s |
-| **Total** | **FAILING** | **841** | **7** | **1** | |
+| Scheduler | FAIL | 383 | 6 | 0 | 9.58s |
+| Node | FAIL | 258 | 1 | 1 | 3.00s |
+| Root E2E | PASS | 202 | 0 | 0 | 27.17s |
+| **Total** | **FAILING** | **843** | **7** | **1** | |
 
 Notes:
-- **Scheduler**: 6 failed, 383 passed, 1 warning in 11.68s
-- **Node**: 1 failed, 258 passed, 1 skipped, 1 warning in 4.53s
+- **Scheduler**: 6 failed, 383 passed, 1 warning in 9.58s
+- **Node**: 1 failed, 258 passed, 1 skipped, 1 warning in 3.00s
 
 Reproduce:
 
@@ -30,21 +30,16 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `4da52fc` make the agent structurally unable to certify itself (architecture pillars 1-3)
-- **Author / date:** Claude — 2026-08-10 13:28:13 +0000
+- **Last commit:** `cef720a` something outside the process notices (roadmap 4.2, completing it)
+- **Author / date:** Claude — 2026-08-10 19:47:14 +0000
 - **Branch:** claude/autonomous-architecture-decision-sqtiuy
-- **Total commits:** 93
+- **Total commits:** 94
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence (fetch)
-- **Working tree:** 7 uncommitted change(s)
+- **Working tree:** 2 uncommitted change(s)
 
 ```
   M .claude/hooks/block-protected-paths.py
-   M CLAUDE.md
-   M ROADMAP.md
    M tests/test_agent_governance.py
-  ?? scripts/watch_scheduler.py
-  ?? specs/something-outside-the-process-notices.md
-  ?? tests/test_alerting.py
 ```
 
 ## CI
