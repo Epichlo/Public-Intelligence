@@ -4,17 +4,17 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-11 17:36 UTC
+**Generated:** 2026-08-11 18:19 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 395 | 0 | 0 | 11.87s |
-| Node | PASS | 259 | 0 | 1 | 3.36s |
-| Root E2E | PASS | 215 | 0 | 0 | 27.02s |
-| **Total** | **PASSING** | **869** | **0** | **1** | |
+| Scheduler | PASS | 395 | 0 | 0 | 11.79s |
+| Node | PASS | 259 | 0 | 1 | 3.08s |
+| Root E2E | PASS | 220 | 0 | 0 | 27.76s |
+| **Total** | **PASSING** | **874** | **0** | **1** | |
 
 Reproduce:
 
@@ -26,22 +26,20 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `488796a` correct two things this roadmap said about its own state
-- **Author / date:** Claude — 2026-08-11 15:37:13 +0000
+- **Last commit:** `82bb060` fix the six things one other computer found
+- **Author / date:** Claude — 2026-08-11 17:38:42 +0000
 - **Branch:** claude/autonomous-architecture-decision-sqtiuy
-- **Total commits:** 97
+- **Total commits:** 98
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence (fetch)
-- **Working tree:** 8 uncommitted change(s)
+- **Working tree:** 6 uncommitted change(s)
 
 ```
   M ROADMAP.md
-   M install.ps1
-   M install.sh
-   M packages/scheduler/src/scheduler/api/openai.py
-   M packages/scheduler/src/scheduler/core/credit_ledger.py
-  ?? packages/scheduler/tests/test_cpu_host_contribution.py
-  ?? specs/what-two-machines-found.md
-  ?? tests/test_installer_parity.py
+   M packages/node/src/node/core/configuration.py
+   M specs/what-two-machines-found.md
+   M tests/test_compose_env_matches_settings.py
+  ?? tests/env_binding.py
+  ?? tests/test_installer_env_binds.py
 ```
 
 ## CI

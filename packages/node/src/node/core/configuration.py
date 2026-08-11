@@ -24,6 +24,23 @@ class Settings(BaseSettings):
     # Identity
     node_id: str = Field(
         default="node-local",
+        # `env_prefix = "NODE_"` resolves a plain field to NODE_NODE_ID, so the
+        # obvious name -- NODE_ID, which BOTH installers write -- bound to nothing.
+        # pydantic-settings cannot warn about that: an unmatched variable is
+        # indistinguishable from an unrelated one, so a typo'd setting is not an
+        # error, it is a default. Every node either installer has ever produced was
+        # therefore called `node-local`.
+        #
+        # Invisible with one node. With two it is a collision: the registry keys on
+        # node_id and so does the mesh queryable
+        # `public-intelligence/net/{node_id}/infer`, so two hosts would answer the
+        # same key and share one registry slot.
+        #
+        # Both names are accepted rather than renaming the installers' output,
+        # because that would leave every already-installed node broken until its
+        # owner hand-edited a file, and would leave the obvious name a silent no-op
+        # forever. docker-compose.test.yml relies on NODE_NODE_ID and keeps working.
+        validation_alias=AliasChoices("NODE_ID", "NODE_NODE_ID"),
         description="Unique identifier for this Node in the network.",
     )
     hostname: str = Field(

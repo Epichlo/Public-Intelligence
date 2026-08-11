@@ -24,6 +24,7 @@ import re
 from pathlib import Path
 
 import pytest
+from env_binding import accepted_env_names
 from pydantic_settings import BaseSettings
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -66,30 +67,6 @@ def _compose_env() -> dict[str, list[str]]:
     return services
 
 
-def _accepted_names(settings_cls: type[BaseSettings]) -> set[str]:
-    """Every env var name a pydantic-settings model will actually read.
-
-    Includes the `env_prefix` form and every `AliasChoices` entry, because both are
-    live and a reader of the compose file cannot tell which is which.
-    """
-    prefix = settings_cls.model_config.get("env_prefix", "") or ""
-    names: set[str] = set()
-
-    for field_name, field in settings_cls.model_fields.items():
-        names.add(f"{prefix}{field_name}".upper())
-        names.add(field_name.upper())
-        alias = field.validation_alias
-        if alias is None:
-            continue
-        if isinstance(alias, str):
-            names.add(alias.upper())
-        else:  # AliasChoices
-            for choice in getattr(alias, "choices", []):
-                if isinstance(choice, str):
-                    names.add(choice.upper())
-    return names
-
-
 @pytest.mark.parametrize(
     ("service_prefix", "import_path"),
     [
@@ -105,7 +82,7 @@ def test_every_compose_env_var_is_read_by_its_service(
 
     module_name, class_name = import_path.split(":")
     settings_cls: type[BaseSettings] = getattr(importlib.import_module(module_name), class_name)
-    accepted = _accepted_names(settings_cls)
+    accepted = accepted_env_names(settings_cls)
 
     unread: dict[str, list[str]] = {}
     for service, names in _compose_env().items():

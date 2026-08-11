@@ -139,9 +139,13 @@ the work never happened.
   `scripts/verify.sh` to invoke PowerShell when present, which is its own change.
 - **Repricing credits.** D2 made these an accounting unit with no redemption. The
   RAM rate makes CPU work visible; it does not claim to value it correctly.
-- **The `NODE_ID` env var being ignored.** `env_prefix="NODE_"` means the field
-  `node_id` expects `NODE_NODE_ID`, so every node is `node-local`. Already named in
-  ROADMAP 1.5. Real, and a separate change.
+- ~~**The `NODE_ID` env var being ignored.**~~ **Fixed after all, because the audit
+  showed it was a release blocker rather than a wart.** It was listed here as out of
+  scope on the grounds that it is cosmetic. It is not: the registry keys on
+  `node_id` and so does the mesh queryable `public-intelligence/net/{node_id}/infer`,
+  so two hosts would occupy one registry slot and answer the same key. A network of
+  one works; a network is the point. Now ROADMAP W8, with W9 for the ratchet that
+  was supposed to catch it and could not.
 
 ## Verification
 
