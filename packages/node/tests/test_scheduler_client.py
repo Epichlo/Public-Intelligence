@@ -224,7 +224,14 @@ async def test_timeout_failure(
 
 @pytest.mark.anyio
 async def test_client_sends_auth_token(settings: Settings, dummy_request: httpx.Request) -> None:
-    """Verify that the client passes the X-Network-Auth-Token header when configured."""
+    """Verify the client sends its credentials, and which header carries which.
+
+    Two headers since decision D9: `X-Network-Auth-Token` is the fleet's shared
+    admission secret, `X-Node-Credential` is this host's own. This asserted a single
+    header until then. With only `network_auth_token` set -- the pre-D9 shape, and
+    still correct against a Scheduler with no fleet token -- the one secret goes in
+    both, which is exactly what this node used to send.
+    """
     mock_client = AsyncMock()
     mock_response = httpx.Response(200, request=dummy_request)
     mock_client.request.return_value = mock_response
@@ -238,9 +245,34 @@ async def test_client_sends_auth_token(settings: Settings, dummy_request: httpx.
         "DELETE",
         "http://mock-scheduler:8080/nodes/node-1",
         json=None,
-        headers={"X-Network-Auth-Token": "secure-test-token"},
+        headers={
+            "X-Network-Auth-Token": "secure-test-token",
+            "X-Node-Credential": "secure-test-token",
+        },
         timeout=5.0,
     )
+
+
+@pytest.mark.anyio
+async def test_the_two_tokens_ride_in_separate_headers(
+    settings: Settings, dummy_request: httpx.Request
+) -> None:
+    """Decision D9: an operator who configures both must not have them conflated.
+
+    The failure this pins is not a crash. It is the Scheduler storing the fleet
+    secret as this node's per-node credential, which makes every host able to forge
+    messages as every other and raises nothing anywhere.
+    """
+    mock_client = AsyncMock()
+    mock_client.request.return_value = httpx.Response(200, request=dummy_request)
+
+    settings.network_auth_token = "this-hosts-own-secret"
+    settings.fleet_token = "the-shared-admission-secret"
+    await SchedulerClient(settings, client=mock_client).unregister("node-1")
+
+    headers = mock_client.request.call_args.kwargs["headers"]
+    assert headers["X-Network-Auth-Token"] == "the-shared-admission-secret"
+    assert headers["X-Node-Credential"] == "this-hosts-own-secret"
 
 
 @pytest.mark.anyio

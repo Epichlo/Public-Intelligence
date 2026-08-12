@@ -62,13 +62,15 @@ async def register_node(
     registry: RegistryDep,
     request: Request,
     x_network_auth_token: Annotated[str | None, Header(alias="X-Network-Auth-Token")] = None,
+    x_node_credential: Annotated[str | None, Header(alias="X-Node-Credential")] = None,
     x_invite_code: Annotated[str | None, Header(alias="X-Invite-Code")] = None,
 ) -> Node:
     """Register a compute node with the scheduler.
 
     The credential the node presents here is retained so the Scheduler can
-    authenticate to that node's control API when dispatching work to it. The
-    node's `/infer` fails closed, so without this the Scheduler cannot reach it.
+    authenticate to that node's control API when dispatching work to it, and so it
+    can verify that node's mesh envelopes. The node's `/infer` fails closed, so
+    without this the Scheduler cannot reach it.
 
     It is stored outside the `Node` model and so is never echoed back in this
     response or listed by `GET /nodes`.
@@ -77,6 +79,19 @@ async def register_node(
     token has rotated refreshes it even when the record already exists and the
     call returns 409. Recording it only on success left the Scheduler holding a
     stale token and silently 401ing every dispatch to that node.
+
+    **Two headers, because admission and identity are different questions**
+    (decision D9). `X-Network-Auth-Token` is the fleet's shared admission secret --
+    `verify_auth_token` compares it and it is never retained. `X-Node-Credential`
+    is *this* host's own secret, and that is what gets stored. Reading one header
+    for both meant every node's "per-node" credential was the fleet secret whenever
+    an operator configured one, which is every real deployment, so ROADMAP 2.7's
+    per-node mesh isolation silently did not hold.
+
+    A node that sends no `X-Node-Credential` still has its admission token stored,
+    exactly as before. That fallback keeps the old weakness alive for un-upgraded
+    hosts and is kept on purpose: removing it strands every node registered before
+    this change. See D9's "cost, stated".
     """
     # Decision D4. The fleet token proves the caller knows a shared secret; it says
     # nothing about WHICH host this is or who vouched for it, and it cannot be
@@ -98,7 +113,7 @@ async def register_node(
             ),
         )
 
-    await registry.set_node_token(node.node_id, x_network_auth_token)
+    await registry.set_node_token(node.node_id, x_node_credential or x_network_auth_token)
 
     try:
         await registry.register(node)

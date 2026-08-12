@@ -114,6 +114,58 @@ def test_the_compose_file_configures_a_gateway_key() -> None:
     )
 
 
+def test_the_two_workers_do_not_share_a_credential() -> None:
+    """Decision D9, checked in the only file that runs two nodes at once.
+
+    Both workers carried `NODE_NETWORK_AUTH_TOKEN=local-dev-token` -- the same value
+    as each other and as the Scheduler's fleet token. ROADMAP 2.7 keys every
+    state-changing mesh message on the node's own credential so that one host cannot
+    forge messages as another; with one shared value that property is not merely
+    untested here, it is false, and this is the file a person runs to see two nodes
+    work.
+
+    The admission token is expected to be shared -- that is what a fleet secret is.
+    The per-node one is not.
+    """
+    values: dict[str, dict[str, str]] = {}
+    current: str | None = None
+    in_env = False
+    for raw in COMPOSE.read_text(encoding="utf-8").splitlines():
+        line = raw.rstrip()
+        if re.match(r"^  [a-z0-9_-]+:$", line):
+            current = line.strip().rstrip(":")
+            values.setdefault(current, {})
+            in_env = False
+        elif re.match(r"^    environment:$", line):
+            in_env = True
+        elif in_env and re.match(r"^      - [A-Z]", line) and current:
+            name, _, value = line.strip().lstrip("- ").partition("=")
+            values[current][name] = value
+        elif in_env and line and not line.startswith("      "):
+            in_env = False
+
+    workers = {name: env for name, env in values.items() if name.startswith("node-worker")}
+    assert len(workers) >= 2, "expected docker-compose.test.yml to define two workers"
+
+    credentials = {name: env.get("NODE_NETWORK_AUTH_TOKEN") for name, env in workers.items()}
+    assert all(credentials.values()), (
+        f"a worker has no NODE_NETWORK_AUTH_TOKEN, so its control API serves "
+        f"nothing and the Scheduler cannot dispatch to it: {credentials}"
+    )
+    assert len(set(credentials.values())) == len(credentials), (
+        f"two workers share one NODE_NETWORK_AUTH_TOKEN, so either can seal mesh "
+        f"envelopes as the other and ROADMAP 2.7's per-node isolation is false in "
+        f"the demo itself (decision D9): {credentials}"
+    )
+
+    fleet = values.get("scheduler", {}).get("SCHEDULER_NETWORK_AUTH_TOKEN")
+    for name, credential in credentials.items():
+        assert credential != fleet, (
+            f"{name}'s own credential IS the fleet's admission secret, which every "
+            f"host on the fleet holds -- the exact conflation D9 separates"
+        )
+
+
 def test_the_compose_file_does_not_reference_removed_settings() -> None:
     """A comment describing a setting that no longer exists is a trap for a reader.
 

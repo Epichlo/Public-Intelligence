@@ -128,11 +128,17 @@ the work never happened.
 
 ## Out of scope
 
-- **Splitting the two meanings of `X-Network-Auth-Token` (D-5's root cause).** The
-  fix here lets an installer *supply* the credential; it does not separate "fleet
-  admission" from "this node's mesh key". That needs a decision record, a header, and
-  a migration for already-registered nodes. Recorded as a ROADMAP item, not silently
-  left.
+- ~~**Splitting the two meanings of `X-Network-Auth-Token` (D-5's root cause).**~~
+  **Done separately, as ROADMAP W7 / [D9](../docs/decisions/D9-admission-is-not-identity.md).**
+  It was correctly out of scope here — it needed a decision record, a new header and
+  a migration, none of which belong in a spec about installer defects. Worth reading
+  together with this file for one reason: **this spec's own fix made that root cause
+  worse.** `--network-auth-token` assigned the operator's fleet token to the variable
+  holding the per-install credential, in both installers, and `install.sh` copies that
+  variable into the dashboard's `.env.local` as well. So the workaround for D-5
+  propagated the fleet secret into two more files. Deferring a root cause is fine;
+  what this shows is that the workaround has to be checked against the root cause, not
+  just against the symptom.
 - **Executing `install.ps1` in CI.** The parity test reads both files; it does not run
   the PowerShell one. Running it needs a Windows runner step, and `ci.yml` may not
   grow its own check list (`test_source_parity.py`). Doing it properly means teaching

@@ -88,6 +88,11 @@ class SchedulerClient:
         self.client = client
         self.timeout = 5.0
         self.network_auth_token = settings.network_auth_token
+        # Decision D9. Two secrets, two meanings: `fleet_token` gets us admitted,
+        # `network_auth_token` is who we are. Falling back to the latter keeps a
+        # single-secret install working -- against a Scheduler with no fleet token
+        # configured the admission header is not compared at all.
+        self.fleet_token = settings.fleet_token or settings.network_auth_token
         self.invite_code = settings.invite_code
 
     async def _send_request(
@@ -109,8 +114,15 @@ class SchedulerClient:
         """
         url = f"{self.base_url}{path}"
         headers = {}
+        if self.fleet_token:
+            headers["X-Network-Auth-Token"] = self.fleet_token
+        # This node's own secret, which the Scheduler stores and never compares
+        # (decision D9). Sent separately from the admission token above because one
+        # header answering both questions made every node's credential the fleet
+        # secret. Sent on every request rather than only on register, for the same
+        # reason the invite code is: one request-builder that cannot drift.
         if self.network_auth_token:
-            headers["X-Network-Auth-Token"] = self.network_auth_token
+            headers["X-Node-Credential"] = self.network_auth_token
         # Sent on every request rather than only on register: harmless elsewhere,
         # and the alternative is a second request-builder that can drift from this
         # one. The Scheduler reads it on `/nodes/register` and nowhere else.

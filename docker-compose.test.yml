@@ -83,7 +83,15 @@ services:
       - NODE_HOST=0.0.0.0
       - NODE_PORT=8080
       - NODE_SCHEDULER_URL=http://scheduler:8000
-      - NODE_NETWORK_AUTH_TOKEN=local-dev-token
+      # Two secrets, and the two workers differ in the first one (decision D9).
+      # NODE_FLEET_TOKEN is the shared admission secret and matches the Scheduler's
+      # SCHEDULER_NETWORK_AUTH_TOKEN; NODE_NETWORK_AUTH_TOKEN is this container's
+      # own credential, and the Scheduler stores it to key this node's mesh
+      # envelopes. Both workers carried `local-dev-token` for both until D9, which
+      # is precisely the collision that made 2.7's per-node isolation untrue --
+      # visible here, in the only file that runs two nodes at once.
+      - NODE_NETWORK_AUTH_TOKEN=worker-1-own-credential
+      - NODE_FLEET_TOKEN=local-dev-token
       - NODE_BOOTSTRAP_ROUTERS=["tcp/scheduler:7447"]
     depends_on:
       scheduler:
@@ -103,7 +111,9 @@ services:
       - NODE_HOST=0.0.0.0
       - NODE_PORT=8080
       - NODE_SCHEDULER_URL=http://scheduler:8000
-      - NODE_NETWORK_AUTH_TOKEN=local-dev-token
+      # Deliberately NOT worker-1's credential. See the comment above.
+      - NODE_NETWORK_AUTH_TOKEN=worker-2-own-credential
+      - NODE_FLEET_TOKEN=local-dev-token
       - NODE_BOOTSTRAP_ROUTERS=["tcp/scheduler:7447"]
     depends_on:
       scheduler:

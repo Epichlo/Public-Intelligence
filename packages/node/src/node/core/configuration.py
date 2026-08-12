@@ -132,7 +132,24 @@ class Settings(BaseSettings):
     network_auth_token: str | None = Field(
         default=None,
         validation_alias=AliasChoices("NODE_NETWORK_AUTH_TOKEN", "NETWORK_AUTH_TOKEN"),
-        description="Secure network authentication token.",
+        description=(
+            "THIS host's own secret, generated per install. It guards this node's "
+            "control API and keys the mesh envelopes this node seals. It is sent to "
+            "the Scheduler once, as X-Node-Credential at registration, so the "
+            "Scheduler can authenticate to this node and verify its envelopes. "
+            "It is not the fleet's admission secret -- see fleet_token (decision D9)."
+        ),
+    )
+    fleet_token: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("NODE_FLEET_TOKEN", "FLEET_TOKEN"),
+        description=(
+            "The operator's shared admission secret, sent as X-Network-Auth-Token. "
+            "It proves the caller may register at all; it says nothing about which "
+            "host this is, and the Scheduler never retains it. Unset falls back to "
+            "network_auth_token, which is what every node did before decision D9 and "
+            "is still correct against a Scheduler with no fleet token configured."
+        ),
     )
 
     # Zenoh WAN Networking

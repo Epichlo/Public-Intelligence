@@ -18,12 +18,20 @@ param(
     # append the line to .env by hand.
     [string]$InviteCode = "",
 
-    # The operator's fleet credential. /nodes/register is guarded by
+    # The operator's shared ADMISSION secret. /nodes/register is guarded by
     # verify_auth_token, which compares this against the Scheduler's own token --
     # so the random per-install token generated below can never satisfy it, and a
-    # host installed the documented way looped on 401 forever. Left empty, the
-    # generated token is used, which is correct only against a Scheduler that sets
-    # no fleet token.
+    # host installed the documented way looped on 401 forever.
+    #
+    # It is written to NODE_FLEET_TOKEN and does NOT replace this host's own
+    # credential (decision D9). It briefly did, which gave every node on a fleet the
+    # same key and let any of them forge mesh messages as any other.
+    #
+    # Left empty, the node sends its own credential for admission too, which is what
+    # it always did and is correct against a Scheduler that sets no fleet token.
+    # -FleetToken is the accurate name; -NetworkAuthToken is kept as an alias
+    # because it is what the parameter was called when it shipped.
+    [Alias("FleetToken")]
     [string]$NetworkAuthToken = ""
 )
 
@@ -181,11 +189,12 @@ $AuthTokenBytes = New-Object 'System.Byte[]' 32
 [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($AuthTokenBytes)
 $AuthToken = ($AuthTokenBytes | ForEach-Object { $_.ToString("x2") }) -join ''
 
-# An operator-supplied fleet token wins over the generated one. Registration is
-# gated on it matching the Scheduler's; a random value never can.
+# Decision D9. The supplied fleet token is written alongside the generated one, not
+# over it. Overwriting made every host's stored credential the fleet secret, and it
+# also put the fleet secret in the dashboard's env as this node's key.
 if ($NetworkAuthToken) {
-    $AuthToken = $NetworkAuthToken
-    Write-Host "[INFO] Using the operator-supplied network auth token." -ForegroundColor Blue
+    Write-Host "[INFO] Using the operator-supplied fleet token for admission (NODE_FLEET_TOKEN)." -ForegroundColor Blue
+    Write-Host "[INFO] This host keeps its own generated NODE_NETWORK_AUTH_TOKEN. See docs/decisions/D9." -ForegroundColor Blue
 }
 
 if (-not (Test-Path $EnvFile)) {
@@ -200,6 +209,7 @@ NODE_BOOTSTRAP_ROUTERS=$BootstrapRoutersJson
 NODE_ZENOH_GOSSIP_SCOUTING=true
 NODE_ZENOH_MULTICAST_SCOUTING=true
 NODE_NETWORK_AUTH_TOKEN=$AuthToken
+NODE_FLEET_TOKEN=$NetworkAuthToken
 NODE_INVITE_CODE=$InviteCode
 "@
     Set-Content -Path $EnvFile -Value $EnvContent -Encoding UTF8
@@ -214,9 +224,19 @@ NODE_INVITE_CODE=$InviteCode
     if (-not (Select-String -Path $EnvFile -Pattern '^NODE_NETWORK_AUTH_TOKEN=' -Quiet)) {
         Add-Content -Path $EnvFile -Value "NODE_NETWORK_AUTH_TOKEN=$AuthToken"
         Write-Host "[OK] Added NODE_NETWORK_AUTH_TOKEN to $EnvFile (control API now requires it)." -ForegroundColor Green
-    } elseif ($NetworkAuthToken) {
-        (Get-Content $EnvFile) -replace "NODE_NETWORK_AUTH_TOKEN=.*", "NODE_NETWORK_AUTH_TOKEN=$NetworkAuthToken" | Set-Content $EnvFile
-        Write-Host "[OK] Updated NODE_NETWORK_AUTH_TOKEN from -NetworkAuthToken." -ForegroundColor Green
+    }
+
+    # Upgrade path for D9: a host installed before the split has no fleet token line.
+    # Replaced rather than appended when one already exists -- a rotated fleet secret
+    # is the ordinary reason to re-run this, and two NODE_FLEET_TOKEN= lines would
+    # resolve by parse order rather than by intent.
+    if ($NetworkAuthToken) {
+        if (Select-String -Path $EnvFile -Pattern '^NODE_FLEET_TOKEN=' -Quiet) {
+            (Get-Content $EnvFile) -replace "NODE_FLEET_TOKEN=.*", "NODE_FLEET_TOKEN=$NetworkAuthToken" | Set-Content $EnvFile
+        } else {
+            Add-Content -Path $EnvFile -Value "NODE_FLEET_TOKEN=$NetworkAuthToken"
+        }
+        Write-Host "[OK] Set NODE_FLEET_TOKEN in $EnvFile (admission secret, decision D9)." -ForegroundColor Green
     }
 
     # Same upgrade path as the token: an install predating D4 has no invite line,
@@ -235,6 +255,7 @@ NODE_INVITE_CODE=$InviteCode
 
 Write-Host "[INFO] Control API credential is in $EnvFile as NODE_NETWORK_AUTH_TOKEN." -ForegroundColor Blue
 Write-Host "[INFO] Send it as the 'X-Network-Auth-Token' header, or set NODE_AUTH_TOKEN for the dashboard." -ForegroundColor Blue
+Write-Host "[INFO] The operator's fleet token, if any, is NODE_FLEET_TOKEN -- a different secret (D9)." -ForegroundColor Blue
 
 # Virtual Environment
 $VenvDir = Join-Path $NodeDir ".venv"

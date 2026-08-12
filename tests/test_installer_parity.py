@@ -85,7 +85,13 @@ def test_both_installers_accept_the_same_essentials(
 
 @pytest.mark.parametrize(
     "env_key",
-    ["NODE_INVITE_CODE", "NODE_NETWORK_AUTH_TOKEN", "NODE_SCHEDULER_URL", "NODE_BOOTSTRAP_ROUTERS"],
+    [
+        "NODE_INVITE_CODE",
+        "NODE_NETWORK_AUTH_TOKEN",
+        "NODE_FLEET_TOKEN",
+        "NODE_SCHEDULER_URL",
+        "NODE_BOOTSTRAP_ROUTERS",
+    ],
 )
 def test_both_installers_write_the_same_env_keys(env_key: str) -> None:
     """Accepting a flag and writing it to .env are different things.
@@ -95,6 +101,39 @@ def test_both_installers_write_the_same_env_keys(env_key: str) -> None:
     """
     assert env_key in _posix(), f"install.sh no longer writes {env_key}"
     assert env_key in _windows(), f"install.ps1 no longer writes {env_key}"
+
+
+def test_neither_installer_overwrites_the_per_install_credential() -> None:
+    """Decision D9: the fleet token is written beside the node's own key, not over it.
+
+    For one day both installers assigned the operator-supplied fleet token to the
+    variable holding the generated per-install credential. That is the exact hole D9
+    closes -- every host on the fleet ends up with the same key, so any of them can
+    seal a mesh envelope as any other, and the Scheduler cannot tell.
+
+    It leaked further than registration: install.sh copies that same variable into
+    the dashboard's `.env.local` as NODE_AUTH_TOKEN, so the fleet secret was written
+    to a second file as well.
+
+    Matched on assignment, not mention -- both files necessarily name both variables
+    in the comments explaining the split.
+    """
+    posix_assignments = re.findall(r"^\s*AUTH_TOKEN_VAL=(.*)$", _posix(), flags=re.MULTILINE)
+    assert posix_assignments, "install.sh no longer assigns AUTH_TOKEN_VAL at all"
+    for value in posix_assignments:
+        assert "NETWORK_AUTH_TOKEN" not in value, (
+            "install.sh assigns the operator's fleet token to AUTH_TOKEN_VAL, which is "
+            "this host's own credential and is also copied to the dashboard env "
+            f"(decision D9): AUTH_TOKEN_VAL={value.strip()}"
+        )
+
+    windows_assignments = re.findall(r"^\s*\$AuthToken\s*=\s*(.*)$", _windows(), flags=re.MULTILINE)
+    assert windows_assignments, "install.ps1 no longer assigns $AuthToken at all"
+    for value in windows_assignments:
+        assert "$NetworkAuthToken" not in value, (
+            "install.ps1 assigns the operator's fleet token to $AuthToken, which is "
+            f"this host's own credential (decision D9): $AuthToken = {value.strip()}"
+        )
 
 
 def test_windows_installs_shared_before_node() -> None:

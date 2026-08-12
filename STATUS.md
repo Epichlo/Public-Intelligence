@@ -4,17 +4,17 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-11 18:19 UTC
+**Generated:** 2026-08-11 18:50 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 395 | 0 | 0 | 11.79s |
-| Node | PASS | 259 | 0 | 1 | 3.08s |
-| Root E2E | PASS | 220 | 0 | 0 | 27.76s |
-| **Total** | **PASSING** | **874** | **0** | **1** | |
+| Scheduler | PASS | 395 | 0 | 0 | 12.18s |
+| Node | PASS | 260 | 0 | 1 | 3.21s |
+| Root E2E | PASS | 229 | 0 | 0 | 27.05s |
+| **Total** | **PASSING** | **884** | **0** | **1** | |
 
 Reproduce:
 
@@ -26,20 +26,24 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `82bb060` fix the six things one other computer found
-- **Author / date:** Claude — 2026-08-11 17:38:42 +0000
+- **Last commit:** `901091c` every node was called node-local, and the test for that could not have caught it
+- **Author / date:** Claude — 2026-08-11 18:21:26 +0000
 - **Branch:** claude/autonomous-architecture-decision-sqtiuy
-- **Total commits:** 98
+- **Total commits:** 99
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence (fetch)
-- **Working tree:** 6 uncommitted change(s)
+- **Working tree:** 15 uncommitted change(s)
 
 ```
   M ROADMAP.md
+   M docker-compose.test.yml
+   M install.ps1
+   M install.sh
+   M packages/node/src/node/clients/scheduler.py
    M packages/node/src/node/core/configuration.py
-   M specs/what-two-machines-found.md
-   M tests/test_compose_env_matches_settings.py
-  ?? tests/env_binding.py
-  ?? tests/test_installer_env_binds.py
+   M packages/node/tests/test_scheduler_client.py
+   M packages/scheduler/docs/API.md
+   M packages/scheduler/src/scheduler/api/nodes.py
+   M scripts/verify_install.sh
 ```
 
 ## CI

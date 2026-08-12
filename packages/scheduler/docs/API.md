@@ -28,13 +28,24 @@ POST /nodes/register
 Register a compute node.
 
 Headers:
-- `X-Network-Auth-Token`: The secure network authentication token (required if configured)
+- `X-Network-Auth-Token`: the fleet's shared **admission** secret (required if the
+  Scheduler configures one). Compared against it and never retained.
+- `X-Node-Credential`: **this node's own** secret. Stored, never compared, and used
+  afterwards to authenticate to the node's control API and to verify the mesh
+  envelopes it seals. Optional: when absent the admission token is stored instead,
+  which is what every node did before decision D9 and is why upgrading a Scheduler
+  does not strand an already-registered fleet.
+- `X-Invite-Code`: required if the Scheduler has issued any (decision D4).
+
+The two are separate headers because one value cannot both equal a secret every host
+shares and identify one host. See `docs/decisions/D9-admission-is-not-identity.md`.
 
 Request body: Node
 
 Returns: Node (HTTP 201 Created)
 
-Duplicate node_id returns HTTP 409 Conflict.
+Duplicate node_id returns HTTP 409 Conflict. The credential is recorded before that
+check, so a node whose secret has rotated refreshes it even when the call 409s.
 
 ---
 

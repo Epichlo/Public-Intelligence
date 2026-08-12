@@ -42,9 +42,12 @@ INVITE_CODE="${INVITE_CODE:-}"
 # value can never satisfy it, and a host installed the documented way loops on 401
 # forever. That was observed on a real second machine before this flag existed.
 #
-# Empty keeps the generated token, which is correct against a Scheduler that sets no
-# fleet token. See specs/what-two-machines-found.md for why one header carrying two
-# meanings is a design problem this flag works around rather than solves.
+# Written to NODE_FLEET_TOKEN, its own key. It briefly overwrote the generated
+# per-install token instead, which made every node on a fleet share one credential
+# -- decision D9 separated them.
+#
+# Empty is fine against a Scheduler that sets no fleet token; the node then falls
+# back to sending its own credential for admission too, which is what it always did.
 NETWORK_AUTH_TOKEN="${NETWORK_AUTH_TOKEN:-}"
 
 log_info() {
@@ -81,10 +84,12 @@ usage() {
     echo "  --invite-code CODE"
     echo "                  Invite code from the operator (scripts/mint_invite.py)."
     echo "                  Required by a Scheduler that has issued any; see docs/decisions/D4."
-    echo "  --network-auth-token TOKEN"
-    echo "                  The operator's fleet credential. Registration is checked"
-    echo "                  against it, so the per-install token generated here cannot"
-    echo "                  satisfy a Scheduler that sets one -- the symptom is a 401 loop."
+    echo "  --fleet-token TOKEN   (alias: --network-auth-token)"
+    echo "                  The operator's shared ADMISSION secret. Registration is"
+    echo "                  checked against it, so a host without it is refused by any"
+    echo "                  Scheduler that sets one -- the symptom is a 401 loop."
+    echo "                  It does NOT become this host's credential: that one is"
+    echo "                  generated per install and stays private. See docs/decisions/D9."
     echo "  --bootstrap-router ADDR"
     echo "                  Zenoh router to dial, e.g. tcp/10.0.0.5:7447. Repeatable."
     echo "                  Default: none, meaning scout the local network only."
@@ -113,7 +118,12 @@ while [[ $# -gt 0 ]]; do
             INVITE_CODE="$2"
             shift 2
             ;;
-        --network-auth-token)
+        --fleet-token|--network-auth-token)
+            # Two spellings, one variable. `--fleet-token` is the accurate name since
+            # D9; `--network-auth-token` is kept because it is what the flag was
+            # called when it shipped and what any written-down command line says.
+            # Both mean the OPERATOR's admission secret -- neither one sets this
+            # host's own credential, which is always generated.
             NETWORK_AUTH_TOKEN="$2"
             shift 2
             ;;
@@ -310,12 +320,18 @@ configure_environment() {
         AUTH_TOKEN_VAL=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
     fi
 
-    # An operator-supplied fleet token replaces the generated one. Registration is
-    # checked against the Scheduler's value, so a random one is refused; generating
-    # it anyway and then overriding keeps the fallback for the no-fleet-token case.
+    # Decision D9. The operator's fleet token no longer REPLACES the generated one --
+    # it is written alongside it as NODE_FLEET_TOKEN. Overwriting was the shape this
+    # had for exactly one day, and it handed the Scheduler the fleet secret to store
+    # as this host's own credential, which is the hole D9 exists to close: every node
+    # holding the same key can forge mesh messages as every other.
+    #
+    # It also wrote the fleet secret into the dashboard's .env.local, because
+    # configure_website_environment copies AUTH_TOKEN_VAL. Leaving AUTH_TOKEN_VAL as
+    # the generated value fixes that too.
     if [[ -n "$NETWORK_AUTH_TOKEN" ]]; then
-        AUTH_TOKEN_VAL="$NETWORK_AUTH_TOKEN"
-        log_info "Using the operator-supplied network auth token."
+        log_info "Using the operator-supplied fleet token for admission (NODE_FLEET_TOKEN)."
+        log_info "This host keeps its own generated NODE_NETWORK_AUTH_TOKEN. See docs/decisions/D9."
     fi
 
     # Computed BEFORE the dry-run branch on purpose. These used to be computed after
@@ -345,15 +361,21 @@ configure_environment() {
         log_dry_run "  NODE_BOOTSTRAP_ROUTERS=${BOOTSTRAP_ROUTERS_JSON}"
         log_dry_run "  NODE_ZENOH_GOSSIP_SCOUTING=true"
         log_dry_run "  NODE_ZENOH_MULTICAST_SCOUTING=true"
-        # Says which of the two it will be. Hardcoding "generated per install" here
-        # made the dry-run describe a value the real run would NOT write as soon as
-        # --network-auth-token existed -- which is ROADMAP C1's defect exactly, on
-        # the same script, reintroduced by the flag that fixed W5. The dry-run is a
-        # gate step; a gate step that prints a lie verifies a lie.
+        # Always the generated one since D9 -- the supplied fleet token goes to its
+        # own key below. This branch previously had to say which of two values it
+        # would write, because --network-auth-token overwrote this one; hardcoding
+        # "generated per install" then would have been ROADMAP C1's defect exactly,
+        # on the same script. The dry-run is a gate step, and a gate step that prints
+        # a lie verifies a lie.
+        log_dry_run "  NODE_NETWORK_AUTH_TOKEN=<64-char random hex, generated per install>"
+        # Spelled out as if/else rather than `${VAR:+a}${VAR:-b}`, which looks like a
+        # ternary and is not: when VAR is set, `:-` expands to VAR's VALUE, so that
+        # form printed the description AND the operator's fleet secret to stdout.
+        # Never seen, because the gate's dry-run runs with no token set.
         if [[ -n "$NETWORK_AUTH_TOKEN" ]]; then
-            log_dry_run "  NODE_NETWORK_AUTH_TOKEN=<the --network-auth-token you passed>"
+            log_dry_run "  NODE_FLEET_TOKEN=<the --fleet-token you passed>"
         else
-            log_dry_run "  NODE_NETWORK_AUTH_TOKEN=<64-char random hex, generated per install>"
+            log_dry_run "  NODE_FLEET_TOKEN=<unset -- ok unless the Scheduler sets one>"
         fi
         log_dry_run "  NODE_INVITE_CODE=${INVITE_CODE:-<unset -- ok unless the Scheduler enforces invites>}"
         return 0
@@ -373,6 +395,7 @@ NODE_BOOTSTRAP_ROUTERS=${BOOTSTRAP_ROUTERS_JSON}
 NODE_ZENOH_GOSSIP_SCOUTING=true
 NODE_ZENOH_MULTICAST_SCOUTING=true
 NODE_NETWORK_AUTH_TOKEN=${AUTH_TOKEN_VAL}
+NODE_FLEET_TOKEN=${NETWORK_AUTH_TOKEN}
 NODE_INVITE_CODE=${INVITE_CODE}
 EOF
         chmod 600 "$ENV_FILE" 2>/dev/null || true
@@ -394,10 +417,26 @@ EOF
             chmod 600 "$ENV_FILE" 2>/dev/null || true
             log_success "Added NODE_NETWORK_AUTH_TOKEN to ${ENV_FILE} (control API now requires it)."
         fi
+
+        # Upgrade path for D9: a host installed before the split has no fleet token
+        # line. Rewritten rather than appended when one is supplied, because a
+        # rotated fleet secret is the ordinary reason to re-run the installer, and
+        # appending a second NODE_FLEET_TOKEN= would leave the stale one winning or
+        # losing depending on parse order.
+        if [[ -n "$NETWORK_AUTH_TOKEN" ]]; then
+            if grep -q "^NODE_FLEET_TOKEN=" "$ENV_FILE"; then
+                sed -i.bak "s|^NODE_FLEET_TOKEN=.*|NODE_FLEET_TOKEN=${NETWORK_AUTH_TOKEN}|" "$ENV_FILE" && rm -f "${ENV_FILE}.bak"
+            else
+                echo "NODE_FLEET_TOKEN=${NETWORK_AUTH_TOKEN}" >> "$ENV_FILE"
+            fi
+            chmod 600 "$ENV_FILE" 2>/dev/null || true
+            log_success "Set NODE_FLEET_TOKEN in ${ENV_FILE} (admission secret, decision D9)."
+        fi
     fi
 
     log_info "Control API credential is in ${ENV_FILE} as NODE_NETWORK_AUTH_TOKEN."
     log_info "Send it as the 'X-Network-Auth-Token' header, or set NODE_AUTH_TOKEN for the dashboard."
+    log_info "The operator's fleet token, if any, is NODE_FLEET_TOKEN -- a different secret (D9)."
 }
 
 # ------------------------------------------------------------------------------
