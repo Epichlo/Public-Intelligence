@@ -138,13 +138,61 @@ run_step "pytest --collect-only (experimental)" \
 # The gate lints its own scripts. CI already installs shellcheck on Linux but
 # never ran it; a `[ "$x" != "PATTERN"* ]` comparison that silently never matched
 # sat in this very file until shellcheck was pointed at it.
-if command -v shellcheck >/dev/null 2>&1; then
-    run_step "shellcheck" shellcheck scripts/verify.sh scripts/install-hooks.sh \
+# Look in the venv FIRST. shellcheck is a dev dependency of both packages now
+# (shellcheck-py), so a correctly set-up clone has it -- but the venv's bin
+# directory is not on PATH unless someone activated it, and `command -v` alone
+# therefore skipped this check on every run in this repository's history. It was
+# reported honestly as DID NOT RUN, which is why nobody was misled; it is still a
+# check that had never executed anywhere.
+SHELLCHECK=""
+if [ -x "$REPO_ROOT/.venv/bin/shellcheck" ]; then
+    SHELLCHECK="$REPO_ROOT/.venv/bin/shellcheck"
+elif command -v shellcheck >/dev/null 2>&1; then
+    SHELLCHECK="shellcheck"
+fi
+
+if [ -n "$SHELLCHECK" ]; then
+    run_step "shellcheck" "$SHELLCHECK" scripts/verify.sh scripts/install-hooks.sh \
         scripts/verify_install.sh scripts/launch_host_node.sh install.sh
 else
     printf '\n\033[33m── shellcheck (skipped: not installed)\033[0m\n'
     SKIPPED+=("shellcheck")
 fi
+
+# --- other interpreters ----------------------------------------------------
+# The gate runs ONE interpreter. CI runs three (3.11, 3.12, 3.14) on three
+# operating systems. That difference is not theoretical: this gate once reported
+# PASS on 25 checks while the very next CI run went red on six of nine legs,
+# because `api/openai.py` resolved a TYPE_CHECKING-only name in an annotation --
+# fatal at definition time before 3.14, invisible on 3.14, which was the local
+# interpreter. The local gate could not have caught it.
+#
+# `tests/test_runtime_annotations_resolve.py` now asks that specific question
+# directly on any interpreter, which is the better fix and the reason this step is
+# a cheap backstop rather than a full second test run. Byte-compiling every shipped
+# source file under each OTHER locally available CI interpreter costs ~0.2s and
+# catches the general class: syntax and version incompatibilities that the one
+# interpreter in this venv cannot see. It needs no dependencies installed, which is
+# why it can run against a bare system python.
+#
+# Interpreters that are not installed here are REPORTED as not run, never assumed
+# green. 3.14 is usually absent locally and is a real CI leg.
+OTHER_PYTHONS=()
+for v in 3.11 3.12 3.14; do
+    if [ "$("$PY" -c 'import sys; print("%d.%d" % sys.version_info[:2])')" = "$v" ]; then
+        continue  # already covered by every other step in this gate
+    fi
+    if command -v "python$v" >/dev/null 2>&1; then
+        OTHER_PYTHONS+=("python$v")
+    else
+        SKIPPED+=("compile under python$v (not installed)")
+    fi
+done
+
+for other in ${OTHER_PYTHONS[@]+"${OTHER_PYTHONS[@]}"}; do
+    run_step "compile under $other" "$other" -m compileall -q \
+        packages/scheduler/src packages/node/src packages/shared/src
+done
 
 # --- types -----------------------------------------------------------------
 # Both packages set strict = true. This was configured and never run, which is

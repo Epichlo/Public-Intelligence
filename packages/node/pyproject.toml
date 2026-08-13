@@ -46,6 +46,13 @@ dev = [
     # because the stubs happened to be in the venv and not in CI.
     "types-psutil==7.2.2.20260518",
     "bandit==1.9.4",
+    # shellcheck as a Python wheel, so the gate's shell-script check is INSTALLED
+    # rather than hoped for. It was guarded by `command -v shellcheck` and skipped
+    # on every run in every environment that lacked the system package -- reported
+    # honestly as DID NOT RUN, but a check that never runs anywhere is a check that
+    # does not exist. The first run after installing it found the scripts clean;
+    # that is now a measurement rather than an assumption.
+    "shellcheck-py==0.11.0.1",
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "pytest-cov==7.0.0",
