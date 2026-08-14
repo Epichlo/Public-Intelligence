@@ -152,7 +152,18 @@ Last reviewed: 2026-08-07. Reviewed by: the author. **That is the problem** — 
 Desk review 2026-08-14 (`docs/review/desk-review-2026-08-14.md`) attacked the market
 premises against published external sources. It moved P2 to **low** confidence
 (falsifier found true as worded), read P3 as weakly **supported** by competitor
-behaviour, and split P1 into strong-local / unevidenced-federation. **It was run by the
-author and does not close D7** — it gathered external evidence; it did not supply an
-external judge. The market voice it could reach was also throttled by an egress proxy;
-see the review's own caveat.
+behaviour, and split P1 into strong-local / unevidenced-federation. A second run
+through a different model (Gemini Deep Research), on a different network and blind to
+the first review's verdicts, converged on the same four verdicts and reached the
+primary sources the first run's egress proxy blocked — the strongest single result of
+the exercise. It also over-reached once, declaring the architecture physically
+impossible by attacking WAN tensor-sharding, which v1 does not do (the working path
+routes a whole request to one node); the codebase refutes that specific claim. See the
+review's addendum. **Neither run closes D7** — two models gathered external evidence;
+neither is an external human judge.
+
+A candidate new premise surfaced and is not yet in this register: **the privacy
+paradox** — routing a prompt to a *peer's* machine breaks the "nothing leaves hardware
+I own" property that motivates local AI (P6 covers only what this code persists, not
+where a prompt travels). If the product continues, that belongs here as its own
+falsifiable claim.

@@ -178,3 +178,66 @@ a statement about which case the evidence currently backs, and it is the honest 
 
 None of these is answerable from a desk. They are the questions to put to the second
 pair of eyes D7 asks for.
+
+---
+
+## Addendum — independent second run (Gemini Deep Research, 2026-08-14)
+
+The operator re-ran the market questions through a **different model** (Gemini Deep
+Research), on infrastructure **not behind this environment's egress proxy**, and —
+the part that matters — **without being shown any verdict above.** It reached the same
+four verdicts independently and opened the primary reddit/HN sources this review could
+not. That independent convergence is the strongest single result of the whole
+exercise. Three caveats keep it honest.
+
+**1. It is not a human, and it had this project's framing.** The concept description
+it was given originated here. A second model agreeing is corroboration; it is not the
+external human judgement D7 requires. It also writes with a confident, overheated
+register ("mathematically undeniable", "killing blow", "physics prohibits") — exactly
+the fluent-certainty an AND-review must discount rather than be moved by.
+
+**2. Its single most dramatic argument misfires against *this* product.** Gemini's
+latency/"physics" killing blow assumes **tensor-parallel sharding of one model across
+WAN nodes** (architecture A). This product's v1 does **not** do that — split inference
+is cut, and `CLAUDE.md` states the working path routes a whole request to **one node
+holding the whole model** (architecture B). WAN then carries only a prompt and a
+reply, for which residential latency is fine. So the most forceful argument in the
+Gemini report is aimed at a design v1 does not ship. This is the clean example of why
+a confident second opinion still gets checked: **it was right about the direction and
+wrong about the mechanism, and only reading this specific codebase catches that.**
+
+**3. The correction rescues the *physics*, not the *demand*.** Once B is understood,
+the product is "a router / OpenAI gateway across several people's single-node Ollama
+boxes, with NAT traversal." The technical-impossibility case dissolves — but every
+**demand** finding above survives it untouched: Tailscale still solves reaching a node
+(P2), there is still no evidence anyone wants to pool across people (P1), and the
+privacy paradox still applies because a prompt still leaves for someone else's machine.
+The market case against is intact; the engineering case against was overstated.
+
+New evidence it surfaced that this review lacked. **The verbatim quotes are unverified
+from here** — Deep Research can synthesise a plausible quote at a plausible URL, the
+exact silent failure `specs/desk-review-of-the-premises.md` names — so treat these as
+leads to confirm, not settled facts:
+
+- **P2, the quote the proxy denied me:** *"I use tailscale, its like 1 command… works
+  super well and its free for personal."* Direct confirmation of the P2 verdict.
+- **P1, sharpened:** the demand that exists is for client-server access to **one**
+  strong node — *"Bought a 5090… now I'm just lending the extra compute to my
+  friends"* — which people already meet by sharing an Ollama endpoint over Tailscale,
+  needing no product. Demand for genuine cross-machine pooling: still none found.
+- **A grave I missed:** AI Horde, a voluntary-compute pool, cited as foundering on the
+  incentive-plus-latency problem — a direct precedent for the no-payment model here.
+- **Exo:** reported as having retreated to Thunderbolt-5 **LAN**, off the internet
+  entirely — consistent with, and stronger than, the "demos are not infrastructure"
+  line in the table above.
+
+**Net after reconciliation.** Two independent reviews, different models, different
+networks, no shared verdicts, converged: the differentiator P2 names is solved
+(Tailscale), the demand P1 needs is absent, the competitors pivoted to enterprise, and
+Ollama is the wrong serving backend. The privacy paradox — a prompt routed to a peer's
+box breaks the privacy that motivates local AI — is the sharpest surviving argument and
+belongs in `PREMISES.md` as its own premise if the product continues. The one thing the
+second run got wrong is instructive: it declared the architecture physically impossible
+by attacking a design v1 doesn't ship, and only the codebase refutes it. **D7 is still
+open** — two models are still not a person — but the market premises are now the most
+externally-tested claims in this repository.
