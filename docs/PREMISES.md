@@ -39,9 +39,16 @@ operate) are each a dependency or an ongoing cost.
 **Falsifier:** the target user already runs Tailscale, in which case this is
 re-solving a solved problem and the remaining value is only the OpenAI-compatible
 routing layer.
-**Confidence:** medium-low. **This is the premise most likely to be wrong**, and it is
-also the one the pitch leans hardest on. It deserves the second opinion D7 asks for
-before more is built on it.
+**Confidence:** **low — the desk review (`docs/review/desk-review-2026-08-14.md`) found
+the falsifier true as this premise is worded.** Single-user remote access to a home
+GPU is a solved, SEO-saturated problem, and Tailscale is the free, "just works" answer
+(Tailscale's own self-hosted-AI guidance; a dense field of 2026 "access Ollama with
+Tailscale" guides). What the review did *not* falsify is a claim P2 does not actually
+make — *multi-party* NAT traversal across many strangers' nodes, which Tailscale is
+single-tenant-shaped and does not cleanly do. So any surviving differentiator is
+**cross-party pooling, not NAT traversal**, which relocates the load-bearing claim onto
+P1. That relocation is the finding, and it still needs the D7 review — a desk review by
+the author is not it.
 
 ## P3 — The economics do not close for a marketplace
 
@@ -141,3 +148,11 @@ process justified by an unfalsifiable belief is worth naming as such.
 
 Last reviewed: 2026-08-07. Reviewed by: the author. **That is the problem** — see
 [D7](decisions/D7-second-pair-of-eyes.md).
+
+Desk review 2026-08-14 (`docs/review/desk-review-2026-08-14.md`) attacked the market
+premises against published external sources. It moved P2 to **low** confidence
+(falsifier found true as worded), read P3 as weakly **supported** by competitor
+behaviour, and split P1 into strong-local / unevidenced-federation. **It was run by the
+author and does not close D7** — it gathered external evidence; it did not supply an
+external judge. The market voice it could reach was also throttled by an egress proxy;
+see the review's own caveat.
