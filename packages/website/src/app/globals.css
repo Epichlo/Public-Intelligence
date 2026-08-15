@@ -93,3 +93,85 @@
     @apply font-sans;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Sovereign landing design system — "Monolithic Silicon & Sovereign Printing
+   Press". Scoped by usage, not applied to the body, so the dashboard/shadcn
+   surfaces are untouched. Colours are the brief's exact palette.
+--------------------------------------------------------------------------- */
+@theme {
+  --color-iron: #0a0b0e; /* Deep Cast Iron — deepest ground */
+  --color-slate: #181b22; /* Monolith Slate — raised panels */
+  --color-panel: #22262f; /* a step up, for inset cells */
+  --color-lead: #f3f2ee; /* Unredacted Lead White — primary text */
+  --color-concrete: #8e929b; /* Muted Concrete — secondary text */
+  --color-amber: #e87a2a; /* Hardware Amber — telemetry + honesty accent */
+
+  --font-editorial: var(--font-cormorant), Georgia, "Times New Roman", serif;
+  --font-terminal: var(--font-jetbrains), ui-monospace, "SF Mono", monospace;
+}
+
+@layer utilities {
+  /* 1px architectural grid — hairline rule of a technical blueprint. */
+  .grid-blueprint {
+    background-image:
+      linear-gradient(to right, color-mix(in oklch, var(--color-lead) 6%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in oklch, var(--color-lead) 6%, transparent) 1px, transparent 1px);
+    background-size: 72px 72px;
+  }
+  .hairline {
+    border-color: color-mix(in oklch, var(--color-lead) 14%, transparent);
+  }
+  .hairline-amber {
+    border-color: color-mix(in oklch, var(--color-amber) 40%, transparent);
+  }
+
+  /* Scroll-reveal: set data-reveal on a section, it fades/translates in. */
+  [data-reveal] {
+    opacity: 0;
+    transform: translateY(14px);
+    transition:
+      opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+      transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  [data-reveal].is-visible {
+    opacity: 1;
+    transform: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-reveal] {
+      opacity: 1;
+      transform: none;
+      transition: none;
+    }
+  }
+
+  .telemetry-blink {
+    animation: telemetry-blink 1.4s steps(1) infinite;
+  }
+  .cursor-blink {
+    animation: cursor-blink 1s steps(1) infinite;
+  }
+}
+
+@keyframes telemetry-blink {
+  0%,
+  60% {
+    opacity: 1;
+  }
+  61%,
+  100% {
+    opacity: 0.25;
+  }
+}
+
+@keyframes cursor-blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  51%,
+  100% {
+    opacity: 0;
+  }
+}
