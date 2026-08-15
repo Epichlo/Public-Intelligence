@@ -4,16 +4,16 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-11 18:50 UTC
+**Generated:** 2026-08-15 09:15 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 395 | 0 | 0 | 12.18s |
-| Node | PASS | 260 | 0 | 1 | 3.21s |
-| Root E2E | PASS | 229 | 0 | 0 | 27.05s |
+| Scheduler | PASS | 395 | 0 | 0 | 13.45s |
+| Node | PASS | 260 | 0 | 1 | 3.88s |
+| Root E2E | PASS | 229 | 0 | 0 | 28.18s |
 | **Total** | **PASSING** | **884** | **0** | **1** | |
 
 Reproduce:
@@ -26,24 +26,22 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `901091c` every node was called node-local, and the test for that could not have caught it
-- **Author / date:** Claude — 2026-08-11 18:21:26 +0000
+- **Last commit:** `bd1f6fc` reconcile the desk review against an independent second run
+- **Author / date:** Claude — 2026-08-14 07:15:46 +0000
 - **Branch:** claude/autonomous-architecture-decision-sqtiuy
-- **Total commits:** 99
+- **Total commits:** 105
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence (fetch)
-- **Working tree:** 15 uncommitted change(s)
+- **Working tree:** 8 uncommitted change(s)
 
 ```
-  M ROADMAP.md
-   M docker-compose.test.yml
-   M install.ps1
-   M install.sh
-   M packages/node/src/node/clients/scheduler.py
-   M packages/node/src/node/core/configuration.py
-   M packages/node/tests/test_scheduler_client.py
-   M packages/scheduler/docs/API.md
-   M packages/scheduler/src/scheduler/api/nodes.py
-   M scripts/verify_install.sh
+  M README.md
+   M packages/node/README.md
+   M packages/node/pyproject.toml
+   M packages/node/src/node/main.py
+   M packages/scheduler/README.md
+   M packages/scheduler/pyproject.toml
+   M packages/scheduler/src/scheduler/__init__.py
+   M packages/shared/pyproject.toml
 ```
 
 ## CI

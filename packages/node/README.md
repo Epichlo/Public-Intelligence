@@ -1,8 +1,16 @@
 # Public Intelligence Node
 
-A Public Intelligence Node is a compute worker that joins the network, advertises available models, executes inference locally using Ollama, and communicates with the Scheduler.
+A Public Intelligence Node is a compute worker that registers with the Scheduler,
+advertises the models Ollama actually has, executes inference locally, and holds an
+authenticated Zenoh mesh session so it is reachable even from behind NAT — it dials
+*out* to the coordinator rather than listening for inbound connections.
 
-Version 1 establishes the complete lifecycle of a compute node.
+Part of the **`public-intelligence` monorepo** (Scheduler, Node, and Website were merged
+into `packages/` on 2026-08-04). This document describes `packages/node`.
+
+Version 1 establishes the complete lifecycle of a compute node. The distributed
+(split) inference path is **not** implemented; the working path proxies to Ollama, and
+that is the only backend `runtime.py` assigns.
 
 ---
 
@@ -88,19 +96,18 @@ v1.0.0
 
 ## Future Work
 
-Version 2 will introduce:
-
-- Automatic hardware discovery
-- Better runtime metrics
-- Improved monitoring
-- Enhanced node capabilities
+Automatic hardware discovery shipped in v1 — the installer probes CPU, RAM, and GPU,
+and registration advertises the measured figures rather than a hardcoded guess. What is
+**not** in v1: split/distributed inference (the node runs whole models, not shards), and
+a proven real-NAT path (the mesh works on a LAN; crossing a real NAT is unverified).
 
 ---
 
-## Related Repositories
+## Related components
 
-- Public Intelligence Scheduler
-- Public Intelligence Website
+Part of the `public-intelligence` monorepo: `packages/scheduler` (control plane) and
+`packages/website` (dashboard). The pre-monorepo standalone repositories are archived
+and tagged `pre-monorepo-2026-08-04`.
 
 ---
 

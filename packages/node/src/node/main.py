@@ -50,7 +50,7 @@ def create_app(cors_origins: list[str] | None = None) -> FastAPI:
     application = FastAPI(
         title="Public Intelligence Node",
         description="Compute worker for the Public Intelligence network.",
-        version="0.1.0",
+        version="1.0.0",
         lifespan=lifespan,
     )
 
