@@ -4,17 +4,17 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-15 09:15 UTC
+**Generated:** 2026-08-16 16:21 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 395 | 0 | 0 | 13.45s |
-| Node | PASS | 260 | 0 | 1 | 3.88s |
-| Root E2E | PASS | 229 | 0 | 0 | 28.18s |
-| **Total** | **PASSING** | **884** | **0** | **1** | |
+| Scheduler | PASS | 395 | 0 | 0 | 11.55s |
+| Node | PASS | 260 | 0 | 1 | 3.04s |
+| Root E2E | PASS | 238 | 0 | 0 | 26.56s |
+| **Total** | **PASSING** | **893** | **0** | **1** | |
 
 Reproduce:
 
@@ -26,22 +26,22 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `bd1f6fc` reconcile the desk review against an independent second run
-- **Author / date:** Claude — 2026-08-14 07:15:46 +0000
+- **Last commit:** `b61758d` website: sovereign landing redesign
+- **Author / date:** Claude — 2026-08-15 09:52:56 +0000
 - **Branch:** claude/autonomous-architecture-decision-sqtiuy
-- **Total commits:** 105
+- **Total commits:** 107
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence (fetch)
 - **Working tree:** 8 uncommitted change(s)
 
 ```
   M README.md
-   M packages/node/README.md
-   M packages/node/pyproject.toml
-   M packages/node/src/node/main.py
-   M packages/scheduler/README.md
-   M packages/scheduler/pyproject.toml
-   M packages/scheduler/src/scheduler/__init__.py
-   M packages/shared/pyproject.toml
+   M ROADMAP.md
+   M install.sh
+   M scripts/verify.sh
+   M scripts/verify_install.sh
+  ?? scripts/bootstrap.sh
+  ?? specs/single-command-node-hosting.md
+  ?? tests/test_single_command_host.py
 ```
 
 ## CI

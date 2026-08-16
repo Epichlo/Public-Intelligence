@@ -26,7 +26,14 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 WORK="$(mktemp -d 2>/dev/null || mktemp -d -t pi-install)"
-cleanup() { rm -rf "$WORK"; }
+cleanup() {
+    # Stop a --start daemon before deleting the tree its pid file lives in, so a stage
+    # that fails mid-flight cannot orphan a running node process.
+    if [ -x "$WORK/scripts/launch_host_node.sh" ]; then
+        (cd "$WORK" && bash ./scripts/launch_host_node.sh stop >/dev/null 2>&1) || true
+    fi
+    rm -rf "$WORK"
+}
 trap cleanup EXIT
 
 fail() { printf '\033[31mFAIL\033[0m  %s\n' "$1"; exit 1; }
@@ -145,3 +152,75 @@ OWN_AFTER="$(grep '^NODE_NETWORK_AUTH_TOKEN=' "$ENV_FILE" | cut -d= -f2-)"
     || fail "rotating the fleet token changed this host's own credential (D9)"
 
 printf '\033[32mOK\033[0m    install.sh keeps the fleet token and the node credential separate (D9)\n'
+
+# --- single-command host: install.sh --start leaves a LIVE node -------------
+#
+# The behavioural half of specs/single-command-node-hosting.md. The pytest pins that the
+# scripts say the right words; this proves the node actually comes up. Without it,
+# --start could parse its flag, print "started", and leave nothing listening -- which is
+# ROADMAP D-3, a success-over-a-dead-daemon defect this repo has already shipped once.
+#
+# Reuses the venv the first install built (--skip-venv) on a high port that will not
+# collide with a real node; curl --retry rides out uvicorn's startup.
+START_PORT=18080
+printf 're-running install.sh --start on port %s (single-command host)\n' "$START_PORT"
+if ! (cd "$WORK" && NODE_PORT="$START_PORT" bash ./install.sh --start --skip-venv --skip-docker --force \
+        > "$WORK/install-start.log" 2>&1); then
+    printf '\n--- installer output ---\n'
+    tail -30 "$WORK/install-start.log"
+    fail "install.sh --start exited non-zero"
+fi
+
+HEALTHY=""
+if curl -fsS --retry 25 --retry-delay 1 --retry-connrefused -m 60 \
+        "http://127.0.0.1:${START_PORT}/health" >/dev/null 2>&1; then
+    HEALTHY=1
+fi
+# Stop the daemon before judging, so a red result never leaves a process behind.
+(cd "$WORK" && bash ./scripts/launch_host_node.sh stop >/dev/null 2>&1) || true
+
+if [ -z "$HEALTHY" ]; then
+    printf '\n--- node log ---\n'
+    tail -30 "$WORK/packages/node/node.log" 2>/dev/null || true
+    fail "install.sh --start did not leave a node answering GET /health on :${START_PORT}"
+fi
+printf '\033[32mOK\033[0m    install.sh --start left a live node answering /health\n'
+
+# --- the one-liner: bootstrap.sh clones, installs, and forwards flags -------
+#
+# Exercises scripts/bootstrap.sh end to end WITHOUT the network: a local git origin
+# stands in for GitHub. Proves the three things the curl|bash on-ramp must do -- fetch a
+# checkout, run install.sh, and forward the flags a caller passed after `bash -s --`.
+# --dry-run keeps it from building a second venv; the forwarded --scheduler-url proves
+# arguments survive the hop, because the dry-run echoes the URL it would write.
+ORIGIN="$(mktemp -d 2>/dev/null || mktemp -d -t pi-origin)"
+BOOT_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t pi-boot)"
+rmdir "$BOOT_DIR"  # bootstrap clones into it; it must not pre-exist
+cleanup_boot() { rm -rf "$ORIGIN" "$BOOT_DIR"; }
+trap 'cleanup_boot; cleanup' EXIT
+
+# Build a real git origin from the working tree so bootstrap.sh clones the code UNDER
+# TEST, not whatever is committed. Drop the built venv first so it does not bloat the
+# snapshot; the bootstrap check runs --dry-run and never needs it. (.gitignore would
+# skip it too, but not depending on that keeps the snapshot small for certain.)
+rm -rf "$WORK/packages/node/.venv"
+git -C "$WORK" -c init.defaultBranch=main init -q
+git -C "$WORK" -c user.name=gate -c user.email=gate@local add -A
+git -C "$WORK" -c user.name=gate -c user.email=gate@local commit -q -m "gate snapshot" >/dev/null 2>&1
+
+MARKER="https://scheduler.gate-forwarded.example"
+printf 'running bootstrap.sh against a local origin (one-liner wiring)\n'
+if ! PI_REPO="$WORK" PI_BRANCH=main PI_DIR="$BOOT_DIR" \
+        bash "$WORK/scripts/bootstrap.sh" --dry-run --scheduler-url "$MARKER" \
+        > "$ORIGIN/bootstrap.log" 2>&1; then
+    printf '\n--- bootstrap output ---\n'
+    tail -30 "$ORIGIN/bootstrap.log"
+    fail "bootstrap.sh exited non-zero against a local origin"
+fi
+
+[ -f "$BOOT_DIR/install.sh" ] || fail "bootstrap.sh did not produce a checkout with install.sh"
+grep -q "DRY-RUN" "$ORIGIN/bootstrap.log" \
+    || fail "bootstrap.sh did not run install.sh (no dry-run banner in its output)"
+grep -q "$MARKER" "$ORIGIN/bootstrap.log" \
+    || fail "bootstrap.sh dropped the forwarded --scheduler-url; flags after 'bash -s --' would be lost"
+printf '\033[32mOK\033[0m    bootstrap.sh clones, runs install.sh, and forwards flags\n'

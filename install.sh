@@ -19,6 +19,11 @@ DRY_RUN=false
 FORCE=false
 SKIP_DOCKER=false
 SKIP_VENV=false
+# --start turns this from a one-command INSTALLER into one-command HOSTING: after a
+# successful install it launches the node daemon. Opt-in, never the default, so a plain
+# `./install.sh` behaves exactly as it always has. bootstrap.sh (the curl|bash on-ramp)
+# passes it.
+START_NODE=false
 
 # Network defaults. This project operates NO network: bootstrap.public-intelligence.net
 # is NXDOMAIN and the hosted Scheduler does not answer, yet both were written into
@@ -95,6 +100,8 @@ usage() {
     echo "                  Default: none, meaning scout the local network only."
     echo "  --skip-docker   Skip Docker daemon connectivity requirement check"
     echo "  --skip-venv     Skip Python virtual environment creation"
+    echo "  --start         Launch the node daemon after a successful install, so the"
+    echo "                  install command leaves a RUNNING node. Off by default."
     echo "  -h, --help      Display this help message"
     exit 0
 }
@@ -137,6 +144,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --skip-venv)
             SKIP_VENV=true
+            shift
+            ;;
+        --start)
+            START_NODE=true
             shift
             ;;
         -h|--help)
@@ -563,7 +574,27 @@ else
 fi
 echo -e "==============================================================================${NC}"
 
-if [[ "$DRY_RUN" == "false" ]]; then
+# --start turns install into install-and-run, and it launches ONLY here -- after every
+# step above has succeeded. `set -e` means a failed install never reaches this line, so
+# the one-command path (bootstrap.sh) cannot end in "installed nothing, started a daemon,
+# and reported success" -- which is ROADMAP D-3, a defect this repo has already shipped.
+LAUNCHER="${PROJECT_ROOT}/scripts/launch_host_node.sh"
+if [[ "$DRY_RUN" == "true" ]]; then
+    if [[ "$START_NODE" == "true" ]]; then
+        log_dry_run "Would start the host node daemon: ${LAUNCHER} start"
+    fi
+elif [[ "$START_NODE" == "true" ]]; then
+    log_info "Starting the host node daemon (--start)..."
+    # The launcher verifies the process is alive before returning success and exits
+    # non-zero otherwise, so a node that dies on startup fails loudly here rather than
+    # being reported as running.
+    "$LAUNCHER" start
+    echo ""
+    echo "Your node is running. Manage it with:"
+    echo "  ${LAUNCHER} status"
+    echo "  ${LAUNCHER} logs"
+    echo "  ${LAUNCHER} stop"
+else
     echo "To start the host node daemon:"
     echo "  ./scripts/launch_host_node.sh start"
     echo ""

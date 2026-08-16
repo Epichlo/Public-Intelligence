@@ -153,7 +153,7 @@ fi
 
 if [ -n "$SHELLCHECK" ]; then
     run_step "shellcheck" "$SHELLCHECK" scripts/verify.sh scripts/install-hooks.sh \
-        scripts/verify_install.sh scripts/launch_host_node.sh install.sh
+        scripts/verify_install.sh scripts/launch_host_node.sh scripts/bootstrap.sh install.sh
 else
     printf '\n\033[33m── shellcheck (skipped: not installed)\033[0m\n'
     SKIPPED+=("shellcheck")

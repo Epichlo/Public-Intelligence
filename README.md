@@ -74,6 +74,24 @@ which is why the honest framing of this project is self-hosted infrastructure fo
 own trusted hardware, not a network to join. That is still not the human second
 opinion D7 asks for.
 
+## Host a node
+
+One command fetches the project, installs it, and leaves a **running** node:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Epichlo/Public-Intelligence/main/scripts/bootstrap.sh \
+  | bash -s -- --scheduler-url https://your-scheduler --fleet-token TOKEN --invite-code CODE
+```
+
+Everything after `bash -s --` is forwarded to `install.sh` (`install.sh --help` lists the
+flags). It clones into `~/public-intelligence` (override with `PI_DIR`), starts the
+daemon, and re-running it updates in place. Prefer to read what runs first? Clone the
+repo and run `./install.sh --start` yourself — the two paths are identical. Manage the
+daemon with `./scripts/launch_host_node.sh {status,logs,stop}`.
+
+You need Ollama running with at least one model pulled; and, against a Scheduler that
+sets them, a fleet token and an invite code from its operator.
+
 ## Repository layout
 
 | Path | What it is |
@@ -85,7 +103,7 @@ opinion D7 asks for.
 | `docs/decisions/` | The product decisions, and what each one costs |
 | `docs/historical/` | Superseded design documents. **They describe intentions as if built.** |
 
-## Running it
+## Developing it
 
 One venv for everything:
 
