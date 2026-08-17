@@ -49,6 +49,33 @@ the first found by a user rather than a ratchet.
 
 See `specs/what-two-machines-found.md`.
 
+### What the v1.0.0 wrap-up found (2026-08-17)
+
+**CI was red on `main` for eight days, across the release commit itself, and this
+file said nothing because nothing here could see it.** The last green run was
+`e7b0634` on 2026-08-07; every run after it failed, including `39f0227`
+("v1.0.0: version bump, honest READMEs for the release") and `b31fce3`. The
+failure was **Windows-only** — Ubuntu, macOS and the fresh-clone job were green
+on all of them, which is why a local gate reporting `PASS 25 checks` was not
+lying and not sufficient.
+
+`STATUS.md` reported CI as `UNVERIFIABLE` (no `gh` CLI in the generating
+environment) for that entire window. That is the honest word for "I did not
+look", and it is also the word that reads like "probably fine" — the actual
+state was *failing*, and one API call away. P8 in `docs/PREMISES.md` says the
+gate's falsifications come by **absence rather than failure**; this is the sixth
+instance, after `tests/` (2.9), the website (C6), `scripts/` (C7), `.claude/`,
+and `install.ps1` (W3). It is the first where the check *did* run and *did*
+fail, and the missing piece was that nobody read the result.
+
+| # | Defect | Status |
+|---|--------|--------|
+| V1 | **`shellcheck` could not parse `install.sh` on Windows.** `SC1017 (Literal carriage return)` at lines 395–397 and 608, cascading into `SC1073`/`SC1041`/`SC1042`/`SC1072` — a here-document terminator with a trailing CR does not match its opener. Nothing was wrong with the committed file: it is LF in the index on every platform. There was **no `.gitattributes`**, so `actions/checkout` applied the runner's `core.autocrlf=true` and rewrote every `.sh` to CRLF on checkout. Fixed by pinning `*.sh text eol=lf` — **surgically**, not with a repo-wide `* text=auto eol=lf`, because every other file type is currently converted by autocrlf on Windows and the suite is green over that; a blanket rule would change line endings for `.py`, `.md` and `.ps1` on the one platform that was failing. Ratcheted by `tests/test_line_endings.py`, which reads the **git index** (`git ls-files --eol`), because a working-tree check passes vacuously on Linux and would have stayed green throughout. | **done** |
+| V2 | **A host that served a request fast enough was credited exactly nothing.** Two tests failed `assert 0.0 > 0.0`. Credit accrues as `vram_gb * (duration/3600) * rate` and duration was measured with `time.time()` — a **wall** clock, which is coarse (~15ms on Windows, so a request completing inside one tick measures exactly `0.0`, and one zero factor zeroes the product) and **non-monotonic** (an NTP correction mid-request yields a negative difference, which the existing `max(0.0, ...)` then floors to zero, silently). This is a defect in shipped code, not a test artefact: Windows is merely the only leg whose clock is coarse enough to reveal it, and a fast host was under-credited on every platform. Now `time.perf_counter()` at both the producer and the consumer — the only two places the value is touched. Rate and formula untouched, so no host is repriced (the D2 concern). Reproduced deterministically on Linux by freezing **only** `time.time()` in the module under test, so `perf_counter` still works and the test cannot pass by accident. | **done** |
+| V3 | **The release shipped two version numbers.** The three Python packages were bumped to `1.0.0`; `packages/website/package.json` was still on the Next.js scaffold default `0.1.0`. No runtime symptom, nothing to fail — which is why it is now ratcheted by `test_every_package_declares_the_same_version` rather than left to a reader. | **done** |
+
+See `specs/ci-green-on-windows.md`.
+
 **The 7 Zenoh tests that used to fail in a sandbox now pass, and the paragraph that
 stood here was wrong.** It said they bound `tcp/[::]:0` because "the container has no
 IPv6", i.e. that the environment was at fault and nothing could be done. `tcp/[::]:0`
