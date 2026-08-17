@@ -89,8 +89,22 @@ The first grep returns four benign hits, and no others:
 **Everything else it returns is real.** If it comes back completely clean, the
 pattern is broken, not the code.
 
-The auth-bypass grep returns one hit, `packages/website/src/app/architecture/page.tsx:42`,
-which is prose containing the word "bypassing", not code.
+The auth-bypass grep returns **three** hits, all of them prose rather than code:
+
+- `packages/website/src/app/architecture/page.tsx:42` — page copy containing the word
+  "bypassing".
+- `packages/scheduler/src/scheduler/api/ingress.py:69` — a comment explaining how a
+  `kid`-aware verifier turns into a bypass, naming the test that pins it
+  (`test_an_unknown_kid_does_not_bypass_verification`).
+- `packages/scheduler/src/scheduler/core/rate_limiter.py:54` — a comment explaining
+  why evicting a depleted bucket would be a rate-limit bypass.
+
+**This line said "one hit" until 2026-08-17, when there were three.** Both extra hits
+are comments describing bypasses being *prevented*, and both predate the correction —
+so nothing was wrong with the code, and the count was wrong for long enough that the
+instruction two paragraphs down ("check each hit against that list, because a new one
+hides among them") had become harder to follow than it looks. A known-good list that
+is stale by two is a list that trains you to skim.
 
 **Known pre-existing hits as of 2026-08-03** — these are real and unfixed. Do not
 let them mask a *new* one, and do not report them as clean:
@@ -197,7 +211,9 @@ git check-ignore -q .secrets/probe && echo ".secrets/ ignored" || echo "!! .secr
 these are **source files**, not credential files. The private-key grep matches
 `test_credential_issuance.py`, whose fixture is the literal string
 `-----BEGIN PRIVATE KEY-----\nnonsense\n-----END PRIVATE KEY-----`, used to assert
-that an unreadable key produces a 503 carrying no key material.
+that an unreadable key produces a 503 carrying no key material — **and this file**,
+`VERIFY.md`, which matches because the previous sentence quotes that fixture. Two
+hits, both benign, one of them self-referential.
 
 ## 6. Regenerate STATUS.md
 

@@ -4,16 +4,16 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-17 03:27 UTC
+**Generated:** 2026-08-17 05:05 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 397 | 0 | 0 | 11.40s |
-| Node | PASS | 260 | 0 | 1 | 2.83s |
-| Root E2E | PASS | 249 | 0 | 0 | 26.42s |
+| Scheduler | PASS | 397 | 0 | 0 | 15.38s |
+| Node | PASS | 260 | 0 | 1 | 4.74s |
+| Root E2E | PASS | 249 | 0 | 0 | 28.99s |
 | **Total** | **PASSING** | **906** | **0** | **1** | |
 
 Reproduce:
@@ -26,22 +26,18 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `b31fce3` one command to host a node
-- **Author / date:** Claude — 2026-08-16 16:21:21 +0000
+- **Last commit:** `7be0eaf` fix the Windows CI failure that sat across the v1.0.0 release
+- **Author / date:** Claude — 2026-08-17 03:50:29 +0000
 - **Branch:** claude/v1-wrap-up-checklist-6uadua
-- **Total commits:** 50
+- **Total commits:** 51
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence (fetch)
-- **Working tree:** 8 uncommitted change(s)
+- **Working tree:** 4 uncommitted change(s)
 
 ```
-  M ROADMAP.md
-   M packages/scheduler/src/scheduler/api/openai.py
-   M packages/scheduler/tests/test_metering_and_accrual.py
-   M packages/website/package.json
-   M tests/test_source_parity.py
-  ?? .gitattributes
-  ?? specs/ci-green-on-windows.md
-  ?? tests/test_line_endings.py
+  M README.md
+   M ROADMAP.md
+   M VERIFY.md
+   M docs/PREMISES.md
 ```
 
 ## CI
@@ -58,7 +54,7 @@ _Measured, not asserted. Re-run to refresh._
 
 | Repo | Remote | Branch | Tracking |
 | --- | --- | --- | --- |
-| root | `https://github.com/Epichlo/Public-Intelligence` | claude/v1-wrap-up-checklist-6uadua | **none** |
+| root | `https://github.com/Epichlo/Public-Intelligence` | claude/v1-wrap-up-checklist-6uadua | origin/claude/v1-wrap-up-checklist-6uadua |
 
 - **`.gitmodules`:** absent, which is correct — `packages/` are ordinary directories since the 2026-08-04 monorepo migration, and CI's fresh-clone job asserts this file does not come back.
 - **root venv interpreter:** Python 3.11.15

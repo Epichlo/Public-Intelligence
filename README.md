@@ -16,11 +16,11 @@ It is not a marketplace and there is no network to join. You run both halves —
 product, and [D2](docs/decisions/D2-economics.md) for the arithmetic that ruled out
 the alternative.
 
-**This is the v1.0.0 feature-complete milestone — not a maturity claim.** It means the
-v1 scope is built and the gate is green, not that anyone has run this in anger. Read
-"What is actually true" before relying on anything here.
+**This is the v1.0.1 feature-complete milestone — not a maturity claim.** It means the
+v1 scope is built and the gate is green on every supported platform, not that anyone
+has run this in anger. Read "What is actually true" before relying on anything here.
 
-## What is actually true, as of 2026-08-15
+## What is actually true, as of 2026-08-17
 
 Verified, not aspirational. `STATUS.md` is generated from real test runs; this
 section summarises it in prose.
@@ -29,9 +29,18 @@ section summarises it in prose.
 Zenoh mesh, advertises the models Ollama actually has, and survives the Scheduler
 being unreachable. The Scheduler matchmakes, dispatches over the mesh (which is how
 a node behind NAT is reachable at all), and exposes an OpenAI-shaped gateway behind
-RS256 JWT auth. State can persist across restarts. CI runs the gate on Linux, macOS
-and Windows across Python 3.11–3.14; `STATUS.md` records the last measured result and
-the commit it covers.
+RS256 JWT auth. State can persist across restarts.
+
+CI runs the gate on Linux, macOS and Windows across Python 3.11–3.14 — ten jobs — and
+as of `25fe60c` all ten pass. Worth stating plainly rather than as a badge: **they did
+not, from 2026-08-09 to 2026-08-17.** The three Windows legs were red for eight days,
+across the `v1.0.0` release commit, and nothing in this repository noticed. See
+"What we cannot see" below, because that gap is more instructive than the bug was.
+
+**If `STATUS.md` and the paragraph above disagree, they are both right.** That claim
+comes from reading the run directly; `STATUS.md` reports `UNVERIFIABLE` whenever it is
+generated on a machine without the `gh` CLI, because that is the only way it knows how
+to ask. Regenerate it where `gh` is installed and authenticated and the line resolves.
 
 **Does not work, and is not claimed to:**
 
@@ -51,8 +60,59 @@ the commit it covers.
   there is no payout path — not "not yet", but a decision
   ([D2](docs/decisions/D2-economics.md)).
 - **There is no content filtering, no meaningful rate limiting, and no backups**, and
-  nothing verifies that a node ran the model it claims.
+  nothing verifies that a node ran the model it claims. The rate limiter is a
+  per-instance abuse dampener, not a quota. Canary checks catch a host running *no*
+  model; they cannot catch a host running the *wrong* one.
   [`docs/OPERATING.md`](docs/OPERATING.md) lists what you take on by running this.
+- **`/v1/batch` is not implemented** — it answers 501. It is authenticated and
+  tenant-scoped, because those were real fixes to a real hole, but it dispatches
+  nothing.
+- **JWTs cannot be revoked.** They are stateless by design; the mitigations are a
+  server-enforced TTL cap and key rotation. There is no revoke button and this is
+  said plainly rather than implied away.
+- **Nodes installed before [D9](docs/decisions/D9-admission-is-not-identity.md) keep
+  the old weakness** — one header meaning both fleet admission and node identity —
+  until they are upgraded. That is a deliberate compatibility choice, not an
+  oversight: refusing them would strand every running host.
+
+## What we cannot see
+
+Distinct from the list above, which is what does not *work*. This is what this
+project's own verification **cannot observe** — the gaps where a defect would not be
+caught by anything here. It is written down because
+[`docs/PREMISES.md`](docs/PREMISES.md) P8 records that every falsification of "the
+gate is the definition of does this pass" has arrived by **absence rather than
+failure**, and an unlisted absence is indistinguishable from an all-clear.
+
+- **`install.ps1` has never been executed, by anything, ever.** `install.sh` gets a
+  real run against a throwaway tree (`scripts/verify_install.sh`); the PowerShell
+  installer is only ever *read* — `scripts/audit_system.py` greps it for strings and
+  `tests/test_installer_parity.py` ratchets its structure. Every Windows install
+  defect to date (W1–W5, W8) was therefore found by a person on a real machine, not
+  by the gate. Assume the next one will be too.
+- **The repository cannot read its own CI.** `scripts/generate_status.py` shells out
+  to `gh`; where `gh` is absent it reports `UNVERIFIABLE — cannot query run history`.
+  That is honest, and it reads like "no known problem". It is the mechanism by which
+  a red build sat under a published release for eight days. **The fix is known and
+  not yet made:** fall back to the GitHub REST API so the answer does not depend on
+  which machine regenerated the file.
+- **Work on a branch is unverified until it becomes a pull request.** The workflow
+  triggers only on `push` to `main` and on PRs, so a feature branch gets no CI at all.
+- **The local gate is one operating system and one interpreter.** CI is nine legs; a
+  developer's run is one. Platform-specific defects are structurally invisible
+  locally, and there have now been three: a cp1252 text encoding (2.9), CRLF line
+  endings (V1), and wall-clock resolution (V2). A local `PASS` is a weaker claim than
+  a CI `PASS` and the gate says so in its own output.
+- **The gate skips checks it cannot run**, naming them as `DID NOT RUN`: a missing
+  interpreter, `shellcheck` if absent, the website suite without `node_modules`. The
+  honesty is real; the coverage still is not there.
+- **`docker-compose.test.yml` has never run.** Two defects were found in it by
+  reading (`tests/test_compose_env_matches_settings.py`) rather than by executing it.
+- **Four module pairs in `experimental/` remain duplicated** — `quantization`,
+  `local_boundary`, `kv_cache`, `transport`. Drift is ratcheted, not eliminated.
+- **No human outside this project has reviewed any of it.** Two independent AI desk
+  reviews of the market premises are in [`docs/review/`](docs/review/) and they
+  converged, which is evidence but not independence.
 
 ## What this project has decided, and what it hasn't
 

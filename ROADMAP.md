@@ -1,8 +1,16 @@
 # ROADMAP — v1
 
-Status: **Stages 0–4, C and D are complete. 1.5 is half earned — a second machine
-served a real request over the mesh on 2026-08-11, but not across a real NAT.
-D7 is open. W1–W10 are done; W7 is done in code and unexercised on real hardware.**
+Status: **Stages 0–4, C and D are complete. Released as `v1.0.1` on 2026-08-17, with
+CI green on all ten jobs (Linux/macOS/Windows × Python 3.11–3.14) at `25fe60c`.
+1.5 is half earned — a second machine served a real request over the mesh on
+2026-08-11, but not across a real NAT. D7 is open. W1–W10 are done; W7 is done in
+code and unexercised on real hardware. V1–V3 closed the Windows CI failure that had
+been red since 2026-08-09, including across the `v1.0.0` release commit.**
+
+**`v1.0.0` was released on 2026-08-15 over a red CI run, and the tag is deliberately
+left where it is.** Moving it would have silently changed the bytes its published
+release hands out. `v1.0.1` is the first release whose commit CI has ever passed on
+every supported platform. Both tags stand: `v1.0.0` → `39f0227`, `v1.0.1` → `25fe60c`.
 
 What is NOT done, and why, so this line does not have to be re-derived:
 
