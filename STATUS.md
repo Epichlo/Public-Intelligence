@@ -4,16 +4,16 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-17 05:05 UTC
+**Generated:** 2026-08-17 05:19 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 397 | 0 | 0 | 15.38s |
-| Node | PASS | 260 | 0 | 1 | 4.74s |
-| Root E2E | PASS | 249 | 0 | 0 | 28.99s |
+| Scheduler | PASS | 397 | 0 | 0 | 13.39s |
+| Node | PASS | 260 | 0 | 1 | 3.85s |
+| Root E2E | PASS | 249 | 0 | 0 | 28.35s |
 | **Total** | **PASSING** | **906** | **0** | **1** | |
 
 Reproduce:
@@ -26,19 +26,12 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `7be0eaf` fix the Windows CI failure that sat across the v1.0.0 release
-- **Author / date:** Claude — 2026-08-17 03:50:29 +0000
+- **Last commit:** `214bcb8` docs: record the real state, including what we cannot see
+- **Author / date:** Claude — 2026-08-17 05:18:43 +0000
 - **Branch:** claude/v1-wrap-up-checklist-6uadua
-- **Total commits:** 51
+- **Total commits:** 52
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence (fetch)
-- **Working tree:** 4 uncommitted change(s)
-
-```
-  M README.md
-   M ROADMAP.md
-   M VERIFY.md
-   M docs/PREMISES.md
-```
+- **Working tree:** clean
 
 ## CI
 
