@@ -4,17 +4,17 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-16 16:21 UTC
+**Generated:** 2026-08-17 03:27 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 395 | 0 | 0 | 11.55s |
-| Node | PASS | 260 | 0 | 1 | 3.04s |
-| Root E2E | PASS | 238 | 0 | 0 | 26.56s |
-| **Total** | **PASSING** | **893** | **0** | **1** | |
+| Scheduler | PASS | 397 | 0 | 0 | 11.40s |
+| Node | PASS | 260 | 0 | 1 | 2.83s |
+| Root E2E | PASS | 249 | 0 | 0 | 26.42s |
+| **Total** | **PASSING** | **906** | **0** | **1** | |
 
 Reproduce:
 
@@ -26,22 +26,22 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `b61758d` website: sovereign landing redesign
-- **Author / date:** Claude — 2026-08-15 09:52:56 +0000
-- **Branch:** claude/autonomous-architecture-decision-sqtiuy
-- **Total commits:** 107
+- **Last commit:** `b31fce3` one command to host a node
+- **Author / date:** Claude — 2026-08-16 16:21:21 +0000
+- **Branch:** claude/v1-wrap-up-checklist-6uadua
+- **Total commits:** 50
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence (fetch)
 - **Working tree:** 8 uncommitted change(s)
 
 ```
-  M README.md
-   M ROADMAP.md
-   M install.sh
-   M scripts/verify.sh
-   M scripts/verify_install.sh
-  ?? scripts/bootstrap.sh
-  ?? specs/single-command-node-hosting.md
-  ?? tests/test_single_command_host.py
+  M ROADMAP.md
+   M packages/scheduler/src/scheduler/api/openai.py
+   M packages/scheduler/tests/test_metering_and_accrual.py
+   M packages/website/package.json
+   M tests/test_source_parity.py
+  ?? .gitattributes
+  ?? specs/ci-green-on-windows.md
+  ?? tests/test_line_endings.py
 ```
 
 ## CI
@@ -58,7 +58,7 @@ _Measured, not asserted. Re-run to refresh._
 
 | Repo | Remote | Branch | Tracking |
 | --- | --- | --- | --- |
-| root | `https://github.com/Epichlo/Public-Intelligence` | claude/autonomous-architecture-decision-sqtiuy | origin/claude/autonomous-architecture-decision-sqtiuy |
+| root | `https://github.com/Epichlo/Public-Intelligence` | claude/v1-wrap-up-checklist-6uadua | **none** |
 
 - **`.gitmodules`:** absent, which is correct — `packages/` are ordinary directories since the 2026-08-04 monorepo migration, and CI's fresh-clone job asserts this file does not come back.
 - **root venv interpreter:** Python 3.11.15

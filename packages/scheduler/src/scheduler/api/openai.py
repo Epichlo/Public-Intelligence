@@ -147,7 +147,15 @@ async def create_chat_completion(
     # Started before matchmaking, so the recorded duration is what the REQUESTER
     # waited, not just what the node spent generating. A host reading their
     # dashboard should see the cost of the whole round trip their machine was in.
-    started_at = time.time()
+    #
+    # `perf_counter`, not `time`: this is an ELAPSED measurement, and the wall
+    # clock is the wrong instrument for one. It is coarse (~15ms on Windows, so a
+    # fast request measures exactly 0.0 and the host is credited nothing -- the
+    # accrual is a product, so one zero factor zeroes it) and it is not monotonic
+    # (an NTP correction mid-request can make the difference negative, which the
+    # `max(0.0, ...)` below then floors to zero, silently). Only differences of
+    # `perf_counter()` are meaningful, and only differences are taken.
+    started_at = time.perf_counter()
 
     task_data = {
         "task_id": task_id,
@@ -495,7 +503,8 @@ async def _meter(
     """
     meter: UsageMeter | None = getattr(request.app.state, "usage_meter", None)
     ledger: CreditLedger | None = getattr(request.app.state, "ledger", None)
-    duration = max(0.0, time.time() - started_at)
+    # Monotonic, to match how `started_at` was taken. See the comment there.
+    duration = max(0.0, time.perf_counter() - started_at)
 
     try:
         if meter is not None:

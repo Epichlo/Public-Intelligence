@@ -14,6 +14,7 @@ later by a host asking why their balance is zero.
 
 from __future__ import annotations
 
+import time as _real_time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -31,6 +32,30 @@ from scheduler.models.node import GPUInfo, Node
 
 NODE_ID = "node-meter-1"
 FLEET_TOKEN = "test-token"
+
+
+class _FrozenWallClock:
+    """A stand-in for the `time` module whose WALL clock never advances.
+
+    This reproduces, deterministically and on any platform, the condition that
+    made all three Windows CI legs red from 2026-08-09 to 2026-08-17: on Windows
+    `time.time()` has a resolution of roughly 15ms, so a request served by a
+    mock completes inside a single tick and measures **exactly 0.0 seconds**.
+    Credit accrues as `vram_gb * (duration / 3600) * rate`, so a zero duration
+    zeroes the product and the host is credited nothing.
+
+    Everything except `time()` delegates to the real module, so `perf_counter()`
+    -- the monotonic clock elapsed time is supposed to be measured with -- keeps
+    working. That is what makes this a fair test rather than a rigged one: it
+    freezes only the clock that was the wrong tool, and the fix is to stop
+    reaching for it.
+    """
+
+    def time(self) -> float:
+        return 1_000_000.0
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(_real_time, name)
 
 
 @pytest.fixture(scope="module")
@@ -138,6 +163,66 @@ def test_the_serving_node_is_credited(client: TestClient, auth: dict[str, str]) 
         assert _complete(client, auth).status_code == 200
 
     assert ledger.balances()[NODE_ID] > 0.0
+
+
+def test_a_host_is_credited_even_when_the_wall_clock_is_too_coarse_to_move(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    """A fast request must still credit the host that served it.
+
+    This is the Windows CI failure, reproduced on any platform. Duration was
+    measured with `time.time()` -- a WALL clock, which is both coarse (~15ms on
+    Windows) and non-monotonic (an NTP step mid-request can make the difference
+    negative, which `max(0.0, ...)` then silently floors to zero). Elapsed time
+    belongs to `time.perf_counter()`.
+
+    The defect is in shipped code, not in the test: the Windows leg is simply the
+    only one whose clock is coarse enough to reveal it. A host fast enough to
+    serve a request inside one tick was credited nothing on every platform.
+    """
+    ledger = client.app.state.ledger
+    assert ledger.balances().get(NODE_ID, 0.0) == 0.0
+
+    with (
+        patch("scheduler.api.openai.time", _FrozenWallClock()),
+        patch(
+            "scheduler.api.openai.infer_once",
+            new=AsyncMock(return_value={"response": "Paris."}),
+        ),
+    ):
+        assert _complete(client, auth).status_code == 200
+
+    assert ledger.balances()[NODE_ID] > 0.0, (
+        "the serving host was credited 0.0 because the wall clock did not tick "
+        "during the request -- elapsed time must be measured with a monotonic "
+        "clock (time.perf_counter). See specs/ci-green-on-windows.md."
+    )
+
+
+def test_the_recorded_duration_survives_a_frozen_wall_clock(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    """The metering record's duration must come from the monotonic clock too.
+
+    Asserted separately from the balance because they are two different readers
+    of the same measurement: a host's dashboard shows the duration, and the
+    ledger multiplies by it. Both were reading a wall clock.
+    """
+    with (
+        patch("scheduler.api.openai.time", _FrozenWallClock()),
+        patch(
+            "scheduler.api.openai.infer_once",
+            new=AsyncMock(return_value={"response": "Paris."}),
+        ),
+    ):
+        assert _complete(client, auth).status_code == 200
+
+    records = client.app.state.usage_meter.recent()
+    assert len(records) == 1
+    assert records[0].duration_seconds > 0.0, (
+        "duration_seconds is 0.0 under a frozen wall clock -- it is being "
+        "measured with time.time() rather than time.perf_counter()"
+    )
 
 
 def test_a_failed_dispatch_credits_nobody(client: TestClient, auth: dict[str, str]) -> None:
