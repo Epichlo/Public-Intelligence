@@ -1,7 +1,39 @@
 # ROADMAP — v1
 
+> ## CLOSED — 2026-08-21
+>
+> **The project is archived and this roadmap is no longer a plan.** It is kept as the
+> record of what was built and in what order. Nothing below will be worked on.
+>
+> It ended because two load-bearing premises failed while the engineering was
+> succeeding: the economics do not close (~15× against commodity pricing,
+> [D2](docs/decisions/D2-economics.md)), and NAT traversal turned out not to be a
+> differentiator for the single-machine case that is actually solved — relocating the
+> whole claim onto cross-party pooling, for which there was never any evidence
+> (`docs/PREMISES.md` P1/P2). 1.5 and D7 below stayed open to the end, and 1.5 was the
+> product. See the root [`README.md`](README.md) for the full account.
+>
+> **Two findings recorded at closure, both from reading the code rather than a failing
+> test:**
+>
+> - **The `v1.0.1` tag names a tree that declares itself `1.0.0`.** All four packages
+>   agree with each other at `25fe60c`, so `test_every_package_declares_the_same_version`
+>   passes — it compares the packages to *each other*, never to the tag. V3 below fixed
+>   "the release shipped two version numbers" by converging them on the *previous* one.
+>   Deliberately not bumped now: a tree claiming `v1.0.1` that is not the released
+>   `v1.0.1` is the same confusion in a different hat.
+> - **A whole node execution path is dead code.** `Runtime._worker_loop` →
+>   `InferenceBackend` → `ArtifactStore` is never fed: nothing in `src` enqueues onto
+>   `task_queue`, `inference_backend` is only ever `EchoBackend`
+>   (`packages/node/src/node/runtime.py:282`), and `OllamaBackend` is never constructed
+>   outside a test. The live path is `api/inference.py` → `clients/ollama.py`, a
+>   different class. `test_end_to_end_pipeline` feeds the queue by hand — an end-to-end
+>   test of a path production never takes.
+
 Status: **Stages 0–4, C and D are complete. Released as `v1.0.1` on 2026-08-17, with
-CI green on all ten jobs (Linux/macOS/Windows × Python 3.11–3.14) at `25fe60c`.
+CI green on all ten jobs (Linux/macOS/Windows × Python 3.11, 3.12 and 3.14, plus a
+fresh-clone job) at `25fe60c` — 3.13 is not in the matrix, and the range notation used
+here previously implied four interpreters where `.github/workflows/ci.yml` names three.
 1.5 is half earned — a second machine served a real request over the mesh on
 2026-08-11, but not across a real NAT. D7 is open. W1–W10 are done; W7 is done in
 code and unexercised on real hardware. V1–V3 closed the Windows CI failure that had
@@ -152,7 +184,8 @@ cutting it means this isn't v1. I concluded it is not, for four reasons:
    expands the catalogue; it is not what makes the exchange work.
 
 2. **What exists today is a simulation, not an implementation.** `LocalBoundaryEngine`
-   is a 155-word vocabulary and two seeded `random.gauss` matrices; "speculative
+   is a 120-token vocabulary (116 words plus 4 special tokens, against a declared
+   `vocab_size` of 32,000) and two seeded `random.gauss` matrices; "speculative
    candidates" are `(prev * 7 + 13) % vocab_size`. Real sharding needs real weights,
    real tensor ops, and a real runtime. The distance from here to there is a
    rewrite, not a fix. Betting v1 on it means v1 does not ship.

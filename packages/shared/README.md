@@ -1,5 +1,8 @@
 # packages/shared
 
+**Archived on 2026-08-21 along with the rest of the project. See the root
+[`README.md`](../../README.md) for what worked, what failed, and why it stopped.**
+
 The stated follow-up to the 2026-08-04 monorepo migration (ROADMAP C8), and the
 answer to the question `CLAUDE.md` has been asking contributors to hold in their
 heads: *"before adding a module, check whether its twin exists; if you change one of
