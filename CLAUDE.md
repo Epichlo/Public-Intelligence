@@ -112,7 +112,8 @@ lower its budget so the ratchet holds.
 
 **The distributed inference path is not implemented.** `packages/node/src/node/runtime.py`
 never assigns `self.inference_backend` anything but `EchoBackend`. `LocalBoundaryEngine`
-uses a 155-word vocabulary and seeded random matrices. The working inference path is
+uses a 120-token vocabulary (116 words plus 4 special tokens) and seeded random
+matrices. The working inference path is
 the non-split one that proxies to Ollama. Don't describe split inference as working.
 
 **`VERIFY.md` step 3's known-issues table is EMPTY, and the greps still return
