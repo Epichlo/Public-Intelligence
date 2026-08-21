@@ -4,16 +4,16 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-17 05:19 UTC
+**Generated:** 2026-08-21 09:51 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 397 | 0 | 0 | 13.39s |
-| Node | PASS | 260 | 0 | 1 | 3.85s |
-| Root E2E | PASS | 249 | 0 | 0 | 28.35s |
+| Scheduler | PASS | 397 | 0 | 0 | 13.15s |
+| Node | PASS | 260 | 0 | 1 | 6.87s |
+| Root E2E | PASS | 249 | 0 | 0 | 28.79s |
 | **Total** | **PASSING** | **906** | **0** | **1** | |
 
 Reproduce:
@@ -26,10 +26,10 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `214bcb8` docs: record the real state, including what we cannot see
-- **Author / date:** Claude — 2026-08-17 05:18:43 +0000
-- **Branch:** claude/v1-wrap-up-checklist-6uadua
-- **Total commits:** 52
+- **Last commit:** `b955d53` website: put the hosting command where a visitor can see it
+- **Author / date:** Claude — 2026-08-21 09:49:58 +0000
+- **Branch:** claude/v1-release-checklist-orxnno
+- **Total commits:** 54
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence (fetch)
 - **Working tree:** clean
 
@@ -47,7 +47,7 @@ _Measured, not asserted. Re-run to refresh._
 
 | Repo | Remote | Branch | Tracking |
 | --- | --- | --- | --- |
-| root | `https://github.com/Epichlo/Public-Intelligence` | claude/v1-wrap-up-checklist-6uadua | origin/claude/v1-wrap-up-checklist-6uadua |
+| root | `https://github.com/Epichlo/Public-Intelligence` | claude/v1-release-checklist-orxnno | **none** |
 
 - **`.gitmodules`:** absent, which is correct — `packages/` are ordinary directories since the 2026-08-04 monorepo migration, and CI's fresh-clone job asserts this file does not come back.
 - **root venv interpreter:** Python 3.11.15
