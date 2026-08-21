@@ -3,6 +3,7 @@ import { Hero } from "@/components/landing/hero";
 import { Tenets } from "@/components/landing/tenets";
 import { UnredactedTruth } from "@/components/landing/unredacted-truth";
 import { EndpointConsole } from "@/components/landing/endpoint-console";
+import { HostANode } from "@/components/landing/host-a-node";
 
 const COLOPHON_LINKS = [
   { label: "Architecture", href: "/architecture" },
@@ -17,6 +18,7 @@ export default function Home() {
       <Tenets />
       <UnredactedTruth />
       <EndpointConsole />
+      <HostANode />
 
       {/* Colophon */}
       <section className="border-t hairline bg-iron text-lead">

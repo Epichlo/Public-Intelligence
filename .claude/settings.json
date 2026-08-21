@@ -48,7 +48,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .claude/hooks/block-protected-paths.py"
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/block-protected-paths.py"
           }
         ]
       }
@@ -58,7 +58,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .claude/hooks/require-proof-stop.py"
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/require-proof-stop.py"
           }
         ]
       }
@@ -68,7 +68,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .claude/hooks/sessionstart-context.py"
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/sessionstart-context.py"
           }
         ]
       }
