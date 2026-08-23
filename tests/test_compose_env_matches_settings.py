@@ -221,7 +221,7 @@ def _service_blocks() -> dict[str, str]:
     Scoped to the `services:` section: `networks:` also holds two-space-indented
     keys, and the top-level `x-service-build` anchor is not a service either.
     """
-    blocks: dict[str, str] = {}
+    blocks: dict[str, list[str]] = {}
     current: str | None = None
     in_services = False
     for raw in COMPOSE.read_text(encoding="utf-8").splitlines():

@@ -61,9 +61,7 @@ def test_the_same_prompt_on_two_models_is_two_entries() -> None:
     cache.insert("mistral-7b", "What is the capital of France?", "La ville de Paris")
 
     assert cache.lookup("llama3-8b", "What is the capital of France?") == "Paris"
-    assert cache.lookup("mistral-7b", "What is the capital of France?") == (
-        "La ville de Paris"
-    )
+    assert cache.lookup("mistral-7b", "What is the capital of France?") == ("La ville de Paris")
 
 
 def test_eviction_is_bounded_by_capacity_in_lru_order() -> None:

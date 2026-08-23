@@ -18,7 +18,7 @@ See `specs/node-reachability.md`.
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import Any
 
 import httpx
@@ -161,7 +161,7 @@ async def open_inference_stream(
     ip_address: str,
     model: str,
     prompt: str,
-) -> AsyncIterator[str]:
+) -> AsyncGenerator[str, None]:
     """Start a streaming inference and return an iterator of token text.
 
     The transport decision is made before this returns, so a caller that has not yet sent
@@ -200,7 +200,7 @@ async def open_inference_stream(
     )
 
 
-async def _iterate_mesh_stream(stream: Any) -> AsyncIterator[str]:
+async def _iterate_mesh_stream(stream: Any) -> AsyncGenerator[str, None]:
     """Adapt a `MeshStream` to a plain token iterator.
 
     A `MeshNodeError` raised part-way through becomes a `NodeDispatchError` so callers
@@ -227,7 +227,7 @@ async def _http_stream(
     model: str,
     prompt: str,
     token: str | None,
-) -> AsyncIterator[str]:
+) -> AsyncGenerator[str, None]:
     """Stream from the node's HTTP `/infer`, unwrapping its line framing.
 
     The node emits raw lines, optionally SSE-prefixed, optionally JSON, and prefixes the
