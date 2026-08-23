@@ -19,8 +19,9 @@ gateway -> scheduler -> mesh -> node. Before that job existed, two containers ha
 never exchanged an inference request anywhere (`docs/PREMISES.md` P2). What this file
 still owns is everything that can be judged without a daemon: every variable bound,
 the gateway credential present and operator-provided, healthchecks probing with tools
-the image actually contains, and image builds whose context can resolve the
-local-path `public-intelligence-shared`.
+the image actually contains and endpoints something in this stack actually serves,
+every container declaring a start command, and image builds whose context can
+resolve the local-path `public-intelligence-shared`.
 """
 
 from __future__ import annotations
@@ -212,6 +213,95 @@ def test_every_service_image_builds_from_a_context_that_has_shared() -> None:
         "no build copies packages/shared into its context staging, so pip resolves "
         "public-intelligence-shared from the index and fails"
     )
+
+
+def _service_blocks() -> dict[str, str]:
+    """Every service's raw YAML block, keyed by name -- no YAML dependency.
+
+    Scoped to the `services:` section: `networks:` also holds two-space-indented
+    keys, and the top-level `x-service-build` anchor is not a service either.
+    """
+    blocks: dict[str, str] = {}
+    current: str | None = None
+    in_services = False
+    for raw in COMPOSE.read_text(encoding="utf-8").splitlines():
+        if re.match(r"^services:$", raw):
+            in_services = True
+            continue
+        if in_services and raw and not raw[0].isspace():
+            in_services = False  # the next top-level key ends the section
+        if not in_services:
+            continue
+        found = re.match(r"^  ([a-z0-9_-]+):\s*$", raw)
+        if found:
+            current = found.group(1)
+            blocks[current] = []
+        elif current:
+            blocks[current].append(raw)
+    return {name: "\n".join(body) for name, body in blocks.items()}
+
+
+def test_every_compose_service_declares_a_start_command() -> None:
+    """A container with no start command serves nothing, ever.
+
+    The shared build template once ended at WORKDIR with no CMD, so both service
+    containers inherited the base image's default -- an interactive python3 on
+    stdin -- and exited the instant they started. Nothing crashed: the healthcheck
+    just never passed, `depends_on: condition: service_healthy` never resolved, and
+    the E2E job would have timed out on every run. Found by audit AFTER the stack
+    was committed as runnable, which is exactly when a static pin earns its keep.
+    """
+    blocks = _service_blocks()
+    expected = {"scheduler", "node-worker-1", "node-worker-2", "ollama-spoof"}
+    missing = expected - set(blocks)
+    assert not missing, f"docker-compose.test.yml lost services: {sorted(missing)}"
+
+    commandless = []
+    for name in sorted(expected):
+        block = blocks[name]
+        # Either compose-level `command:` or a CMD baked into that service's own
+        # inline Dockerfile (the stand-in bakes its CMD; the three services declare).
+        has_compose_command = re.search(r"^    command:", block, flags=re.MULTILINE)
+        has_dockerfile_cmd = re.search(r"^\s+CMD\b", block, flags=re.MULTILINE)
+        if not (has_compose_command or has_dockerfile_cmd):
+            commandless.append(name)
+
+    assert not commandless, (
+        f"{commandless} declare no start command, so they inherit the base image "
+        f"default (interactive python3 on stdin), exit at once, and nothing "
+        f"downstream can ever go healthy."
+    )
+
+
+def test_each_service_serves_what_its_healthcheck_probes() -> None:
+    """The probe must point at something this stack actually runs.
+
+    The scheduler's healthcheck polls /health on :8000, so its start command must be
+    the uvicorn serving scheduler.main on :8000 -- not merely SOME long-running
+    process, which would go healthy while serving nothing. The workers have no
+    healthcheck; their registration IS their liveness proof, so what is pinned here
+    is only that they still run the node entrypoint rather than anything else that
+    merely stays up.
+    """
+    blocks = _service_blocks()
+
+    scheduler_command = re.search(r"^    command:\s*(.+)$", blocks["scheduler"], flags=re.MULTILINE)
+    assert scheduler_command, "scheduler declares no start command"
+    joined = " ".join(re.findall(r'"([^"]+)"', scheduler_command.group(1)))
+    assert "uvicorn" in joined and "scheduler.main:app" in joined, (
+        f"the scheduler does not start its FastAPI app: {joined!r}"
+    )
+    assert "--port" in joined and "8000" in joined, (
+        f"the scheduler does not serve :8000, which is the port its healthcheck probes: {joined!r}"
+    )
+
+    for worker in ("node-worker-1", "node-worker-2"):
+        worker_command = re.search(r"^    command:\s*(.+)$", blocks[worker], flags=re.MULTILINE)
+        assert worker_command, f"{worker} declares no start command"
+        worker_joined = " ".join(re.findall(r'"([^"]+)"', worker_command.group(1)))
+        assert worker_joined.strip() == "python -m node.main", (
+            f"{worker} does not run the node entrypoint: {worker_joined!r}"
+        )
 
 
 def test_the_two_workers_do_not_share_a_credential() -> None:

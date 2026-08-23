@@ -38,6 +38,15 @@
 #      python:3.12-slim, so the service could never report healthy --
 #      `depends_on: condition: service_healthy` would have deadlocked the nodes
 #      forever. It now probes with the stdlib, which the image does contain.
+#   7. The shared build template originally ended at WORKDIR with no CMD, so both
+#      containers inherited the base image's default -- an interactive python3 on
+#      stdin -- and exited the instant they started: no healthcheck could pass, no
+#      `depends_on` could resolve, and the E2E job would have timed out on every
+#      run. The CMD lines of the package Dockerfiles this file replaced were
+#      dropped in the rewrite. Each service now declares its start command
+#      explicitly, and
+#      tests/test_compose_env_matches_settings.py::test_every_compose_service_declares_a_start_command
+#      pins that a commandless container cannot come back silently.
 #
 # The tokens below are throwaways for local use. They are not secrets and must not
 # be reused anywhere reachable.
@@ -76,6 +85,12 @@ services:
       args:
         SERVICE_DIR: packages/scheduler
     container_name: pi-scheduler-test
+    # The base image's default command is an interactive python3 reading stdin,
+    # which exits the moment its stdin closes: a container with no start command
+    # serves nothing and never goes healthy (fault 7 in the header). This is the
+    # command the replaced package Dockerfile carried; it lives per-service rather
+    # than in the shared template because the three services start different things.
+    command: ["uvicorn", "scheduler.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "8000:8000"
       - "7447:7447"
@@ -111,6 +126,10 @@ services:
       args:
         SERVICE_DIR: packages/node
     container_name: pi-node-worker-1
+    # The command the replaced node Dockerfile carried. Its bind host/port are not
+    # hardcoded here because they come from NODE_HOST/NODE_PORT, which this file's
+    # env-binding ratchet already pins as names the Node Settings actually read.
+    command: ["python", "-m", "node.main"]
     ports:
       - "8080:8080"
     environment:
@@ -147,6 +166,8 @@ services:
       args:
         SERVICE_DIR: packages/node
     container_name: pi-node-worker-2
+    # Same start command as worker 1; see the comment there.
+    command: ["python", "-m", "node.main"]
     ports:
       - "8081:8080"
     environment:
