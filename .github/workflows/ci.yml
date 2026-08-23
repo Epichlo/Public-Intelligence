@@ -9,12 +9,29 @@ name: Public Intelligence Multi-OS CI/CD Pipeline
 # answers to "does this pass". There is now one.
 #
 # If you want to add a check, add it to scripts/verify.sh. Do not add a step here.
+# (The fresh-clone job and the two scenario jobs below are not checks of the tree;
+# they are proofs that the things this repo ships -- an installer, a compose stack --
+# actually work. verify.sh cannot host them: they need a specific OS, Docker, or a
+# throwaway copy, and each pins one shipped artefact rather than gate-listing.)
 
 on:
   push:
-    branches: [ main, master ]
+    # Every branch, not just main/master. Work on a feature branch previously got NO
+    # CI at all: the first run it ever saw was the PR opening, which is the latest
+    # moment a defect can be found and the most expensive one to fix.
+    branches: [ "**" ]
   pull_request:
     branches: [ main, master ]
+
+# A branch with an open PR now fires BOTH a push event (refs/heads/<branch>) and a
+# pull_request event (refs/pull/N/merge). Those are different refs, so grouping on
+# github.ref alone would let them double-execute; keying the group on the SOURCE
+# branch name for PRs makes both events land in one group, so the later run
+# supersedes the earlier instead of racing it. Branches stay isolated from each
+# other, and pushes to main supersede each other as before.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   verify:
