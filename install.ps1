@@ -339,7 +339,7 @@ $Serving = $false
 for ($Attempt = 1; $Attempt -le 30; $Attempt++) {
     if ($Daemon.HasExited) { break }
     try {
-        $Probe = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 2
+        $Probe = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 5
         if ($Probe.StatusCode -eq 200) { $Serving = $true; break }
     } catch {
         # Silence here cost a full diagnosis cycle: refused, timed out, proxied and
@@ -357,6 +357,14 @@ if (-not $Serving) {
     # never served; its absence means it never bound at all despite its own log.
     $PortOwner = netstat -ano | Select-String ":$NodePort\s"
     foreach ($Line in $PortOwner) { Write-Host "[ERROR] netstat: $($Line.ToString().Trim())" -ForegroundColor Red }
+    # Cross-examination with a second, independent HTTP stack: if curl.exe gets an
+    # answer that Invoke-WebRequest's HttpClient never sees, the daemon serves and
+    # the .NET probe stack lies; if curl also hangs, the daemon truly is mute --
+    # bound but not serving, which points inside the process, not at the probe.
+    $CurlVerdict = & curl.exe -s -m 12 -o NUL -w "HTTP %{http_code} after %{time_total}s" $HealthUrl 2>&1
+    Write-Host "[ERROR] curl.exe cross-check: ${CurlVerdict}" -ForegroundColor Red
+    $Established = (Get-NetTCPConnection -LocalPort $NodePort -State Established -ErrorAction SilentlyContinue | Measure-Object).Count
+    Write-Host "[ERROR] established connections on port ${NodePort}: ${Established}" -ForegroundColor Red
     Write-Host ""
     Write-Host "[ERROR] The Host Node daemon did not answer ${HealthUrl} within 30 seconds." -ForegroundColor Red
     if ($Daemon.HasExited) {
