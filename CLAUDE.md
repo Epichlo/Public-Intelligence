@@ -98,8 +98,8 @@ matters, because the Scheduler just stops accepting real nodes and nothing raise
 **Four pairs are still duplicated, in `experimental/`** — `quantization.py`,
 `local_boundary.py`, `kv_cache.py`, `transport.py`. They are cut from v1 and are not
 shipped, so converging them buys nothing; `tests/test_source_parity.py` ratchets them
-where they sit. The artifact store's three copies are down to one at
-`packages/node/src/node/storage/`.
+where they sit. The artifact store's three copies went to one in the dead-path
+deletion of 2026-08-23, which removed the last copy along with the queue that fed it.
 
 **Before adding a module, check whether its twin exists.** If you change one of a
 remaining pair, change both.
