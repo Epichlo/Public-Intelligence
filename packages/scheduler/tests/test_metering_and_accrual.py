@@ -410,25 +410,16 @@ def test_metrics_reports_the_failure_ratio_an_operator_watches(
 
 # --- clock hazards ---------------------------------------------------------
 
-
-async def test_a_request_faster_than_the_clock_still_credits_the_host() -> None:
-    """A duration of exactly 0.0 must not mean a contribution of exactly 0.
-
-    `time.monotonic()` has ~15.6ms granularity on Windows, so a request completing
-    inside one tick measures 0.0 elapsed. The accrual is VRAM-hours, so the host
-    earned nothing for work they actually did.
-
-    Found by CI, not locally: every POSIX leg passed and both Windows legs failed
-    with `assert 0.0 > 0.0`. "Faster than I can measure" is not "took no time".
-    """
-    from scheduler.core.credit_ledger import CreditLedger
-
-    ledger = CreditLedger()
-    account = await ledger.record_host_contribution(
-        node_id="fast-node", vram_gb=24.0, duration_seconds=0.0
-    )
-
-    assert account.earned_credits > 0.0
+# Tombstone for `test_a_request_faster_than_the_clock_still_credits_the_host`,
+# which asserted that a duration of exactly 0.0 still credits the host, because
+# `time.monotonic()`'s ~15.6ms Windows granularity made a genuinely fast request
+# measure 0.0 ("faster than I can measure" is not "took no time" -- two
+# Windows-only CI failures). The gateway now measures with `time.perf_counter()`,
+# whose resolution makes an exactly-0.0 real request unobservable, so exactly 0.0
+# can only mean nothing was served -- and the opposite contract is pinned by
+# `test_a_host_that_did_nothing_still_accrues_nothing` in test_cpu_host_contribution.py.
+# The minimum-billable floor this test protected was removed with the clock that
+# needed it; see `CreditLedger.record_host_contribution`.
 
 
 async def test_a_negative_duration_cannot_reduce_a_balance() -> None:
@@ -458,14 +449,22 @@ def test_the_gateway_measures_elapsed_time_with_a_monotonic_clock() -> None:
     """A wall clock can step backwards; an interval measured with one can be negative.
 
     Asserted on the source because the failure needs an NTP correction to reproduce,
-    and a test that cannot run is not a guard.
+    and a test that cannot run is not a guard. The clock is `time.perf_counter()`:
+    monotonic like `monotonic()`, but with the high resolution whose absence forced
+    a minimum-billable floor when the measurement used `time.monotonic()`. That
+    floor is gone (see `CreditLedger.record_host_contribution`), so the clock must
+    not quietly regress to a coarse one either.
     """
     import inspect
 
     from scheduler.api import openai
 
     source = inspect.getsource(openai.create_chat_completion)
-    assert "time.monotonic()" in source, "the gateway no longer uses a monotonic clock"
+    assert "time.perf_counter()" in source, "the gateway no longer uses a monotonic clock"
     assert "started_at = time.time()" not in source, (
         "elapsed time is being measured with a wall clock again"
+    )
+    assert "time.monotonic()" not in source, (
+        "the gateway regressed to coarse `monotonic()`; its 15.6ms Windows "
+        "granularity is what made fast requests unmeasurable"
     )

@@ -302,6 +302,7 @@ LINT_EXEMPT_DIRS = {
     ".git": "not source",
     "docs": "prose; any Python here is illustrative",
     ".agents": "scratch output from a superseded agent harness; not imported by anything",
+    ".kilo": "Agent Manager state; worktrees under .kilo/worktrees/ are nested repo checkouts linted in their own trees, not this one",
 }
 
 

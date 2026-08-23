@@ -132,8 +132,15 @@ def test_there_is_exactly_one_windows_installer() -> None:
     `packages/node/install.ps1` never generated `NODE_NETWORK_AUTH_TOKEN`, and the
     node's control API fails closed without it (ROADMAP 0.1) -- so that copy
     produced a node that serves nothing.
+
+    Copies under `.kilo/worktrees/` are Agent Manager checkouts of this same
+    tree, not duplicates in it, so they are excluded rather than counted.
     """
-    found = sorted(str(p.relative_to(REPO_ROOT)) for p in REPO_ROOT.rglob("install.ps1"))
+    found = sorted(
+        str(p.relative_to(REPO_ROOT))
+        for p in REPO_ROOT.rglob("install.ps1")
+        if ".kilo" not in p.relative_to(REPO_ROOT).parts
+    )
 
     assert found == ["install.ps1"], f"expected one Windows installer, found: {found}"
 
