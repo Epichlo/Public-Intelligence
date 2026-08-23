@@ -29,8 +29,8 @@ def _ollama_returning(text: str) -> AsyncMock:
     return client
 
 
-def _post_infer(client: TestClient, prompt: str) -> dict[str, object]:
-    response = client.post("/infer", json={"model": "llama3-8b", "prompt": prompt})
+def _post_infer(client: TestClient, prompt: str, model: str = "llama3-8b") -> dict[str, object]:
+    response = client.post("/infer", json={"model": model, "prompt": prompt})
     assert response.status_code == 200
     return response.json()
 
@@ -41,28 +41,45 @@ def _post_infer(client: TestClient, prompt: str) -> dict[str, object]:
 def test_lookup_miss_returns_none_and_insert_hit_returns_completion() -> None:
     cache = CompletionCache()
 
-    assert cache.lookup("What is 2+2?") is None
+    assert cache.lookup("llama3-8b", "What is 2+2?") is None
 
-    cache.insert("What is 2+2?", "4")
-    assert cache.lookup("What is 2+2?") == "4"
+    cache.insert("llama3-8b", "What is 2+2?", "4")
+    assert cache.lookup("llama3-8b", "What is 2+2?") == "4"
     # A different prompt is a miss even though they share a long text prefix.
-    assert cache.lookup("What is 2+2? Answer in words.") is None
+    assert cache.lookup("llama3-8b", "What is 2+2? Answer in words.") is None
+
+
+def test_the_same_prompt_on_two_models_is_two_entries() -> None:
+    """Prompt alone must not be the key.
+
+    Two models see identical literal prompts all the time; keyed on text
+    only, the second model was served the first model's completion under
+    its own name.
+    """
+    cache = CompletionCache()
+    cache.insert("llama3-8b", "What is the capital of France?", "Paris")
+    cache.insert("mistral-7b", "What is the capital of France?", "La ville de Paris")
+
+    assert cache.lookup("llama3-8b", "What is the capital of France?") == "Paris"
+    assert cache.lookup("mistral-7b", "What is the capital of France?") == (
+        "La ville de Paris"
+    )
 
 
 def test_eviction_is_bounded_by_capacity_in_lru_order() -> None:
     cache = CompletionCache(capacity=2)
 
-    cache.insert("a", "1")
-    cache.insert("b", "2")
-    assert cache.lookup("a") == "1"  # refresh 'a'
-    cache.insert("c", "3")  # evicts 'b', the least recently used
+    cache.insert("m", "a", "1")
+    cache.insert("m", "b", "2")
+    assert cache.lookup("m", "a") == "1"  # refresh 'a'
+    cache.insert("m", "c", "3")  # evicts 'b', the least recently used
 
-    assert cache.lookup("b") is None
-    assert cache.lookup("a") == "1"
-    assert cache.lookup("c") == "3"
+    assert cache.lookup("m", "b") is None
+    assert cache.lookup("m", "a") == "1"
+    assert cache.lookup("m", "c") == "3"
 
-    cache.insert("d", "4")  # evicts 'a', refreshed above but now oldest
-    assert cache.lookup("a") is None
+    cache.insert("m", "d", "4")  # evicts 'a', refreshed above but now oldest
+    assert cache.lookup("m", "a") is None
     assert len(cache.entries) == 2
 
 
@@ -78,13 +95,41 @@ def test_exact_repeat_is_served_without_calling_ollama() -> None:
         app.state.ollama_client = ollama
         app.state.completion_cache = CompletionCache()
 
-        first = _post_infer(client, "What is the capital of France?")
-        second = _post_infer(client, "What is the capital of France?")
+        first = _post_infer(client, "What is the capital of France?", "llama3-8b")
+        second = _post_infer(client, "What is the capital of France?", "llama3-8b")
 
     # One question asked twice reaches Ollama exactly once.
     assert ollama.generate.await_count == 1
     assert first["response"] == "Paris"
     assert second["response"] == "Paris"
+
+
+def test_the_same_prompt_for_a_different_model_is_not_a_hit() -> None:
+    """Route-level pin of the multi-model collision: model is part of the key."""
+    ollama = AsyncMock()
+
+    def _response(text: str) -> MagicMock:
+        r = MagicMock(spec=["model", "response"])
+        r.model = "whichever"
+        r.response = text
+        return r
+
+    ollama.generate.side_effect = [_response("Paris"), _response("La ville de Paris")]
+    with (
+        patch("node.main.Runtime", return_value=AsyncMock()),
+        TestClient(app) as client,
+    ):
+        app.state.ollama_client = ollama
+        app.state.completion_cache = CompletionCache()
+
+        llama = _post_infer(client, "What is the capital of France?", "llama3-8b")
+        mistral = _post_infer(client, "What is the capital of France?", "mistral-7b")
+
+    # The identical prompt for a different model must reach Ollama again,
+    # and each answer must come back under its own request.
+    assert ollama.generate.await_count == 2
+    assert llama["response"] == "Paris"
+    assert mistral["response"] == "La ville de Paris"
 
 
 def test_near_overlap_prompt_is_sent_through_intact() -> None:
@@ -96,8 +141,8 @@ def test_near_overlap_prompt_is_sent_through_intact() -> None:
         app.state.ollama_client = ollama
         app.state.completion_cache = CompletionCache()
 
-        _post_infer(client, "What is 2+2?")
-        _post_infer(client, "What is 2+2? Answer in words.")
+        _post_infer(client, "What is 2+2?", "llama3-8b")
+        _post_infer(client, "What is 2+2? Answer in words.", "llama3-8b")
 
     # The second question is NOT a hit and is NOT truncated to its shared
     # prefix or its tail: Ollama sees exactly what the caller asked.

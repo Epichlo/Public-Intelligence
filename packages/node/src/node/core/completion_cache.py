@@ -16,7 +16,12 @@ from collections import OrderedDict
 
 
 class CompletionCache:
-    """Bounded LRU map of full prompt to final completion text."""
+    """Bounded LRU map of (model, full prompt) to final completion text.
+
+    The model is part of the key, not an afterthought: two models see
+    identical literal prompts routinely, and keyed on text alone the second
+    model would be served the first model's completion under its own name.
+    """
 
     def __init__(self, capacity: int = 500) -> None:
         """Initialize the CompletionCache.
@@ -29,21 +34,21 @@ class CompletionCache:
         # first, most-recently-used last. A clock cannot be used here -- coarse
         # timer granularity makes rapid successive accesses collide on identical
         # values, and wall clocks can step backwards under NTP correction.
-        self.entries: OrderedDict[str, str] = OrderedDict()
+        self.entries: OrderedDict[tuple[str, str], str] = OrderedDict()
 
-    def lookup(self, prompt: str) -> str | None:
-        """Return the memoized completion for this exact prompt, or None."""
-        completion = self.entries.get(prompt)
+    def lookup(self, model: str, prompt: str) -> str | None:
+        """Return the memoized completion for this exact model and prompt, or None."""
+        completion = self.entries.get((model, prompt))
         if completion is not None:
-            self.entries.move_to_end(prompt)
+            self.entries.move_to_end((model, prompt))
         return completion
 
-    def insert(self, prompt: str, completion: str) -> None:
+    def insert(self, model: str, prompt: str, completion: str) -> None:
         """Memoize a completed generation, evicting the oldest entry if over capacity.
 
         popitem(last=False) takes the front of the ordering in O(1).
         """
-        self.entries[prompt] = completion
-        self.entries.move_to_end(prompt)
+        self.entries[(model, prompt)] = completion
+        self.entries.move_to_end((model, prompt))
         if len(self.entries) > self.capacity:
             self.entries.popitem(last=False)

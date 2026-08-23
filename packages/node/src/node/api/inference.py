@@ -125,9 +125,11 @@ async def infer(
                 detail=str(e),
             ) from e
 
-    # An exact repeat of a prompt this node has already answered is served
-    # verbatim from the memo, without spending the host's GPU on it again.
-    cached = completion_cache.lookup(request.prompt)
+    # An exact repeat of a prompt this node has already answered with THIS
+    # model is served verbatim from the memo, without spending the host's GPU
+    # on it again. The model is part of the key: identical prompts to two
+    # models are different questions.
+    cached = completion_cache.lookup(request.model, request.prompt)
     if cached is not None:
         return InferenceResponse(model=request.model, response=cached)
 
@@ -144,7 +146,7 @@ async def infer(
             detail=str(e),
         ) from e
 
-    completion_cache.insert(request.prompt, response.response)
+    completion_cache.insert(request.model, request.prompt, response.response)
     return response
 
 
