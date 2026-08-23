@@ -8,18 +8,21 @@ did not update `install.ps1`. The Windows installer could not pass an invite cod
 a run command that could not find the `.env` it had just written.
 
 None of it was caught, and the reason is structural rather than careless:
-`scripts/verify_install.sh` runs `install.sh` for real, and **nothing has ever
+`scripts/verify_install.sh` runs `install.sh` for real, and **nothing had ever
 executed `install.ps1`**. The gate is bash; the Windows CI legs run the same bash
-gate. So that file has been outside "the only definition of does this pass" for its
+gate. So that file was outside "the only definition of does this pass" for its
 entire life -- the fifth instance of that pattern here, after tests/ (2.9), the
 website (C6), scripts/ (C7) and .claude/, and the first one found by a user.
 
 **These are text-level checks and that is a real limitation, stated rather than
 implied.** They read both installers and compare what they mention. They cannot
-prove `install.ps1` works, because the gate cannot execute PowerShell on Linux. They
-can only prove the two files have not drifted apart again on the specific things
-that broke. Running the Windows installer for real needs a Windows runner step and
-is out of scope -- see specs/what-two-machines-found.md.
+prove `install.ps1` works, because they cannot execute PowerShell on Linux.
+Execution now exists -- `.github/workflows/ci.yml::install-windows` runs the
+installer for real against a throwaway copy on a Windows runner and asserts the
+installed venv imports the node package -- but CI runs between commits, while these
+checks run on every gate invocation and fail on the exact drifts that broke real
+hosts. One proves the thing works; the other says WHICH thing drifted. Both halves
+are needed; neither substitutes for the other.
 
 See specs/what-two-machines-found.md.
 """

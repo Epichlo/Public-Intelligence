@@ -235,3 +235,99 @@ jobs:
             }
           Start-Sleep -Seconds 2
           if (Test-Path $dest) { Remove-Item -Recurse -Force $dest -ErrorAction SilentlyContinue }
+
+  compose-e2e:
+    name: Two-node compose stack serves a request end to end
+    timeout-minutes: 25
+    runs-on: ubuntu-latest
+    # docker-compose.test.yml had never been run anywhere: its images could not
+    # build (public-intelligence-shared is a local-path dependency invisible from
+    # their build contexts), and its scheduler healthcheck called curl, which the
+    # runtime image does not contain -- so even a successful build would never have
+    # gone healthy and the nodes would never have started. This job runs the stack
+    # for real and drives ONE request through gateway -> scheduler -> mesh -> node,
+    # which is docs/PREMISES.md P2, the load-bearing claim of the project.
+    #
+    # Ollama itself is out of scope for a container topology: the node talks to it
+    # over HTTP as an external service, exactly as it would on a host. The stack's
+    # optional `fake-ollama` profile supplies a stand-in speaking those endpoints;
+    # everything between the gateway and the model server is the real system.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the gateway credential tooling
+        run: python -m pip install --quiet "pyjwt[crypto]>=2.8,<3"
+
+      - name: Mint the keypair the stack will verify against, and a caller token
+        run: |
+          python scripts/mint_token.py --generate-keypair --force
+          TOKEN="$(python scripts/mint_token.py --tenant ci-compose-e2e --hours 1 | head -n1)"
+          test -n "$TOKEN" || { echo "::error::minted no caller token"; exit 1; }
+          echo "CALLER_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+
+      - name: Bring the stack up
+        run: |
+          export SCHEDULER_JWT_PUBLIC_KEY="$(cat .secrets/jwt_public_key.pem)"
+          export NODE_OLLAMA_HOST="http://ollama-spoof:11434"
+          docker compose -f docker-compose.test.yml --profile fake-ollama up -d --build
+
+      - name: Both nodes register through the fleet credential
+        run: |
+          deadline=$((SECONDS + 180))
+          until curl -fsS -H "X-Network-Auth-Token: local-dev-token" http://localhost:8000/nodes \
+              | tee /tmp/nodes.json | jq -e '
+                ([.[].node_id] | sort) == ["node-worker-1", "node-worker-2"]' >/dev/null 2>&1; do
+            if [ $SECONDS -ge $deadline ]; then
+              echo "::error::timed out waiting for both workers to register"
+              cat /tmp/nodes.json 2>/dev/null || true
+              docker compose -f docker-compose.test.yml ps -a || true
+              docker compose -f docker-compose.test.yml logs --tail 80 || true
+              exit 1
+            fi
+            sleep 3
+          done
+          echo "--- registered nodes ---"
+          jq . /tmp/nodes.json
+
+      - name: An uncredentialed gateway request is refused
+        run: |
+          code=$(curl -sS -o /dev/null -w "%{http_code}" -X POST http://localhost:8000/v1/chat/completions \
+            -H 'Content-Type: application/json' \
+            -d '{"model":"ci-test-model","messages":[{"role":"user","content":"ping"}]}')
+          echo "unauthenticated POST -> HTTP $code"
+          [ "$code" = "401" ] || { echo "::error::expected 401 without a bearer token, got $code"; exit 1; }
+
+      - name: One request crosses gateway, scheduler, mesh and node
+        run: |
+          deadline=$((SECONDS + 120))
+          while true; do
+            code=$(curl -sS -o /tmp/completion.json -w "%{http_code}" \
+              -X POST http://localhost:8000/v1/chat/completions \
+              -H "Authorization: Bearer $CALLER_TOKEN" \
+              -H 'Content-Type: application/json' \
+              -d '{"model":"ci-test-model","messages":[{"role":"user","content":"ping"}]}')
+            [ "$code" = "200" ] && break
+            if [ $SECONDS -ge $deadline ]; then
+              echo "::error::chat completion never returned 200 (last: $code)"
+              cat /tmp/completion.json 2>/dev/null || true
+              docker compose -f docker-compose.test.yml logs --tail 120 || true
+              exit 1
+            fi
+            sleep 3
+          done
+          cat /tmp/completion.json
+          # Positive content evidence, not just a status line: the completion body
+          # must carry text produced by the model server behind worker 1 or 2.
+          jq -e '.choices[0].message.content | test("\\[spoof-ollama:")' /tmp/completion.json \
+            || { echo "::error::completion carried no generated content"; exit 1; }
+          jq -e '.usage.total_tokens > 0' /tmp/completion.json \
+            || { echo "::error::completion was not metered as usage"; exit 1; }
+
+      - name: Tear the stack down
+        if: always()
+        run: |
+          docker compose -f docker-compose.test.yml --profile fake-ollama down -v --remove-orphans || true
