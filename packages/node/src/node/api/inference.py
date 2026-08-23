@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 
 from node.api.auth import verify_node_auth
 from node.clients import OllamaClient, OllamaError
-from node.core.radix_cache import RadixTrieCache
+from node.core.completion_cache import CompletionCache
 from node.models import InferenceRequest, InferenceResponse, ModelInfo
 
 router = APIRouter()
@@ -25,13 +25,13 @@ def get_ollama_client(request: Request) -> OllamaClient:
     return cast("OllamaClient", client)
 
 
-def get_radix_cache(request: Request) -> RadixTrieCache:
-    """Dependency injection function to retrieve the global RadixTrieCache instance."""
-    cache = getattr(request.app.state, "radix_cache", None)
+def get_completion_cache(request: Request) -> CompletionCache:
+    """Dependency injection function to retrieve the global CompletionCache instance."""
+    cache = getattr(request.app.state, "completion_cache", None)
     if cache is None:
-        cache = RadixTrieCache()
-        request.app.state.radix_cache = cache
-    return cast("RadixTrieCache", cache)
+        cache = CompletionCache()
+        request.app.state.completion_cache = cache
+    return cache
 
 
 # Protected per route rather than router-wide: /health and /health/ready below
@@ -46,21 +46,15 @@ def get_radix_cache(request: Request) -> RadixTrieCache:
 async def infer(
     request: InferenceRequest,
     ollama_client: Annotated[OllamaClient, Depends(get_ollama_client)],
-    radix_cache: Annotated[RadixTrieCache, Depends(get_radix_cache)],
+    completion_cache: Annotated[CompletionCache, Depends(get_completion_cache)],
 ) -> InferenceResponse | StreamingResponse:
-    """Delegate inference to the Ollama client after prefix cache lookup."""
-    original_prompt = request.prompt
-
-    # Intercept prompt and lookup prefix
-    _prefix, suffix = await radix_cache.lookup_prefix(original_prompt)
-
-    # Route only the remaining suffix data to the underlying backend serving model
-    request.prompt = suffix
-
-    # The co-location probe and the Zenoh session lookup that used to sit here fed
-    # the stream router removed below; nothing else read them. The session check in
-    # particular tested `"mock" not in type(sess).__name__.lower()`, which is why no
-    # test ever exercised the path -- every double was named to trip that guard.
+    """Delegate inference to the Ollama client, memoizing whole completions."""
+    # Streaming responses are never replayed from the memo: a cached hit would
+    # collapse the token stream into one chunk and change the shape callers
+    # see. Streamed requests therefore always run against Ollama with the full
+    # prompt. (A character-level prefix split used to sit here and rewrite
+    # `request.prompt` down to the unmatched tail -- sending an EMPTY prompt on
+    # an exact repeat. See node/core/completion_cache.py.)
     if request.stream:
         try:
             generator = ollama_client.generate_stream(request)
@@ -93,12 +87,8 @@ async def infer(
                 # dead code behind a disabled flag is how N1 happened.
                 #
                 # Pinned by tests/test_streaming_does_not_publish_to_the_mesh.py.
-                try:
-                    async for chunk in generator:
-                        yield chunk
-                finally:
-                    # Append the new total token path back to the trie upon completion
-                    await radix_cache.insert_prefix(original_prompt)
+                async for chunk in generator:
+                    yield chunk
 
             return StreamingResponse(stream_wrapper(), media_type="text/event-stream")
         except OllamaError as e:
@@ -112,11 +102,14 @@ async def infer(
                 detail=str(e),
             ) from e
 
+    # An exact repeat of a prompt this node has already answered is served
+    # verbatim from the memo, without spending the host's GPU on it again.
+    cached = completion_cache.lookup(request.prompt)
+    if cached is not None:
+        return InferenceResponse(model=request.model, response=cached)
+
     try:
         response = await ollama_client.generate(request)
-        # Append the new total token path back to the trie upon completion
-        await radix_cache.insert_prefix(original_prompt)
-        return response
     except OllamaError as e:
         if "not found" in str(e).lower():
             raise HTTPException(
@@ -127,6 +120,9 @@ async def infer(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
         ) from e
+
+    completion_cache.insert(request.prompt, response.response)
+    return response
 
 
 @router.get(
