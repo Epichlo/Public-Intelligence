@@ -1,5 +1,6 @@
 """Inference API routes."""
 
+import json
 from collections.abc import AsyncGenerator
 from typing import Annotated, Any, cast
 
@@ -12,6 +13,16 @@ from node.core.completion_cache import CompletionCache
 from node.models import InferenceRequest, InferenceResponse, ModelInfo
 
 router = APIRouter()
+
+
+def _sse_error_frame(status_code: int, message: str) -> str:
+    """Build one terminal SSE frame reporting a stream that ended early.
+
+    Shaped like the mesh protocol's encode_error payload ({"ok", "status",
+    "error"}): no chunk Ollama emits ever carries an "ok" key, so a parser
+    can distinguish this frame from every legitimate end-of-stream.
+    """
+    return f"data: {json.dumps({'ok': False, 'status': status_code, 'error': message})}\n\n"
 
 
 def get_ollama_client(request: Request) -> OllamaClient:
@@ -87,8 +98,20 @@ async def infer(
                 # dead code behind a disabled flag is how N1 happened.
                 #
                 # Pinned by tests/test_streaming_does_not_publish_to_the_mesh.py.
-                async for chunk in generator:
-                    yield chunk
+                #
+                # A failure after the headers are sent cannot become an HTTP
+                # error status -- the status line is already on the wire. With no
+                # framing, uvicorn just closes the body and a truncated completion
+                # is indistinguishable from a finished one: Ollama dying mid-answer
+                # read as a normal end of stream. One explicit terminal frame makes
+                # that machine-detectable.
+                try:
+                    async for chunk in generator:
+                        yield chunk
+                except OllamaError as e:
+                    yield _sse_error_frame(502, str(e))
+                except Exception as e:
+                    yield _sse_error_frame(500, f"stream failed: {e}")
 
             return StreamingResponse(stream_wrapper(), media_type="text/event-stream")
         except OllamaError as e:
