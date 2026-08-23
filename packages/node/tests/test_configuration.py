@@ -153,3 +153,39 @@ def test_zenoh_wan_configuration() -> None:
         assert settings.zenoh_router_url == "tcp/router.public-intelligence.net:7447"
         assert settings.zenoh_peer_endpoints == ["tcp/peer1:7447", "tcp/peer2:7447"]
         assert settings.zenoh_multicast_scouting is False
+
+
+def test_legacy_utf8_bom_env_file_parses_the_real_identity(tmp_path: "object") -> None:
+    """A .env written with a UTF-8 BOM must not lose the node's identity.
+
+    The Windows PowerShell 5.1 installer wrote the file with a BOM. Read as
+    plain utf-8, dotenv saw the first key as "\\ufeffNODE_ID", matched no
+    field, and silently dropped it -- so the node registered under its
+    default id, colliding with every other BOMmed node in the fleet.
+    `utf-8-sig` strips a leading BOM when present and reads BOM-less files
+    byte-for-byte identically.
+    """
+    from pathlib import Path
+
+    env_path = Path(tmp_path) / ".env"
+    # Explicit BOM bytes: EF BB BF, exactly what PowerShell 5.1 emitted.
+    env_path.write_bytes(b"\xef\xbb\xbfNODE_ID=legacy-bom-node\nNODE_HOSTNAME=bom-host\n")
+
+    with patch.dict(os.environ, {}, clear=True):
+        settings = Settings(_env_file=str(env_path))
+
+    assert settings.node_id == "legacy-bom-node"
+    assert settings.hostname == "bom-host"
+
+
+def test_bom_less_env_file_still_parses_identically(tmp_path: "object") -> None:
+    """utf-8-sig must not change the reading of normal BOM-less files."""
+    from pathlib import Path
+
+    env_path = Path(tmp_path) / ".env"
+    env_path.write_bytes(b"NODE_ID=plain-node\n")
+
+    with patch.dict(os.environ, {}, clear=True):
+        settings = Settings(_env_file=str(env_path))
+
+    assert settings.node_id == "plain-node"

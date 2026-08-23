@@ -228,7 +228,12 @@ class Settings(BaseSettings):
         env_file=(
             None if ("pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ) else ".env"
         ),
-        env_file_encoding="utf-8",
+        # utf-8-sig, not utf-8: the Windows PowerShell 5.1 installer wrote this
+        # file with a UTF-8 BOM, and read as plain utf-8 the first key became
+        # "\ufeffNODE_ID", matched nothing, and the node silently registered
+        # under its default id. utf-8-sig strips a leading BOM and reads
+        # BOM-less files unchanged.
+        env_file_encoding="utf-8-sig",
         extra="ignore",
         populate_by_name=True,
     )
