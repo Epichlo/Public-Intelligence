@@ -10,7 +10,7 @@ interface NodeControlToggleProps {
 
 export function NodeControlToggle({
   status,
-  nodeId = "local-host-node",
+  nodeId,
   onStatusChange,
 }: NodeControlToggleProps) {
   const [loading, setLoading] = useState(false);
@@ -78,9 +78,11 @@ export function NodeControlToggle({
                 : "STOPPED"}
             </span>
           </div>
-          <p className="mt-1 text-sm text-muted-foreground font-mono">
-            Node ID: <span className="text-foreground">{nodeId}</span>
-          </p>
+          {nodeId && (
+            <p className="mt-1 text-sm text-muted-foreground font-mono">
+              Node ID: <span className="text-foreground">{nodeId}</span>
+            </p>
+          )}
         </div>
 
         <div className="flex items-center gap-3">

@@ -31,6 +31,66 @@ function getProgressColor(percentage: number): string {
   return "bg-emerald-400";
 }
 
+export interface HeartbeatView {
+  hasFrame: boolean;
+  label: string;
+  badgeClass: string;
+  deltaLabel: string;
+  aeadLabel: string;
+  aeadVerified: boolean;
+}
+
+/**
+ * Heartbeat and AEAD status, derived only from a frame that actually arrived.
+ *
+ * A missing (or unparseable) `last_updated` used to fall through as "arrived
+ * just now", rendering an unreachable node as Healthy with its telemetry
+ * claimed as signature-verified. No frame means no health and no verification:
+ * both cards say so instead.
+ */
+export function heartbeatView(
+  lastUpdated: string | number | undefined,
+  now: number
+): HeartbeatView {
+  const parsed =
+    typeof lastUpdated === "number" || typeof lastUpdated === "string"
+      ? new Date(lastUpdated).getTime()
+      : Number.NaN;
+
+  if (!Number.isFinite(parsed)) {
+    return {
+      hasFrame: false,
+      label: "Awaiting First Frame",
+      badgeClass: "text-zinc-400 border-zinc-700 bg-zinc-900",
+      deltaLabel: "—",
+      aeadLabel: "No Frames Yet",
+      aeadVerified: false,
+    };
+  }
+
+  const deltaSec = Math.max(0, (now - parsed) / 1000);
+  const aeadVerified = deltaSec <= 30;
+
+  let label = "Healthy";
+  let badgeClass = "text-emerald-400 border-emerald-500/30 bg-emerald-950/40";
+  if (deltaSec > 15) {
+    label = "Stale Evicted (>15s)";
+    badgeClass = "text-red-400 border-red-500/30 bg-red-950/40";
+  } else if (deltaSec > 5) {
+    label = "Lagging (<15s)";
+    badgeClass = "text-amber-400 border-amber-500/30 bg-amber-950/40";
+  }
+
+  return {
+    hasFrame: true,
+    label,
+    badgeClass,
+    deltaLabel: `${deltaSec.toFixed(1)} seconds`,
+    aeadLabel: aeadVerified ? "Valid (<= 30.0s)" : "Stale Replay Drop",
+    aeadVerified,
+  };
+}
+
 export function TelemetryGauges({ telemetry }: TelemetryGaugesProps) {
   const [now, setNow] = useState(() => Date.now());
 
@@ -49,23 +109,9 @@ export function TelemetryGauges({ telemetry }: TelemetryGaugesProps) {
   const vramUsed = telemetry.vram_used_bytes || 0;
   const vramPct = Math.min(100, Math.max(0, (vramUsed / vramTotal) * 100));
 
-  // Heartbeat staleness check
-  const lastTs = telemetry.last_updated
-    ? new Date(telemetry.last_updated).getTime()
-    : now;
-  const deltaSec = Math.max(0, (now - lastTs) / 1000);
-
-  let heartbeatStatus = "Healthy";
-  let heartbeatColor = "text-emerald-400 border-emerald-500/30 bg-emerald-950/40";
-  if (deltaSec > 15) {
-    heartbeatStatus = "Stale Evicted (>15s)";
-    heartbeatColor = "text-red-400 border-red-500/30 bg-red-950/40";
-  } else if (deltaSec > 5) {
-    heartbeatStatus = "Lagging (<15s)";
-    heartbeatColor = "text-amber-400 border-amber-500/30 bg-amber-950/40";
-  }
-
-  const aeadVerified = deltaSec <= 30;
+  // Heartbeat status: derived from a real frame or honestly reported as absent.
+  const heartbeat = heartbeatView(telemetry.last_updated, now);
+  const aeadVerified = heartbeat.aeadVerified;
 
   return (
     <div className="space-y-6">
@@ -162,7 +208,7 @@ export function TelemetryGauges({ telemetry }: TelemetryGaugesProps) {
             <div className="flex justify-between font-mono">
               <span className="text-muted-foreground">Staleness Boundary:</span>
               <span className={aeadVerified ? "text-foreground" : "text-red-400"}>
-                {aeadVerified ? "Valid (<= 30.0s)" : "Stale Replay Drop"}
+                {heartbeat.aeadLabel}
               </span>
             </div>
             <div className="flex justify-between font-mono">
@@ -178,14 +224,14 @@ export function TelemetryGauges({ telemetry }: TelemetryGaugesProps) {
             <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
               Heartbeat Vitality
             </span>
-            <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium border ${heartbeatColor}`}>
-              {heartbeatStatus}
+            <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium border ${heartbeat.badgeClass}`}>
+              {heartbeat.label}
             </span>
           </div>
           <div className="mt-3 space-y-2 text-xs font-mono">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Pulse Delta Δt:</span>
-              <span className="text-foreground">{deltaSec.toFixed(1)} seconds</span>
+              <span className="text-foreground">{heartbeat.deltaLabel}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Eviction Threshold:</span>
