@@ -1,6 +1,7 @@
 """Tests for the ZenohHeartbeatClient."""
 
 import json
+import time
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
@@ -149,6 +150,68 @@ def test_zenoh_client_is_connected(settings: Settings) -> None:
 
         client.stop()
         assert not client.is_connected()
+
+
+def test_publish_failures_flip_is_connected_false_after_the_window(settings: Settings) -> None:
+    """A dead transport must age out of is_connected without any local teardown.
+
+    `is_connected` used to be `self.session is not None`, which stays true
+    forever after a mid-life transport drop -- /health/ready reported a live
+    WAN over a link that carried nothing. Liveness now comes from confirmed
+    publishes, so simulated failures plus an elapsed window flip it False.
+    """
+    hb = Heartbeat(
+        node_id="test-node-zenoh",
+        timestamp=datetime.now(UTC),
+        queue_length=0,
+        cpu_utilization=10.0,
+        ram_available_gb=8.0,
+        gpu_utilization=0.0,
+        vram_available_gb=0.0,
+    )
+
+    with patch("zenoh.open") as mock_open:
+        mock_session = MagicMock()
+        mock_publisher = MagicMock()
+        mock_session.declare_publisher.return_value = mock_publisher
+        mock_open.return_value = mock_session
+
+        client = ZenohHeartbeatClient(settings)
+        # Shrink the real window (2x heartbeat_interval_seconds); the test
+        # measures actual elapsed time against it.
+        client.staleness_window_seconds = 0.05
+
+        client.start()
+        assert client.is_connected()
+
+        client.publish(hb)
+        assert client.is_connected()
+        assert client.seconds_since_last_publish() is not None
+
+        # The transport dies: every publish fails from here on. No stop(), no
+        # session teardown -- the session OBJECT is untouched.
+        mock_publisher.put.side_effect = OSError("zenoh link down")
+        with pytest.raises(OSError):
+            client.publish(hb)
+        with pytest.raises(OSError):
+            client.publish(hb)
+
+        time.sleep(0.06)
+        assert not client.is_connected()
+        assert client.session is not None  # nothing was torn down
+
+        # Recovery: one confirmed publish restores the evidence.
+        mock_publisher.put.side_effect = None
+        client.publish(hb)
+        assert client.is_connected()
+
+        client.stop()
+
+
+def test_seconds_since_last_publish_is_none_before_any_publish(settings: Settings) -> None:
+    """A never-published client has no evidence to report an age for."""
+    client = ZenohHeartbeatClient(settings)
+    assert client.seconds_since_last_publish() is None
 
 
 def test_zenoh_client_bootstrap_fallback_and_gossip_scouting() -> None:

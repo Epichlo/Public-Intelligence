@@ -205,6 +205,13 @@ async def readiness(
         and getattr(runtime, "zenoh_client", None) is not None
         and runtime.zenoh_client.is_connected()
     )
+    # The evidence wan_connected is judged from, exposed so a "degraded" answer
+    # can be checked against it: how long since a heartbeat actually left.
+    zenoh_client = getattr(runtime, "zenoh_client", None) if runtime is not None else None
+    seconds_since_publish = getattr(zenoh_client, "seconds_since_last_publish", None)
+    wan_last_publish_age_seconds = (
+        seconds_since_publish() if callable(seconds_since_publish) else None
+    )
     inference_ready = runtime_ready and ollama_ready and scheduler_registered
     is_ready = inference_ready
     response.status_code = status.HTTP_200_OK if is_ready else status.HTTP_503_SERVICE_UNAVAILABLE
@@ -215,6 +222,7 @@ async def readiness(
         "ollama": ollama_ready,
         "scheduler_registered": scheduler_registered,
         "wan_connected": wan_connected,
+        "wan_last_publish_age_seconds": wan_last_publish_age_seconds,
         "inference_ready": inference_ready,
         "last_heartbeat_at": (runtime.last_heartbeat_at if runtime is not None else None),
         "last_heartbeat_ok": (runtime.last_heartbeat_ok if runtime is not None else False),

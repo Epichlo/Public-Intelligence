@@ -2,6 +2,7 @@
 
 import json
 import logging
+import time
 from typing import Any
 
 import zenoh
@@ -27,6 +28,14 @@ class ZenohHeartbeatClient:
         self.publisher: zenoh.Publisher | None = None
         self.liveliness_token: Any = None
         self._key_expr = f"public-intelligence/net/{self.settings.node_id}/heartbeat"
+        # Liveness is measured, not assumed. A Zenoh session object does not
+        # tell you the transport is alive: a mid-life drop leaves it non-None
+        # forever while nothing moves on the wire, which is how /health/ready
+        # kept reporting wan_connected:true over a dead link. The evidence is
+        # the last confirmed publish; a successful open seeds it, and silence
+        # longer than the window below counts as disconnected.
+        self._last_publish_ok_monotonic: float | None = None
+        self.staleness_window_seconds = 2.0 * settings.heartbeat_interval_seconds
 
     def start(self) -> None:
         """Open the Zenoh session and declare the publisher."""
@@ -59,6 +68,9 @@ class ZenohHeartbeatClient:
 
             self.session = zenoh.open(config)
             self.publisher = self.session.declare_publisher(self._key_expr)
+            # Opening is the first evidence: Zenoh open fails fast against
+            # endpoints that are not there, so this only lands on a live one.
+            self._last_publish_ok_monotonic = time.monotonic()
 
             # Declare liveliness token
             token_path = f"public-intelligence/net/liveliness/{self.settings.node_id}"
@@ -75,12 +87,30 @@ class ZenohHeartbeatClient:
             self.liveliness_token = None
 
     def is_connected(self) -> bool:
-        """Return whether the Zenoh session is active and connected.
+        """Whether the Zenoh path has shown life within the staleness window.
 
-        Returns:
-            bool: True if session is active, False otherwise.
+        Evidence is a confirmed publish (or the session open that seeded it).
+        A session object alone proves nothing: after a mid-life transport drop
+        it stays non-None forever, which is exactly when this must report
+        False. Silence beyond `staleness_window_seconds` counts as disconnected
+        even though no local teardown happened.
         """
-        return self.session is not None
+        if self.session is None:
+            return False
+        if self._last_publish_ok_monotonic is None:
+            return False
+        age = time.monotonic() - self._last_publish_ok_monotonic
+        return age <= self.staleness_window_seconds
+
+    def seconds_since_last_publish(self) -> float | None:
+        """Age of the newest confirmed publish, for honest readiness payloads.
+
+        None means nothing has ever been published -- including on a session
+        that only just opened.
+        """
+        if self._last_publish_ok_monotonic is None:
+            return None
+        return time.monotonic() - self._last_publish_ok_monotonic
 
     def stop(self) -> None:
         """Close the Zenoh session and clean up."""
@@ -138,3 +168,6 @@ class ZenohHeartbeatClient:
         )
         logger.debug("Publishing sealed heartbeat via Zenoh for %s", self.settings.node_id)
         self.publisher.put(payload_str)
+        # Recorded only after the put returns: a failed publish must leave the
+        # evidence stale so silence ages into is_connected() == False.
+        self._last_publish_ok_monotonic = time.monotonic()
