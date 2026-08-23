@@ -342,12 +342,21 @@ for ($Attempt = 1; $Attempt -le 30; $Attempt++) {
         $Probe = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 2
         if ($Probe.StatusCode -eq 200) { $Serving = $true; break }
     } catch {
-        # Connection refused until uvicorn binds; that is what the wait is for.
+        # Silence here cost a full diagnosis cycle: refused, timed out, proxied and
+        # answered-by-nobody all looked identical while the daemon swore it was
+        # serving. Say WHY each knock failed (first, then every tenth).
+        if (($Attempt -eq 1) -or ($Attempt % 10 -eq 0)) {
+            Write-Host "[INFO] Health probe attempt ${Attempt} failed: $($_.Exception.Message)" -ForegroundColor DarkGray
+        }
     }
     Start-Sleep -Seconds 1
 }
 
 if (-not $Serving) {
+    # Who owns the port, if anyone? A LISTENING entry means the daemon bound but
+    # never served; its absence means it never bound at all despite its own log.
+    $PortOwner = netstat -ano | Select-String ":$NodePort\s"
+    foreach ($Line in $PortOwner) { Write-Host "[ERROR] netstat: $($Line.ToString().Trim())" -ForegroundColor Red }
     Write-Host ""
     Write-Host "[ERROR] The Host Node daemon did not answer ${HealthUrl} within 30 seconds." -ForegroundColor Red
     if ($Daemon.HasExited) {
