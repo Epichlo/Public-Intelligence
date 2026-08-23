@@ -48,6 +48,56 @@ export function failureRatio(totals: NodeUsage["totals"] | undefined): number | 
   return totals.failed_requests / totals.requests;
 }
 
+/**
+ * The shape gate between the proxy's JSON and a render path.
+ *
+ * `load()` used to cast `res.json()` straight to `NodeUsage` on the strength of
+ * `res.ok` alone, which trusted an HTTP status to guarantee a body shape it does
+ * not: every proxy route here answers 200 with `{ detail: ... }` when it passes an
+ * upstream failure through, and that error object rendered as
+ * `usage.totals.requests` -- crashing this subtree at `undefined.requests` while
+ * `failureRatio`, two functions up in this same file, guarded carefully against the
+ * identical hazard. A panel about honest accounting crashed rather than say
+ * "unavailable".
+ *
+ * Every field the interface names is checked, because the render reads more than
+ * the obvious two (`totals_window_size` is in the footnote). Anything unshaped
+ * returns null, which the caller must present as "unavailable" -- not zero.
+ */
+export function parseNodeUsage(value: unknown): NodeUsage | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const v = value as Record<string, unknown>;
+
+  if (typeof v.node_id !== "string") return null;
+  if (typeof v.credits_are_redeemable !== "boolean") return null;
+  if (typeof v.totals_window !== "string") return null;
+
+  const finite = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
+  // Number.isFinite rejects both NaN and the infinities, so a payload carrying
+  // them cannot reach formatCredits or the ratio arithmetic.
+  if (!finite(v.credits_contributed) || !finite(v.totals_window_size)) return null;
+
+  const totals = v.totals;
+  if (typeof totals !== "object" || totals === null || Array.isArray(totals)) return null;
+  const t = totals as Record<string, unknown>;
+  if (!finite(t.requests) || !finite(t.prompt_tokens)) return null;
+  if (!finite(t.completion_tokens) || !finite(t.failed_requests)) return null;
+
+  return {
+    node_id: v.node_id,
+    credits_contributed: v.credits_contributed,
+    credits_are_redeemable: v.credits_are_redeemable,
+    totals_window: v.totals_window,
+    totals_window_size: v.totals_window_size,
+    totals: {
+      requests: t.requests,
+      prompt_tokens: t.prompt_tokens,
+      completion_tokens: t.completion_tokens,
+      failed_requests: t.failed_requests,
+    },
+  };
+}
+
 export function ContributionSummary({ nodeId }: { nodeId: string }) {
   const [usage, setUsage] = useState<NodeUsage | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +119,17 @@ export function ContributionSummary({ nodeId }: { nodeId: string }) {
           setError(res.status === 401 ? "not authorised" : `unavailable (${res.status})`);
           return;
         }
-        setUsage(await res.json());
+        // The proxy can answer 200 with a body this panel cannot read (an upstream
+        // error passed through under `{ detail }`). That used to be cast and set
+        // as-is, crashing the subtree on first render; now it is the same
+        // "unavailable, not zero" state as any other unreadable Scheduler.
+        const parsed = parseNodeUsage(await res.json());
+        if (!mounted) return;
+        if (!parsed) {
+          setError("unavailable (unreadable response)");
+          return;
+        }
+        setUsage(parsed);
         setError(null);
       } catch {
         if (mounted) setError("unavailable");

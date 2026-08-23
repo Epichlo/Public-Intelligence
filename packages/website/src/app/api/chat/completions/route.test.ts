@@ -31,7 +31,6 @@ function mockFetch(status = 200, body: unknown = UPSTREAM_BODY, contentType = "a
   vi.stubGlobal("fetch", spy);
   return spy;
 }
-
 function post(body: unknown = { model: "llama3", messages: [] }, headers: HeadersInit = {}) {
   return new Request("http://localhost/api/chat/completions", {
     method: "POST",
@@ -43,6 +42,7 @@ function post(body: unknown = { model: "llama3", messages: [] }, headers: Header
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.resetModules();
+  vi.useRealTimers();
   delete process.env.SCHEDULER_URL;
   delete process.env.SCHEDULER_NETWORK_AUTH_TOKEN;
   delete process.env.SCHEDULER_PLAYGROUND_JWT;
@@ -149,5 +149,126 @@ describe("POST /api/chat/completions", () => {
 
     expect(response.headers.get("content-type")).toContain("text/event-stream");
     expect(await response.text()).toContain("data:");
+  });
+
+  describe("upstream lifetime", () => {
+    // The connect timeout and the disconnect cancel are about one thing: this proxy
+    // used to hand the upstream connection an unbounded, unwired lifetime. It was the
+    // only proxy fetch without AbortSignal.timeout -- a hung Scheduler held every
+    // playground request open forever -- and nothing tied the upstream body to the
+    // browser's socket either, so a visitor who closed the tab kept a stream (and an
+    // inference) running server-side.
+    it("gives the upstream fetch an abort signal to bound its lifetime", async () => {
+      const spy = mockFetch();
+
+      const { POST } = await import("./route");
+      await POST(post({ model: "llama3", messages: [] }, { authorization: "Bearer x" }));
+
+      const [, init] = spy.mock.calls[0] as unknown as [string, RequestInit];
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+    });
+
+    it("aborts a connection that never establishes once the deadline elapses", async () => {
+      vi.useFakeTimers();
+      // A real dead upstream neither resolves nor rejects; only its signal fires.
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((_url: string, init?: RequestInit) => {
+          return new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener(
+              "abort",
+              () => reject(init.signal?.reason ?? new Error("aborted")),
+              { once: true }
+            );
+          });
+        })
+      );
+
+      const { POST } = await import("./route");
+      const pending = POST(post({ model: "llama3", messages: [] }, { authorization: "Bearer x" }));
+      await vi.advanceTimersByTimeAsync(5_000);
+      const response = await pending;
+
+      expect(response.status).toBe(502);
+      expect(await response.json()).toMatchObject({
+        detail: expect.stringContaining("timed out"),
+      });
+    });
+
+    it("does not kill a stream that is already established when the deadline elapses", async () => {
+      // This pins the difference between "connect deadline" and "AbortSignal.timeout":
+      // the naive version fires at 5s whether or not tokens are flowing, and would cut
+      // off any completion longer than the deadline.
+      vi.useFakeTimers();
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("data: {}\n\n"));
+          // Deliberately never closed: the point is surviving past the deadline.
+        },
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () =>
+            new Response(stream, {
+              status: 200,
+              headers: { "content-type": "text/event-stream" },
+            })
+        )
+      );
+
+      const { POST } = await import("./route");
+      const response = await POST(post({ model: "llama3", messages: [] }, { authorization: "Bearer x" }));
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      // Read one chunk rather than draining: the fixture stream is deliberately
+      // never closed, so waiting for its end would be waiting on nothing.
+      const reader = response.body!.getReader();
+      const { value } = await reader.read();
+      expect(new TextDecoder().decode(value)).toContain("data:");
+      await reader.cancel();
+    });
+
+    it("cancels the upstream body when the downstream client disconnects", async () => {
+      let cancelled = false;
+      const upstreamBody = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("data: {}\n\n"));
+        },
+        cancel() {
+          cancelled = true;
+        },
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (_url: string, init?: RequestInit) => {
+          // Emulate what a real fetch does with its signal: aborting it tears down
+          // the upstream body. The assertion below is really about whether the route
+          // wired the browser's disconnect through to that signal at all.
+          init?.signal?.addEventListener("abort", () => void upstreamBody.cancel(), {
+            once: true,
+          });
+          return new Response(upstreamBody, {
+            status: 200,
+            headers: { "content-type": "text/event-stream" },
+          });
+        })
+      );
+
+      const client = new AbortController();
+      const request = new Request("http://localhost/api/chat/completions", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: "Bearer x" },
+        body: JSON.stringify({ model: "llama3", messages: [] }),
+        signal: client.signal,
+      });
+
+      const { POST } = await import("./route");
+      const response = await POST(request);
+      expect(response.headers.get("content-type")).toContain("text/event-stream");
+
+      client.abort();
+      expect(cancelled).toBe(true);
+    });
   });
 });

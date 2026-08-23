@@ -1,5 +1,13 @@
 import { NextResponse } from "next/server";
 
+/**
+ * Deadline for the upstream connection to answer with response headers.
+ *
+ * The same 5s every other proxy route here uses. It bounds the connection
+ * attempt only -- see below for why it must not survive into the stream.
+ */
+const CONNECT_TIMEOUT_MS = 5000;
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -43,12 +51,45 @@ export async function POST(request: Request) {
       );
     }
 
-    const upstreamRes = await fetch(upstreamUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-      cache: "no-store",
-    });
+    // This was the only proxy fetch here with no deadline at all: a Scheduler that
+    // accepted the connection and never answered held the playground request open
+    // indefinitely. A plain `AbortSignal.timeout(5000)` would fix the hang but fire
+    // at 5s whether or not tokens are flowing, killing any completion that outlives
+    // the deadline -- so a manual controller arms a timer for the connection attempt
+    // and disarms it the moment headers arrive. From then on the stream's lifetime
+    // belongs to the visitor, not the clock.
+    //
+    // The same controller also carries the browser's disconnect: without this
+    // wiring, a visitor who closed the tab left the upstream request (and the
+    // inference behind it) running server-side with nobody reading the answer.
+    const upstreamController = new AbortController();
+    const connectTimer = setTimeout(
+      () =>
+        upstreamController.abort(
+          new Error(`Scheduler connection timed out after ${CONNECT_TIMEOUT_MS}ms`)
+        ),
+      CONNECT_TIMEOUT_MS
+    );
+    if (request.signal.aborted) {
+      upstreamController.abort();
+    } else {
+      request.signal.addEventListener("abort", () => upstreamController.abort(), { once: true });
+    }
+
+    let upstreamRes: Response;
+    try {
+      upstreamRes = await fetch(upstreamUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        cache: "no-store",
+        signal: upstreamController.signal,
+      });
+    } finally {
+      // Disarm whether the fetch resolved, rejected, or timed out -- an orphaned
+      // timer would abort a stream that had every right to keep flowing.
+      clearTimeout(connectTimer);
+    }
 
     const contentType = upstreamRes.headers.get("content-type") ?? "";
 
