@@ -148,3 +148,90 @@ jobs:
           # The re-export shims are the seam a fresh clone is most likely to get
           # wrong, because they are the only place the three packages meet.
           python -c "from node.core.mesh_auth import seal; from scheduler.core.mesh_auth import seal as s2; assert seal is s2"
+
+  install-windows:
+    name: install.ps1 actually installs (Windows)
+    timeout-minutes: 30
+    runs-on: windows-latest
+    # The POSIX installer has been executed for real by scripts/verify_install.sh
+    # since the monorepo migration silently broke it. install.ps1 has NEVER been
+    # executed by anything: the gate is bash, so every Windows install defect found
+    # so far was found by a human mid-install. This job runs it for real, against a
+    # throwaway copy, and then demands POSITIVE evidence -- exit code 0 is not
+    # evidence. W3 shipped an installer that printed "Installation Complete!" over a
+    # failed pip and exited 0.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the installer for real against a throwaway copy
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $dest = Join-Path $env:RUNNER_TEMP "pi-windows-install"
+          if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
+          # The WORKING TREE, mirroring verify_install.sh's rsync: exclude the venv,
+          # git metadata and caches so the installer builds its environment from
+          # nothing, the way a host's would.
+          robocopy "$env:GITHUB_WORKSPACE" $dest /E `
+            /XD .git .venv node_modules __pycache__ .kilo zones .secrets `
+            /XF *.pyc /NFL /NDL /NJH /NJS /NP
+          if ($LASTEXITCODE -ge 8) { throw "robocopy failed with exit code $LASTEXITCODE" }
+          $global:LASTEXITCODE = 0
+
+          Push-Location $dest
+          try {
+            try {
+              & .\install.ps1
+            } catch {
+              # A terminating PowerShell error inside the script does not set
+              # $LASTEXITCODE, so without this a crashed installer could look like a
+              # passing one -- the exact success-over-failure shape W3 shipped.
+              throw "install.ps1 raised: $_"
+            }
+            if ($LASTEXITCODE -ne 0) { throw "install.ps1 exited with code $LASTEXITCODE" }
+          } finally {
+            Pop-Location
+          }
+
+      - name: Assert positive evidence of a working install
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $nodeDir = Join-Path $env:RUNNER_TEMP "pi-windows-install\packages\node"
+          $py = Join-Path $nodeDir ".venv\Scripts\python.exe"
+          if (-not (Test-Path $py)) { throw "installer produced no usable venv interpreter at $py" }
+
+          $envFile = Join-Path $nodeDir ".env"
+          if (-not (Test-Path $envFile)) { throw "installer did not create packages\node\.env" }
+          $lines = Get-Content $envFile
+          foreach ($key in @("NODE_ID", "NODE_SCHEDULER_URL", "NODE_NETWORK_AUTH_TOKEN", "NODE_FLEET_TOKEN")) {
+            if (-not ($lines | Where-Object { $_ -match "^$key=" })) { throw ".env is missing $key" }
+          }
+          # The control API fails closed without its credential; a token shorter than
+          # 16 hex chars means the generator did not really run.
+          $own = ($lines | Select-String '^NODE_NETWORK_AUTH_TOKEN=(.+)$').Matches[0].Groups[1].Value
+          if ($own.Length -lt 16) { throw "generated NODE_NETWORK_AUTH_TOKEN is implausibly short" }
+
+          # The weakest claim worth making: pip can succeed and still leave a package
+          # that cannot be imported.
+          & $py -c "import node, node.main, pi_shared; print('installed venv imports the node package')"
+          if ($LASTEXITCODE -ne 0) { throw "the installed interpreter cannot import the node package" }
+          Write-Host "OK: env written, venv built, node package importable from it"
+
+      - name: Stop the daemon the installer launched, then delete the copy
+        if: always()
+        shell: pwsh
+        run: |
+          # install.ps1 unconditionally starts a detached background daemon via
+          # Start-Process pythonw.exe. Nothing in this job asserts on that daemon --
+          # Ollama and the Scheduler do not exist here -- but nothing may leave one
+          # running either.
+          $dest = Join-Path $env:RUNNER_TEMP "pi-windows-install"
+          Get-CimInstance Win32_Process |
+            Where-Object { $_.ExecutablePath -like "$dest*" } |
+            ForEach-Object {
+              Write-Host "stopping leftover daemon pid $($_.ProcessId): $($_.ExecutablePath)"
+              Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+            }
+          Start-Sleep -Seconds 2
+          if (Test-Path $dest) { Remove-Item -Recurse -Force $dest -ErrorAction SilentlyContinue }
