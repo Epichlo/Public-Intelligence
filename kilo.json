@@ -1,5 +1,13 @@
 {
   "$schema": "https://app.kilo.ai/config.json",
+  "mcp": {
+    "claude-code": {
+      "type": "local",
+      "command": ["/opt/homebrew/bin/claude", "mcp", "serve"],
+      "enabled": true,
+      "timeout": 300000
+    }
+  },
   "permission": {
     "read": "allow",
     "edit": {
