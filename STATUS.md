@@ -4,17 +4,17 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-21 13:36 UTC
+**Generated:** 2026-08-23 09:19 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 397 | 0 | 0 | 11.51s |
-| Node | PASS | 260 | 0 | 1 | 3.10s |
-| Root E2E | PASS | 249 | 0 | 0 | 26.90s |
-| **Total** | **PASSING** | **906** | **0** | **1** | |
+| Scheduler | PASS | 410 | 0 | 0 | 8.55s |
+| Node | PASS | 260 | 0 | 1 | 4.35s |
+| Root E2E | PASS | 249 | 0 | 0 | 25.23s |
+| **Total** | **PASSING** | **919** | **0** | **1** | |
 
 Reproduce:
 
@@ -26,31 +26,17 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `e5d1e7c` docs: record the real state, including what we cannot see (#2)
-- **Author / date:** attu308 — 2026-08-17 11:35:15 +0530
-- **Branch:** claude/project-closure-readme-4iwry3
-- **Total commits:** 53
-- **Remote:** origin	https://github.com/Epichlo/Public-Intelligence (fetch)
-- **Working tree:** 9 uncommitted change(s)
-
-```
-  M .claude/rules/node.md
-   M CLAUDE.md
-   M README.md
-   M ROADMAP.md
-   M experimental/README.md
-   M packages/node/README.md
-   M packages/scheduler/README.md
-   M packages/shared/README.md
-   M packages/website/README.md
-```
+- **Last commit:** `5f817e2` resolve the security-tree merge: perf_counter wins its clock argument
+- **Author / date:** Atharv Deshpande — 2026-08-23 14:49:16 +0530
+- **Branch:** claude/autonomous-architecture-decision-sqtiuy
+- **Total commits:** 259
+- **Remote:** origin	https://github.com/Epichlo/Public-Intelligence.git (fetch)
+- **Working tree:** clean
 
 ## CI
 
-- **Status:** UNVERIFIABLE
-- **Reason:** gh CLI not installed -- cannot query run history
-
-> CI status is reported as UNVERIFIABLE rather than assumed. Do not record a CI pass anywhere until this reads PASS.
+- **Status:** UNVERIFIED
+- **Reason:** CI has never run for HEAD (5f817e2f). The most recent run covers 47381d41, which is 8 commit(s) behind. Its conclusion ('success') says nothing about this code.
 
 
 ## Repo facts
@@ -59,10 +45,10 @@ _Measured, not asserted. Re-run to refresh._
 
 | Repo | Remote | Branch | Tracking |
 | --- | --- | --- | --- |
-| root | `https://github.com/Epichlo/Public-Intelligence` | claude/project-closure-readme-4iwry3 | **none** |
+| root | `https://github.com/Epichlo/Public-Intelligence.git` | claude/autonomous-architecture-decision-sqtiuy | origin/claude/autonomous-architecture-decision-sqtiuy |
 
 - **`.gitmodules`:** absent, which is correct — `packages/` are ordinary directories since the 2026-08-04 monorepo migration, and CI's fresh-clone job asserts this file does not come back.
-- **root venv interpreter:** Python 3.11.15
+- **root venv interpreter:** Python 3.14.6
 - **ruff:** ruff 0.16.1 (pinned in both pyproject `[dev]` extras)
 
 **Duplicated modules** (differing significant lines; imports and comments excluded).
