@@ -54,9 +54,12 @@ the author is not it.
 
 **Supports:** [D2](decisions/D2-economics.md), and through it the removal of all
 payout machinery from v1.
-**Evidence:** `scripts/economics.py`, tested by `tests/test_economics.py`. Hardware
-amortisation alone exceeds commodity API pricing by ~12×, and the conclusion survives
-doubling every power and throughput input and tripling utilisation.
+**Evidence:** `scripts/economics.py`, tested by `tests/test_economics.py`. Two cuts,
+named so they cannot be quietly swapped: hardware **amortisation alone** exceeds
+commodity API pricing by ~12×; **fully loaded** (hardware + idle + power at 10%
+utilisation) is $2.256 per 1M tokens against $0.150 commodity -- ~15×. The
+conclusion survives doubling every power and throughput input and tripling
+utilisation.
 **Falsifier:** commodity inference pricing rises by an order of magnitude, or the
 target hardware stops being consumer GPUs, or hosts turn out to value something other
 than money (which would not falsify the arithmetic but would change what it implies).
@@ -181,18 +184,52 @@ identified as the one surviving differentiator.
 with it, and P2 has already been moved to low confidence — which would leave the
 project's differentiator resting on two low-confidence premises at once.
 
+## P11 — Someone wants open-model inference from pooled residential machines
+
+**Supports:** whatever survives of P1's federation half; the product's requester side.
+**Evidence:** none gathered. Surfaced as a blind spot by the 2026-08-23 independent
+model review (`docs/review/model-review-2026-08-23.md`): P1 examines host-side
+motivation, P10 examines what a requester will tolerate -- but nothing in this
+register asks whether anyone actually *wants* completion from a 7B-70B open model on
+a stranger's residential connection when frontier-hosted APIs sit at comparable
+latency and lower absolute price.
+**Falsifier:** requesters who need open weights (fine-tunes, self-verification,
+data-residency on the *requester* side) turn out to want them on machines they
+control, not pooled strangers' machines -- collapsing demand onto the self-hosted
+fleet case that D6 already covers, leaving no cross-party product.
+**Confidence:** **low, and load-bearing.** It sits directly under P2 (already low)
+and P10 (low): three low-confidence premises stacked under one product claim.
+
+## P12 — A host's legal exposure to carried traffic is bounded and disclosed
+
+**Supports:** [D3](decisions/D3-terms-and-liability.md); the decision that v1 can
+ship without counsel.
+**Evidence:** D3's own record says "decided (partial -- legal review outstanding)".
+What hosts face: arbitrary prompts from strangers egressing a residential IP, under
+whatever law reaches them, mitigated by an Apache disclaimer, OPERATING/ACCEPTABLE_USE
+docs, and metering that records no prompt text (P6 constrains persistence only).
+**Falsifier:** none available from inside -- exactly like D7, this one needs a party
+this repository does not contain. It is registered anyway because P6's existence made
+the data-protection slice look covered while the carriage-exposure slice went
+unnumbered; the 2026-08-23 review named that gap and it belongs on this page rather
+than in D3's shadow.
+**Confidence:** unknown by construction. An operator running a public-facing node
+before real legal advice is accepting this premise with no rating at all.
+
 ---
 
 ## How to attack this list
 
-- Pick either of the lowest-confidence premises (**P2**, **P10**) and ask whether the
-  people they describe exist. They are now the same question from two sides: P2 asks
-  whether anyone needs this to reach a machine, P10 asks whether anyone who does would
-  accept where their prompt goes. A single answer can falsify both.
+- Pick either of the lowest-confidence premises (**P2**, **P10**, **P11**) and ask
+  whether the people they describe exist. They are now the same question from three
+  sides: P2 asks whether anyone needs this to reach a machine, P10 asks whether
+  anyone who does would accept where their prompt goes, P11 asks whether anyone who
+  clears both still wants the answer more than a frontier API's. A single answer can
+  falsify all three.
 - Pick the one with the largest downstream commitment (**P3**), and check the inputs
   against a real electricity bill and a real card.
-- Pick the one whose falsifier says "none available" (**P9**), and ask whether the
-  process it justifies is proportionate.
+- Pick the one whose falsifier says "none available" (**P9**, **P12**), and ask
+  whether the process it justifies is proportionate.
 
 Last reviewed: 2026-08-07. Reviewed by: the author. **That is the problem** — see
 [D7](decisions/D7-second-pair-of-eyes.md).
@@ -216,3 +253,12 @@ own argument is that an unregistered assumption is one nobody can attack.
 
 Last updated 2026-08-17: P8 gained the enumerated verification gaps, P10 was added.
 **Still reviewed only by the author, and still the problem.**
+
+2026-08-23: an independent model-family review (Claude Sonnet via Claude Code,
+`docs/review/model-review-2026-08-23.md`) verified P2 and P3 against code and
+arithmetic rather than docs -- both held as self-reported -- refuted the *live*
+validity of P8's receipt chain (a bundle one commit behind HEAD), found the ~12x/~15x
+vocabulary drift in P3 (fixed above), and surfaced **P11** and **P12**, which were
+registered the same day. Like the two desk reviews before it, it does not close D7:
+it is still not an external human judge. It did independently re-derive that the
+two most recent security commits do what their messages claim, by reading code.
