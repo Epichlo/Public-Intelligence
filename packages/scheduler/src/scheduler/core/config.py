@@ -191,6 +191,18 @@ class Settings(BaseSettings):
         description="How often to look for nodes that have gone quiet.",
     )
 
+    canary_check_interval_seconds: float = Field(
+        default=45.0,
+        validation_alias=AliasChoices("SCHEDULER_CANARY_CHECK_INTERVAL", "CANARY_CHECK_INTERVAL"),
+        description=(
+            "Seconds between live canary probes (decision D1). Each tick dispatches ONE "
+            "node's canary down the ordinary inference path and scores the reply, so a "
+            "fleet of N nodes is fully sampled every ~N intervals. Set to 0 or negative "
+            "to disable probing entirely; quarantine then never flips on live evidence "
+            "and GET /nodes/canary stays empty."
+        ),
+    )
+
     # Mirrored by `node.core.configuration.Settings.cors_allow_origins` -- two FastAPI
     # apps with separate settings classes, so there is no shared module to change.
     # If this field or its validator changes, change that one too.

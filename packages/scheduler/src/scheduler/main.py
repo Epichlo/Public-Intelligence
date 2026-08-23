@@ -21,11 +21,12 @@ from scheduler.api.openai import router as openai_router
 from scheduler.api.schedule import router as schedule_router
 from scheduler.api.telemetry import router as telemetry_router
 from scheduler.api.usage import router as usage_router
-from scheduler.core.canary import CanaryVerifier
+from scheduler.core.canary import CanaryProber, CanaryVerifier
 from scheduler.core.config import get_settings
 from scheduler.core.credit_ledger import CreditLedger
 from scheduler.core.invites import InviteRegistry
 from scheduler.core.logging import setup_logging
+from scheduler.core.mesh_inference_client import MeshInferenceClient
 from scheduler.core.metering import UsageMeter
 from scheduler.core.rate_limiter import TokenBucketLimiter
 from scheduler.core.zenoh_router import ZenohRouter
@@ -122,7 +123,33 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     zenoh_router.start()
     app.state.zenoh_router = zenoh_router
 
+    # Decision D1's dispatch half: without a live probe, `CanaryVerifier.record`
+    # is reachable only from tests and quarantine can structurally never flip.
+    # The prober reuses the ordinary dispatch path (mesh when the node has been
+    # seen there, HTTP otherwise), so it verifies the road real completions take.
+    canary_mesh_client = None
+    router_session = getattr(zenoh_router, "session", None)
+    if router_session is not None:
+        canary_mesh_client = MeshInferenceClient(
+            router_session,
+            timeout=settings.mesh_inference_timeout_seconds,
+            first_reply_timeout=settings.mesh_inference_first_reply_timeout_seconds,
+        )
+    canary_prober = CanaryProber(
+        app.state.registry,
+        app.state.canary,
+        settings=settings,
+        mesh_client=canary_mesh_client,
+        interval=settings.canary_check_interval_seconds,
+    )
+    canary_prober.start()
+    app.state.canary_prober = canary_prober
+
     yield
+
+    # Stop the canary prober BEFORE the mesh session it dispatches through.
+    if hasattr(app.state, "canary_prober"):
+        await app.state.canary_prober.stop()
 
     # Stop ZenohRouter on shutdown
     if hasattr(app.state, "zenoh_router"):

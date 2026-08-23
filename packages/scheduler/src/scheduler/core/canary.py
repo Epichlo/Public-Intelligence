@@ -35,10 +35,15 @@ becomes a manual outage rather than a safety mechanism.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import re
 import time
 from dataclasses import dataclass, field
+
+from scheduler.core.node_dispatch import NodeDispatchError, infer_once
+from scheduler.registry.node_registry import NodeRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -201,3 +206,134 @@ class CanaryVerifier:
             }
             for node_id, state in self._state.items()
         }
+
+
+class CanaryProber:
+    """Dispatches live canaries down the ordinary inference path, on a slow cadence.
+
+    `CanaryVerifier.record` is the scoring half of decision D1; this class is the
+    dispatch half, without which quarantine can structurally never flip -- nothing
+    else in the process ever scores a node's reply against a canary. One node is
+    probed per tick, round-robin over the whole registry (quarantined nodes
+    included: they are how a fixed node earns its way back in), and the prompt
+    travels through the SAME `infer_once` path real completions use -- mesh when
+    the node has been seen there, HTTP otherwise. A canary that travelled a
+    special road would verify the road, not the node.
+
+    Failure-safety, stated as rules:
+
+    - A dispatch failure is NOT canary evidence. A node that cannot be reached is
+      the staleness sweep's problem; quarantining on transport errors would evict
+      nodes for being offline, which is the availability surface degrading, not a
+      lie being caught.
+    - Anything this class raises is caught by its own loop and logged. Canary
+      infrastructure must never take dispatch down with it.
+    - Quarantine flips only inside `record`, on a scored reply.
+    """
+
+    def __init__(
+        self,
+        registry: NodeRegistry,
+        verifier: CanaryVerifier,
+        *,
+        settings: object,
+        mesh_client: object | None,
+        interval: float,
+    ) -> None:
+        """Build the prober. Call `start()` from a running event loop.
+
+        Args:
+            registry: Where the live nodes are listed from.
+            verifier: The D1 scorer whose `record` turns replies into quarantine.
+            settings: Scheduler settings; passed through to `infer_once` for the
+                HTTP fallback path.
+            mesh_client: The Zenoh mesh client real dispatch uses, or None when
+                the Scheduler has no session. None is normal: dispatch then
+                falls back to HTTP.
+            interval: Seconds between probes. Zero or negative disables probing.
+        """
+        self._registry = registry
+        self._verifier = verifier
+        self._settings = settings
+        self._mesh_client = mesh_client
+        self.interval = interval
+        self._node_cursor = 0
+        self._canary_cursor = 0
+        self._task: asyncio.Task[None] | None = None
+
+    def start(self) -> None:
+        """Start the probe loop. A no-op when disabled or already running."""
+        if self._task is not None:
+            return
+        if self.interval <= 0:
+            logger.info("canary_prober_disabled: interval=%s", self.interval)
+            return
+        self._task = asyncio.create_task(self._loop())
+
+    async def stop(self) -> None:
+        """Cancel the probe loop and wait for it to finish. Idempotent."""
+        task = self._task
+        self._task = None
+        if task is None:
+            return
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    async def _loop(self) -> None:
+        """Probe one node per tick, forever. One bad tick must not end the loop."""
+        while True:
+            await asyncio.sleep(self.interval)
+            try:
+                await self.check_one_node()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("canary_probe_failed_unexpectedly")
+
+    async def check_one_node(self) -> bool:
+        """Probe the next node in rotation. Returns whether the reply PASSED.
+
+        Every early return here is a tick where nothing was learned: an empty
+        fleet, a node with no model to ask about, or a node that could not be
+        reached. None of those is evidence of dishonesty, so none of them
+        touches the verifier.
+        """
+        nodes = await self._registry.list()
+        if not nodes:
+            return False
+
+        node = nodes[self._node_cursor % len(nodes)]
+        self._node_cursor = (self._node_cursor + 1) % len(nodes)
+
+        if not node.available_models:
+            logger.debug("canary_probe_skipped_no_models: node_id=%s", node.node_id)
+            return False
+
+        # Rotate through the shipped canaries so a host cannot tune itself to one
+        # prompt it has learned to answer.
+        canary = CANARIES[self._canary_cursor % len(CANARIES)]
+        self._canary_cursor = (self._canary_cursor + 1) % len(CANARIES)
+
+        try:
+            result = await infer_once(
+                registry=self._registry,
+                settings=self._settings,
+                mesh_client=self._mesh_client,
+                node_id=node.node_id,
+                ip_address=node.ip_address,
+                model=node.available_models[0],
+                prompt=canary.prompt,
+            )
+        except NodeDispatchError as e:
+            logger.warning(
+                "canary_dispatch_failed_not_evidence: node_id=%s status=%s error=%s",
+                node.node_id,
+                e.status,
+                e.detail,
+            )
+            return False
+
+        passed = self._verifier.record(node.node_id, canary, result.get("response", ""))
+        logger.info("canary_probe_recorded: node_id=%s passed=%s", node.node_id, passed)
+        return passed
