@@ -7,23 +7,18 @@ import { TelemetryGauges, TelemetryData } from "@/components/telemetry-gauge";
 import { SandboxLogViewer } from "@/components/sandbox-log-viewer";
 import { ContributionSummary } from "@/components/contribution-summary";
 
-const defaultTelemetry: TelemetryData = {
-  node_id: "local-host-node",
-  cpu_utilization: 0,
-  ram_used_bytes: 0,
-  ram_total_bytes: 16 * 1024 * 1024 * 1024,
-  gpu_utilization: 0,
-  vram_used_bytes: 0,
-  vram_total_bytes: 8 * 1024 * 1024 * 1024,
-  wan_connected: false,
-  status: "stopped",
-  last_updated: new Date().toISOString(),
-  telemetry_count: 0,
-};
+/**
+ * There is no default telemetry object on purpose. It used to seed 16 GB RAM,
+ * 8 GB VRAM, a "local-host-node" id and a module-load timestamp -- invented
+ * hardware and a fresh-looking heartbeat rendered as live gauges whenever the
+ * node API could not be reached. Until a real frame arrives, this dashboard
+ * has nothing measured to show, so it shows exactly that.
+ */
 
 export default function DashboardPage() {
-  const [telemetry, setTelemetry] = useState<TelemetryData>(defaultTelemetry);
+  const [telemetry, setTelemetry] = useState<TelemetryData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [fetchFailed, setFetchFailed] = useState(false);
   const [nodeStatus, setNodeStatus] = useState<"ready" | "running" | "stopped" | "unreachable">("stopped");
 
   useEffect(() => {
@@ -37,8 +32,9 @@ export default function DashboardPage() {
           setTelemetry((prev) => ({
             ...data,
             last_updated: new Date().toISOString(),
-            telemetry_count: (prev.telemetry_count || 0) + 1,
+            telemetry_count: (prev?.telemetry_count || 0) + 1,
           }));
+          setFetchFailed(false);
           if (data.status === "ready" || data.status === "running") {
             setNodeStatus("running");
           } else if (data.status === "stopped") {
@@ -47,10 +43,12 @@ export default function DashboardPage() {
             setNodeStatus("unreachable");
           }
         } else if (isMounted) {
+          setFetchFailed(true);
           setNodeStatus("unreachable");
         }
       } catch {
         if (isMounted) {
+          setFetchFailed(true);
           setNodeStatus("unreachable");
         }
       } finally {
@@ -89,7 +87,7 @@ export default function DashboardPage() {
         {/* Host Control Toggle */}
         <NodeControlToggle
           status={nodeStatus}
-          nodeId={telemetry.node_id}
+          nodeId={telemetry?.node_id}
           onStatusChange={handleStatusChange}
         />
 
@@ -103,9 +101,22 @@ export default function DashboardPage() {
               </span>
             )}
           </div>
-          <ContributionSummary nodeId={telemetry.node_id} />
+          <ContributionSummary nodeId={telemetry?.node_id ?? ""} />
 
-        <TelemetryGauges telemetry={telemetry} />
+        {telemetry ? (
+          <TelemetryGauges telemetry={telemetry} />
+        ) : (
+          <div className="rounded-xl border border-border/40 bg-card p-5 shadow-sm">
+            <p className="text-sm font-medium text-foreground">
+              No telemetry received yet.
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              {fetchFailed
+                ? "The node API could not be reached, so no hardware metrics exist to show. Start the host runtime or verify the node connection."
+                : "Waiting for the first telemetry frame from the local node."}
+            </p>
+          </div>
+        )}
         </div>
 
         {/* Docker Sandbox Logs Section */}
