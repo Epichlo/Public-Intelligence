@@ -418,6 +418,12 @@ async def create_chat_completion(
             yield f"data: {err_chunk.model_dump_json()}\n\n"
             yield "data: [DONE]\n\n"
             return
+        finally:
+            # However this generator ends -- clean finish, node error, or the requester
+            # disconnecting (GeneratorExit unwinds here) -- release the transport now.
+            # Abandoning an async-for to GC finalization is lazy and unbounded; this is
+            # what actually stops a mesh query's drain worker promptly.
+            await token_stream.aclose()
 
         # 3) Final stop chunk
         stop_chunk = ChatCompletionChunk(

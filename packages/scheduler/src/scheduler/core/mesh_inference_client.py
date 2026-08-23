@@ -52,12 +52,57 @@ class MeshNodeError(Exception):
     """The node answered with a failure. This must be surfaced, not retried elsewhere.
 
     Attributes:
-        status: HTTP-equivalent status the node reported.
+        status: HTTP status the node reported.
     """
 
     def __init__(self, message: str, status: int = 500) -> None:
         super().__init__(message)
         self.status = status
+
+
+class _QueryBridge:
+    """One query's reply queue, its drain worker, and the means to abandon both.
+
+    Zenoh's Python API is synchronous: replies arrive on Zenoh's own threads, so
+    `_start_query` parks a worker on a `to_thread` loop draining the blocking
+    reply iterator into an asyncio queue. Without an owner able to STOP that
+    drain, every first-reply timeout, abandoned stream or post-first-reply
+    failure stranded one worker plus one growing queue until the full query
+    timeout (120s) expired -- one leak per affected request.
+
+    `abandon()` is the stop button. Closing the underlying iterator is what
+    actually ends the worker -- the blocking `for` raises and the drain's
+    `finally` runs -- because cancelling the wrapping task cannot interrupt a
+    thread that is already inside `to_thread`. Idempotent, and safe to call
+    whether or not the query ever produced anything.
+    """
+
+    def __init__(self, queue: asyncio.Queue[Any], task: asyncio.Task[None], replies: Any) -> None:
+        self.queue = queue
+        self._task = task
+        self._replies = replies
+        self._abandoned = False
+
+    def abandon(self) -> None:
+        """Stop draining: close the reply iterator and release the worker."""
+        if self._abandoned:
+            return
+        self._abandoned = True
+
+        # Different zenoh versions expose different stop handles on the object
+        # returned by `session.get`; try the known closers in order.
+        for closer_name in ("close", "cancel"):
+            closer = getattr(self._replies, closer_name, None)
+            if callable(closer):
+                try:
+                    closer()
+                except Exception as e:
+                    # A refused close leaves the worker bounded by the query's
+                    # own timeout instead of stranding it indefinitely.
+                    logger.debug("mesh_query_close_failed", handle=closer_name, error=str(e))
+                break
+
+        self._task.cancel()
 
 
 class MeshStream:
@@ -74,13 +119,26 @@ class MeshStream:
         queue: asyncio.Queue[Any],
         node_id: str,
         *,
+        bridge: _QueryBridge,
         finished: bool = False,
     ) -> None:
         self._first_chunk = first_chunk
         self._queue = queue
+        self._bridge = bridge
         self._node_id = node_id
         self._last_index = 0
         self._finished = finished
+
+    async def aclose(self) -> None:
+        """Abandon the stream: stop draining the underlying query.
+
+        A caller that stops iterating early -- a disconnecting requester, a
+        gateway bailing out -- must not leave the drain worker consuming the
+        blocking reply iterator into a queue nobody reads until the query
+        timeout. Idempotent; after this, iteration simply ends.
+        """
+        self._finished = True
+        self._bridge.abandon()
 
     def __aiter__(self) -> AsyncIterator[str]:
         return self
@@ -179,12 +237,15 @@ class MeshInferenceClient:
             MeshUnavailableError: The node did not answer.
             MeshNodeError: The node answered with a failure.
         """
-        queue = self._start_query(
+        bridge = self._start_query(
             node_id=node_id, token=token, model=model, prompt=prompt, stream=False
         )
-        reply = await self._first_reply(queue, node_id)
+        reply = await self._first_reply(bridge, node_id)
 
         if not reply.get("ok", False):
+            # The node answered with a failure; whatever else it sends is nobody's
+            # business now. Abandon before raising so the worker does not drain on.
+            bridge.abandon()
             raise MeshNodeError(
                 str(reply.get("error", "Node reported an error.")),
                 status=int(reply.get("status", 500)),
@@ -213,12 +274,13 @@ class MeshInferenceClient:
                 requester yet, so the caller may still fall back to HTTP.
             MeshNodeError: The node answered with a failure.
         """
-        queue = self._start_query(
+        bridge = self._start_query(
             node_id=node_id, token=token, model=model, prompt=prompt, stream=True
         )
-        reply = await self._first_reply(queue, node_id)
+        reply = await self._first_reply(bridge, node_id)
 
         if not reply.get("ok", False):
+            bridge.abandon()
             raise MeshNodeError(
                 str(reply.get("error", "Node reported an error.")),
                 status=int(reply.get("status", 500)),
@@ -227,13 +289,14 @@ class MeshInferenceClient:
         if reply.get("done"):
             # A complete but empty generation -- a valid answer, so it must not look like
             # an unreachable node. Represent it as a stream that yields nothing.
-            return MeshStream(None, queue, node_id, finished=True)
+            return MeshStream(None, bridge.queue, node_id, bridge=bridge, finished=True)
 
         chunk = reply.get("chunk")
         if chunk is None:
+            bridge.abandon()
             raise MeshNodeError("Node sent a reply with no content.", status=502)
 
-        return MeshStream(str(chunk), queue, node_id)
+        return MeshStream(str(chunk), bridge.queue, node_id, bridge=bridge)
 
     def _start_query(
         self,
@@ -243,8 +306,14 @@ class MeshInferenceClient:
         model: str,
         prompt: str,
         stream: bool,
-    ) -> asyncio.Queue[Any]:
+    ) -> _QueryBridge:
         """Send the query and start draining replies into an asyncio queue.
+
+        Returns:
+            A bridge owning the reply queue and drain worker. Callers that give
+            up on the query -- timeout, error, abandoned stream -- MUST call
+            `bridge.abandon()`, or one worker thread plus one queue leaks per
+            request until the query timeout.
 
         Raises:
             MeshUnavailableError: If there is no session, or Zenoh refused the query.
@@ -310,6 +379,8 @@ class MeshInferenceClient:
 
                     loop.call_soon_threadsafe(queue.put_nowait, decoded)
             except Exception as e:
+                # Includes the GeneratorExit-style failure `abandon()` induces by
+                # closing the iterator: the drain stops cleanly either way.
                 loop.call_soon_threadsafe(queue.put_nowait, MeshUnavailableError(str(e)))
             finally:
                 loop.call_soon_threadsafe(queue.put_nowait, _END)
@@ -319,13 +390,17 @@ class MeshInferenceClient:
         task = asyncio.ensure_future(asyncio.to_thread(drain))
         _drain_tasks.add(task)
         task.add_done_callback(_drain_tasks.discard)
-        return queue
+        return _QueryBridge(queue, task, replies)
 
-    async def _first_reply(self, queue: asyncio.Queue[Any], node_id: str) -> dict[str, Any]:
+    async def _first_reply(self, bridge: _QueryBridge, node_id: str) -> dict[str, Any]:
         """Await the first reply, or declare the node unreachable over the mesh."""
         try:
-            item = await asyncio.wait_for(queue.get(), timeout=self._first_reply_timeout)
+            item = await asyncio.wait_for(bridge.queue.get(), timeout=self._first_reply_timeout)
         except TimeoutError as e:
+            # Nothing arrived. Abandoning is what keeps this cheap: without it the
+            # drain worker kept consuming the blocking iterator into an orphaned
+            # queue until the full query timeout.
+            bridge.abandon()
             raise MeshUnavailableError(
                 f"Node {node_id} did not answer over the mesh within {self._first_reply_timeout}s."
             ) from e

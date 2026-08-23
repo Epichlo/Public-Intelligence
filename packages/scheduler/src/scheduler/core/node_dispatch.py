@@ -205,12 +205,19 @@ async def _iterate_mesh_stream(stream: Any) -> AsyncIterator[str]:
 
     A `MeshNodeError` raised part-way through becomes a `NodeDispatchError` so callers
     have one exception type to handle regardless of transport.
+
+    The `finally` is the leak guard: however this generator ends -- completed,
+    node error, or the requester disconnecting and finalising it mid-stream --
+    the underlying mesh query is abandoned, so its drain worker stops consuming
+    the blocking reply iterator instead of stranding until the query timeout.
     """
     try:
         async for chunk in stream:
             yield chunk
     except MeshNodeError as e:
         raise NodeDispatchError(str(e), status=e.status) from e
+    finally:
+        await stream.aclose()
 
 
 async def _http_stream(
