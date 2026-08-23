@@ -142,12 +142,19 @@ if (-not (Test-Path (Join-Path $NodeDir "pyproject.toml"))) {
     $WorkDir = Join-Path $env:USERPROFILE "PublicIntelligence"
     if (Test-Path (Join-Path $WorkDir ".git")) {
         Write-Host "[INFO] Updating existing Public Intelligence checkout..." -ForegroundColor Blue
+        # $ErrorActionPreference does not trap native exit codes, and without this
+        # guard an offline or partial pull silently installed whatever stale tree
+        # already sat there -- reported as a fresh install. Same lesson as pip.
         git -C $WorkDir pull origin main --quiet
+        Assert-LastExitCode "Could not update the existing checkout at $WorkDir (offline or partial fetch?)"
     } else {
         Write-Host "[INFO] Downloading Public Intelligence from GitHub..." -ForegroundColor Blue
         if (Test-Path $WorkDir) { Remove-Item -Path $WorkDir -Recurse -Force }
         if (Get-Command "git" -ErrorAction SilentlyContinue) {
+            # A failed clone otherwise left the previous message standing over
+            # nothing, or over a half-written directory. Fail like every pip step.
             git clone --depth 1 https://github.com/Epichlo/Public-Intelligence.git $WorkDir --quiet
+            Assert-LastExitCode "Could not download Public Intelligence from GitHub"
         } else {
             $ZipPath = Join-Path $env:TEMP "public_intelligence_main.zip"
             Invoke-WebRequest -Uri "https://github.com/Epichlo/Public-Intelligence/archive/refs/heads/main.zip" -OutFile $ZipPath
@@ -212,7 +219,14 @@ NODE_NETWORK_AUTH_TOKEN=$AuthToken
 NODE_FLEET_TOKEN=$NetworkAuthToken
 NODE_INVITE_CODE=$InviteCode
 "@
-    Set-Content -Path $EnvFile -Value $EnvContent -Encoding UTF8
+    # NOT Set-Content: under Windows PowerShell 5.1, `-Encoding UTF8` writes a
+    # UTF-8 BOM, and python-dotenv reads env files as utf-8 WITHOUT stripping
+    # one -- so the first key arrived as \ufeffNODE_ID, pydantic-settings never
+    # matched it, and every such host silently registered as the default id
+    # "node-local", colliding with any second host queryable through the mesh.
+    # WriteAllText with UTF8Encoding($false) emits BOM-less UTF-8 identically
+    # under powershell.exe and pwsh.
+    [System.IO.File]::WriteAllText($EnvFile, $EnvContent, (New-Object System.Text.UTF8Encoding($false)))
     Write-Host "[OK] Environment configured: $EnvFile" -ForegroundColor Green
     Write-Host "[OK] Generated NODE_NETWORK_AUTH_TOKEN for the local control API." -ForegroundColor Green
 } else {
@@ -294,7 +308,44 @@ Write-Host ""
 
 # Launch detached background daemon using native Windows pythonw.exe
 Write-Host "Launching Host Node Daemon in persistent background..." -ForegroundColor Yellow
-Start-Process -FilePath $VenvPythonw -ArgumentList "-m node.main --host 0.0.0.0 --port 8080" -WorkingDirectory $NodeDir -WindowStyle Hidden
+$NodePort = 8080
+$Daemon = Start-Process -FilePath $VenvPythonw `
+    -ArgumentList "-m node.main --host 0.0.0.0 --port $NodePort" `
+    -WorkingDirectory $NodeDir -WindowStyle Hidden -PassThru
+
+# A detached process reports nothing back: its output is discarded and
+# $ErrorActionPreference traps nothing for it. The success message below used to
+# print unconditionally, which is the launch twin of the pip defect Assert-LastExitCode
+# fixed above: a daemon whose imports fail, or whose port a STALE pre-update daemon
+# already holds -- so a re-run "succeeded" while traffic kept hitting the old node --
+# looked identical to a working one. /health answers 200 ("degraded") even when Ollama
+# and the Scheduler are down, so reaching it proves exactly what an installer can
+# honestly prove: the process survived startup and is serving.
+$HealthUrl = "http://localhost:$NodePort/health"
+$Serving = $false
+for ($Attempt = 1; $Attempt -le 30; $Attempt++) {
+    if ($Daemon.HasExited) { break }
+    try {
+        $Probe = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 2
+        if ($Probe.StatusCode -eq 200) { $Serving = $true; break }
+    } catch {
+        # Connection refused until uvicorn binds; that is what the wait is for.
+    }
+    Start-Sleep -Seconds 1
+}
+
+if (-not $Serving) {
+    Write-Host ""
+    Write-Host "[ERROR] The Host Node daemon did not answer ${HealthUrl} within 30 seconds." -ForegroundColor Red
+    if ($Daemon.HasExited) {
+        Write-Host "[ERROR] Its process exited immediately with code $($Daemon.ExitCode)." -ForegroundColor Red
+    }
+    Write-Host "[ERROR] If a node was installed here before and still runs, THAT stale pre-update" -ForegroundColor Red
+    Write-Host "[ERROR] process holds the port: stop it (Task Manager -> pythonw.exe under" -ForegroundColor Red
+    Write-Host "[ERROR] packages\node\.venv), then re-run this installer." -ForegroundColor Red
+    Write-Host "[ERROR] Installation aborted before claiming success." -ForegroundColor Red
+    exit 1
+}
 
 Write-Host "[OK] Host Node daemon launched successfully in persistent background!" -ForegroundColor Green
 Write-Host "[INFO] The node will continue running even if you close PowerShell." -ForegroundColor Blue
