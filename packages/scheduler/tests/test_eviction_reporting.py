@@ -179,3 +179,136 @@ async def test_a_graceful_unregister_is_logged(caplog: pytest.LogCaptureFixture)
 
     assert "node_departed" in caplog.text
     assert NODE_ID in caplog.text
+
+
+# --- leaving by any path takes the liveness clock along ----------------------
+#
+# `_last_verified_heartbeat` used to survive a graceful DELETE /nodes/{id}: it was
+# popped only on router-performed sweeps, so unregister -> quick re-register left
+# a stale timestamp that the sweep (or a liveliness-triggered check) read as
+# age > threshold and evicted the ALIVE new registration.
+
+
+@pytest.mark.anyio
+async def test_a_graceful_unregister_clears_the_verified_heartbeat_clock() -> None:
+    import time
+
+    registry = NodeRegistry()
+    await registry.register(make_node())
+    router = ZenohRouter(registry)
+    router._last_verified_heartbeat[NODE_ID] = time.monotonic()
+
+    await registry.unregister(NODE_ID)
+
+    assert NODE_ID not in router._last_verified_heartbeat
+
+
+@pytest.mark.anyio
+async def test_an_eviction_also_clears_the_verified_heartbeat_clock() -> None:
+    """The deathrattle/eviction path must behave like the graceful one."""
+    import time
+
+    registry = NodeRegistry()
+    await registry.register(make_node())
+    router = ZenohRouter(registry)
+    router._last_verified_heartbeat[NODE_ID] = time.monotonic()
+
+    await registry.local_unregister_node(NODE_ID)
+
+    assert NODE_ID not in router._last_verified_heartbeat
+
+
+@pytest.mark.anyio
+async def test_clearing_the_registry_fires_departures_too() -> None:
+    import time
+
+    registry = NodeRegistry()
+    await registry.register(make_node("a"))
+    await registry.register(make_node("b"))
+    router = ZenohRouter(registry)
+    router._last_verified_heartbeat["a"] = time.monotonic()
+    router._last_verified_heartbeat["b"] = time.monotonic()
+
+    await registry.clear()
+
+    assert router._last_verified_heartbeat == {}
+
+
+@pytest.mark.anyio
+async def test_unregister_then_reregister_survives_the_sweep() -> None:
+    """The exact defect: graceful DELETE, quick re-register, sweep tick.
+
+    The re-registered node is alive and about to heartbeat. It must not be
+    evicted for silence it has had no chance to cure -- its registration earns
+    one threshold-window of grace.
+    """
+    import time
+
+    registry = NodeRegistry()
+    await registry.register(make_node())
+    router = ZenohRouter(registry)
+    router.node_stale_after_seconds = 90.0
+
+    # A long-lived prior registration whose clock is ancient -- what the old
+    # code would have kept reading after the re-register.
+    registry._registered_at[NODE_ID] = time.monotonic() - 3600.0
+    router._last_verified_heartbeat[NODE_ID] = time.monotonic() - 3600.0
+
+    await registry.unregister(NODE_ID)  # clears the stale clock via the hook
+    await registry.register(make_node())  # alive again, no heartbeat yet
+
+    evicted = await router._evict_if_stale(NODE_ID)
+
+    assert evicted is False
+    assert await registry.exists(NODE_ID)
+
+
+@pytest.mark.anyio
+async def test_grace_does_not_shield_a_demonstrably_stale_clock() -> None:
+    """A clock that EXISTS but is past the threshold is real evidence.
+
+    Registration recency only covers the never-verified case; a node whose last
+    verified heartbeat is genuinely old is gone either way -- pinned here so the
+    grace cannot be widened into fail-open availability.
+    """
+    import time
+
+    registry = NodeRegistry()
+    await registry.register(make_node())
+    router = ZenohRouter(registry)
+    router.node_stale_after_seconds = 60.0
+    router._last_verified_heartbeat[NODE_ID] = time.monotonic() - 3600.0
+
+    assert await router._evict_if_stale(NODE_ID) is True
+
+
+@pytest.mark.anyio
+async def test_a_deathrattle_does_not_honour_registration_grace() -> None:
+    """The liveliness DELETE path keeps its strict, pinned semantics.
+
+    A never-verified node is evicted on a deathrattle regardless of how recently
+    it registered -- an unauthenticated signal may accelerate a check, and this
+    check answers aggressively on purpose because eviction self-heals. Only the
+    autonomous sweep grants registration grace.
+    """
+    registry = NodeRegistry()
+    await registry.register(make_node())
+    router = ZenohRouter(registry)
+    router.node_stale_after_seconds = 60.0
+
+    assert await router._evict_if_stale(NODE_ID, honour_registration_grace=False) is True
+    assert not await registry.exists(NODE_ID)
+
+
+@pytest.mark.anyio
+async def test_the_sweep_bounds_the_clock_dict_for_ids_never_seen_again() -> None:
+    """Entries for ids no longer registered must not accumulate forever."""
+    registry = NodeRegistry()
+    router = ZenohRouter(registry)
+    router.node_stale_after_seconds = 60.0
+    router._last_verified_heartbeat["ghost-1"] = 0.0
+    router._last_verified_heartbeat["ghost-2"] = 0.0
+
+    await router._sweep_stale_nodes()
+
+    assert router._last_verified_heartbeat == {}
