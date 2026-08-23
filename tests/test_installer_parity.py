@@ -337,6 +337,51 @@ def test_the_daemon_success_claim_follows_evidence_of_liveness() -> None:
     )
 
 
+def test_the_daemon_launch_leaves_its_words_on_record() -> None:
+    """The daemon must launch with both output streams captured to files.
+
+    The first real execution of this installer (windows-latest CI, 2026-08-23)
+    watched the daemon die with exit code 1 in its first seconds -- and could not
+    say why, because the launcher used pythonw, under which sys.stdout and
+    sys.stderr are None INSIDE the interpreter, so a traceback prints nowhere at
+    all, and Start-Process without redirects discards whatever survived anyway.
+    The POSIX launcher has always kept `nohup >> node.log`; the Windows launcher
+    has to meet the same bar: venv python.exe (not pythonw), both streams
+    redirected into files under packages\\node, and the failure path printing
+    those files' contents before exiting.
+    """
+    text = _windows()
+
+    launches = [ln for ln in text.splitlines() if re.search(r"\$Daemon\s*=\s*Start-Process\b", ln)]
+    assert len(launches) == 1, f"expected exactly one daemon launch, found {len(launches)}"
+    launch = launches[0]
+    # Use-vs-mention (this file's convention): explaining WHY pythonw is banned in a
+    # comment is fine; launching under it is not.
+    assert not re.search(r"Start-Process[^`]*pythonw", text, flags=re.DOTALL), (
+        "install.ps1 still launches the daemon under pythonw: its stdout/stderr are "
+        "None inside Python, so crash tracebacks vanish and death is undiagnosable"
+    )
+    # Start-Process parameters continue across backtick continuations; the whole
+    # launch block is what must carry the redirects, so search from the launch line.
+    tail = text[text.index(launch) :]
+    head = tail[:2000]
+    assert "-RedirectStandardOutput" in head, (
+        "the daemon's stdout is not redirected to a file, so its startup output is lost"
+    )
+    assert "-RedirectStandardError" in head, (
+        "the daemon's stderr is not redirected to a file, so a traceback would be lost"
+    )
+    assert re.search(r"-FilePath\s+\$VenvPython\b", launch + tail[:200]), (
+        "the daemon must run under the venv's python.exe, whose streams can be captured"
+    )
+
+    failure = text[text.index("if (-not $Serving)") :]
+    assert "Get-Content" in failure[:2500], (
+        "the liveness-failure abort does not print the daemon's own log lines, so a "
+        "host operator sees the symptom but never the cause"
+    )
+
+
 def test_posix_installer_still_aborts_on_error() -> None:
     """The property install.sh already had, pinned so it is not lost."""
     assert re.search(r"^set -e", _posix(), flags=re.MULTILINE), (

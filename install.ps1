@@ -280,8 +280,6 @@ if (-not (Test-Path $VenvDir)) {
 }
 
 $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
-$VenvPythonw = Join-Path $VenvDir "Scripts\pythonw.exe"
-if (-not (Test-Path $VenvPythonw)) { $VenvPythonw = $VenvPython }
 $VenvPip = Join-Path $VenvDir "Scripts\pip.exe"
 
 # packages/shared FIRST. `public-intelligence-node` depends on
@@ -306,12 +304,23 @@ Write-Host "               Installation Complete! Host Node is Ready.           
 Write-Host "==============================================================================" -ForegroundColor Green
 Write-Host ""
 
-# Launch detached background daemon using native Windows pythonw.exe
+# Launch detached background daemon with both output streams on record.
+#
+# python.exe, not pythonw: under pythonw the interpreter's sys.stdout and
+# sys.stderr are None, so an import-time traceback prints NOWHERE -- not to a
+# console, not to a redirected pipe, simply nowhere -- and a daemon that died
+# in its first second was undiagnosable forever (the exact failure the first
+# real CI execution of this installer hit). The POSIX launcher has always kept
+# `nohup >> node.log`; this is that, in PowerShell's idiom. Start-Process
+# refuses to redirect both streams into one file, so stderr gets its own.
 Write-Host "Launching Host Node Daemon in persistent background..." -ForegroundColor Yellow
 $NodePort = 8080
-$Daemon = Start-Process -FilePath $VenvPythonw `
+$DaemonLog = Join-Path $NodeDir "node.log"
+$DaemonErrLog = Join-Path $NodeDir "node.err.log"
+$Daemon = Start-Process -FilePath $VenvPython `
     -ArgumentList "-m node.main --host 0.0.0.0 --port $NodePort" `
-    -WorkingDirectory $NodeDir -WindowStyle Hidden -PassThru
+    -WorkingDirectory $NodeDir -WindowStyle Hidden -PassThru `
+    -RedirectStandardOutput $DaemonLog -RedirectStandardError $DaemonErrLog
 
 # A detached process reports nothing back: its output is discarded and
 # $ErrorActionPreference traps nothing for it. The success message below used to
@@ -339,9 +348,21 @@ if (-not $Serving) {
     Write-Host "[ERROR] The Host Node daemon did not answer ${HealthUrl} within 30 seconds." -ForegroundColor Red
     if ($Daemon.HasExited) {
         Write-Host "[ERROR] Its process exited immediately with code $($Daemon.ExitCode)." -ForegroundColor Red
+        # The daemon's own words are the diagnosis. Print them here, where a host
+        # operator (or CI) sees them, instead of leaving them buried in a file.
+        foreach ($Log in @($DaemonErrLog, $DaemonLog)) {
+            if (Test-Path $Log) {
+                $Lines = Get-Content $Log -ErrorAction SilentlyContinue
+                if ($Lines) {
+                    Write-Host "[ERROR] --- $((Split-Path $Log -Leaf)) ---" -ForegroundColor Red
+                    $Lines | Select-Object -Last 40 | ForEach-Object { Write-Host "[ERROR] $_" -ForegroundColor Red }
+                }
+            }
+        }
     }
+    Write-Host "[ERROR] Full daemon output: ${DaemonLog} and ${DaemonErrLog}" -ForegroundColor Red
     Write-Host "[ERROR] If a node was installed here before and still runs, THAT stale pre-update" -ForegroundColor Red
-    Write-Host "[ERROR] process holds the port: stop it (Task Manager -> pythonw.exe under" -ForegroundColor Red
+    Write-Host "[ERROR] process holds the port: stop it (Task Manager -> python.exe under" -ForegroundColor Red
     Write-Host "[ERROR] packages\node\.venv), then re-run this installer." -ForegroundColor Red
     Write-Host "[ERROR] Installation aborted before claiming success." -ForegroundColor Red
     exit 1

@@ -218,12 +218,32 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "the installed interpreter cannot import the node package" }
           Write-Host "OK: env written, venv built, node package importable from it"
 
+      - name: Dump daemon logs on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          # install.ps1 now launches the daemon with both streams redirected into
+          # packages\node\node.{log,err.log} -- pythonw used to leave tracebacks
+          # literally nowhere, which made the first real run of this job
+          # undiagnosable. Whatever killed the daemon is in those files.
+          $nodeDir = Join-Path $env:RUNNER_TEMP "pi-windows-install\packages\node"
+          foreach ($name in @("node.err.log", "node.log")) {
+            $p = Join-Path $nodeDir $name
+            if (Test-Path $p) {
+              Write-Host "===== ${name} ====="
+              Get-Content $p -ErrorAction SilentlyContinue | Select-Object -Last 60
+            } else {
+              Write-Host "${name}: does not exist (daemon never started or installer died earlier)"
+            }
+          }
+
       - name: Stop the daemon the installer launched, then delete the copy
         if: always()
         shell: pwsh
         run: |
           # install.ps1 unconditionally starts a detached background daemon via
-          # Start-Process pythonw.exe. Nothing in this job asserts on that daemon --
+          # Start-Process on the venv's python.exe with both streams redirected.
+          # Nothing in this job asserts on that daemon --
           # Ollama and the Scheduler do not exist here -- but nothing may leave one
           # running either.
           $dest = Join-Path $env:RUNNER_TEMP "pi-windows-install"
