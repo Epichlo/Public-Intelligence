@@ -166,9 +166,16 @@ async def create_chat_completion(
         },
     }
 
+    # Whether the ENGINE assigned this request. When it did, the node is carrying
+    # one count of in-flight pressure that must be released when the request
+    # finishes -- success or failure -- or the next scheduling decision ranks a
+    # busy node as if the work were still queued.
+    engine_assigned = False
+
     if scheduling_engine is not None:
         try:
             _tx_hash, target_node_id = await scheduling_engine.schedule_task(task_data)
+            engine_assigned = True
         except ValueError as e:
             logger.warning("openai_scheduling_failed", error=str(e))
             raise HTTPException(
@@ -231,6 +238,8 @@ async def create_chat_completion(
             # before reaching the meter, so the flag was unreachable. A mutation that
             # removed the `and succeeded` guard survived the test suite, which is how
             # it was found.
+            if engine_assigned and scheduling_engine is not None:
+                scheduling_engine.release_assignment(target_node_id)
             await _meter(
                 request,
                 request_id=task_id,
@@ -243,6 +252,9 @@ async def create_chat_completion(
                 succeeded=False,
             )
             raise HTTPException(status_code=e.status, detail=e.detail) from e
+
+        if engine_assigned and scheduling_engine is not None:
+            scheduling_engine.release_assignment(target_node_id)
 
         generated_text = result["response"]
 
@@ -297,6 +309,8 @@ async def create_chat_completion(
             prompt=prompt_text,
         )
     except NodeDispatchError as e:
+        if engine_assigned and scheduling_engine is not None:
+            scheduling_engine.release_assignment(target_node_id)
         await _meter(
             request,
             request_id=task_id,
@@ -448,6 +462,12 @@ async def create_chat_completion(
             raised = True
             raise
         finally:
+            # The assignment is over however the stream ended -- completed,
+            # node error, client disconnect. Release it here, where the meter
+            # already catches every kind of ending, so scheduling pressure
+            # tracks reality instead of waiting out its TTL.
+            if engine_assigned and scheduling_engine is not None:
+                scheduling_engine.release_assignment(target_node_id)
             await _meter(
                 request,
                 request_id=task_id,

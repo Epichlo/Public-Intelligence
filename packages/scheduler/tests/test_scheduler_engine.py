@@ -139,5 +139,106 @@ async def test_scheduling_engine_routing(test_nodes: list[Node]) -> None:
     assert len(tx_hash) == 64  # Valid SHA-256 hex digest length
     assert selected_node_id == "node-1"
 
-    # Verify queue depth is dynamically updated in NodeRegistry
-    assert registry._telemetry["node-1"]["queue_depth"] == 1
+    # The assignment is recorded as EPHEMERAL PRESSURE on the engine's own
+    # structure -- it used to be written as a synthetic `queue_depth` counter
+    # into registry._telemetry, the same dict zenoh_router fills with VERIFIED
+    # telemetry, and was never decremented anywhere. This test used to pin that
+    # contamination; it now pins its absence: the seeded VERIFIED queue depth of
+    # 0 was not incremented by scheduling.
+    assert registry._telemetry["node-1"]["queue_depth"] == 0
+    assert engine.in_flight_pressure("node-1") == 1
+
+
+@pytest.mark.asyncio
+async def test_assignment_pressure_accumulates_releases_and_decays(
+    test_nodes: list[Node],
+) -> None:
+    """Pressure tracks reality: +1 per assignment, -1 per release, 0 after TTL.
+
+    A missed release must self-heal: the TTL bounds how long an assignment the
+    engine never heard about keeps counting.
+    """
+    registry = NodeRegistry()
+    await registry.local_register(test_nodes[0])
+    strategy = CapabilityMatchmaker(registry)
+    now = [1000.0]
+    engine = SchedulingEngine(
+        registry,
+        strategy,
+        in_flight_ttl_seconds=30.0,
+        clock=lambda: now[0],
+    )
+
+    task = {"task_id": "t", "requirements": {"model_name": "llama3"}}
+    await engine.schedule_task(task)
+    await engine.schedule_task(task)
+    assert engine.in_flight_pressure("node-1") == 2
+
+    # Explicit decrement on completion/failure.
+    engine.release_assignment("node-1")
+    assert engine.in_flight_pressure("node-1") == 1
+
+    # TTL decay for assignments no one released.
+    now[0] = 1031.0
+    assert engine.in_flight_pressure("node-1") == 0
+
+    # And nothing leaked into the verified-telemetry dict along the way.
+    assert "queue_depth" not in registry._telemetry.get("node-1", {})
+
+
+@pytest.mark.asyncio
+async def test_scoring_combines_verified_telemetry_with_pressure(
+    test_nodes: list[Node],
+) -> None:
+    """Two telemetry-identical nodes rank apart by ephemeral pressure alone."""
+    registry = NodeRegistry()
+    await registry.local_register(test_nodes[0])
+    await registry.local_register(test_nodes[1])
+
+    identical = {"cpu_utilization": 10.0, "reliability_score": 0.9}
+    registry._telemetry["node-1"] = dict(identical)
+    registry._telemetry["node-2"] = dict(identical)
+
+    strategy = CapabilityMatchmaker(registry)
+    engine = SchedulingEngine(registry, strategy)
+
+    # The wiring happened at construction: the strategy reads the engine's
+    # pressure, not synthetic counters in the telemetry dict. Bound methods
+    # compare by behaviour, not identity.
+    engine.mark_assigned("node-1")
+    assert strategy.in_flight is not None and strategy.in_flight("node-1") == 1
+
+    engine.release_assignment("node-1")
+    assert strategy.in_flight("node-1") == 0
+
+    engine.mark_assigned("node-1")
+
+    ranked = strategy.score_nodes({}, [test_nodes[0], test_nodes[1]])
+    assert ranked[0][0].node_id == "node-2"
+    assert ranked[1][0].node_id == "node-1"
+
+
+@pytest.mark.asyncio
+async def test_pipeline_assignments_use_pressure_not_telemetry(
+    test_nodes: list[Node],
+) -> None:
+    registry = NodeRegistry()
+    for node in test_nodes:
+        await registry.local_register(node)
+
+    strategy = CapabilityMatchmaker(registry)
+    engine = SchedulingEngine(registry, strategy)
+
+    _tx, stages = await engine.schedule_pipeline(
+        {
+            "task_id": "pipe",
+            "model_id": "llama3",
+            "total_layers": 4,
+            "vram_per_layer_gb": 1.0,
+        }
+    )
+
+    staged_ids = {s.node_id for s in stages}
+    for node_id in staged_ids:
+        assert "queue_depth" not in registry._telemetry.get(node_id, {})
+        assert engine.in_flight_pressure(node_id) >= 1

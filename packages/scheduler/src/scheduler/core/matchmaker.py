@@ -1,5 +1,6 @@
 """Capability Matchmaker scheduling strategy implementation."""
 
+from collections.abc import Callable
 from typing import Any
 
 from scheduler.core.canary import CanaryVerifier
@@ -11,7 +12,12 @@ from scheduler.registry.node_registry import NodeRegistry
 class CapabilityMatchmaker(SchedulingStrategy):
     """Concrete scheduling strategy based on hardware capability and dynamic telemetry load."""
 
-    def __init__(self, registry: NodeRegistry, canary: CanaryVerifier | None = None) -> None:
+    def __init__(
+        self,
+        registry: NodeRegistry,
+        canary: CanaryVerifier | None = None,
+        in_flight: Callable[[str], float] | None = None,
+    ) -> None:
         """Initialize the matchmaker with a registry reference for telemetry lookup.
 
         Args:
@@ -19,9 +25,21 @@ class CapabilityMatchmaker(SchedulingStrategy):
             canary: Optional canary verifier (decision D1). When supplied,
                 quarantined nodes are excluded from dispatch. `None` keeps the
                 pre-D1 behaviour, which is what every existing test constructs.
+            in_flight: Optional source of per-node EPHEMERAL assignment pressure
+                (a node_id -> count callable, owned by the SchedulingEngine).
+                The registry's `_telemetry` dict holds only VERIFIED telemetry
+                reported over the mesh; synthetic assignment counters were once
+                written into it and never decremented, so un-telemetered nodes
+                accumulated uncapped negative score. Pressure from assignments
+                now combines with verified telemetry here, at read time.
         """
         self.registry = registry
         self.canary = canary
+        self.in_flight = in_flight
+
+    def set_in_flight_source(self, source: Callable[[str], float]) -> None:
+        """Attach the engine's pressure source (called by the engine at wiring)."""
+        self.in_flight = source
 
     def filter_nodes(self, task_requirements: dict[str, Any], live_nodes: list[Node]) -> list[Node]:
         """Filter live nodes based on hard VRAM, model, and backend requirements.
@@ -87,6 +105,12 @@ class CapabilityMatchmaker(SchedulingStrategy):
 
         Fitness score formula:
         score = (reliability * 100) - (queue_depth * 15) - (cpu_util * 0.5)
+                - (in_flight * 15)
+
+        `queue_depth`, `cpu` and `reliability` come from VERIFIED telemetry in
+        the registry (falling back to the node's own heartbeat, then neutral
+        defaults). `in_flight` is the engine's ephemeral assignment pressure,
+        combined here at read time rather than stored into the telemetry dict.
 
         Args:
             task: Task details (unused in default scoring).
@@ -101,7 +125,8 @@ class CapabilityMatchmaker(SchedulingStrategy):
             telemetry = self.registry._telemetry.get(node_id, {})
             heartbeat = self.registry._heartbeats.get(node_id)
 
-            # Get queue depth (lower queue depth increases score)
+            # Get queue depth from VERIFIED telemetry (lower queue depth
+            # increases score)
             current_queue_depth = float(
                 telemetry.get(
                     "current_queue_depth",
@@ -128,11 +153,17 @@ class CapabilityMatchmaker(SchedulingStrategy):
                 )
             )
 
+            # Ephemeral pressure: assignments this engine has made that have not
+            # been released or TTL-expired. Same weight per request as a verified
+            # queued request, so both kinds of busyness compare.
+            in_flight_count = float(self.in_flight(node_id)) if self.in_flight else 0.0
+
             # Compute dynamic fitness score
             score = (
                 (reliability_score * 100.0)
                 - (current_queue_depth * 15.0)
                 - (current_cpu_utilization_pct * 0.5)
+                - (in_flight_count * 15.0)
             )
             scored_list.append((node, score))
 
