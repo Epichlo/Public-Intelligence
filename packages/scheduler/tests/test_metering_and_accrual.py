@@ -321,3 +321,66 @@ def test_metrics_reports_the_failure_ratio_an_operator_watches(
     assert body["requests_failed_in_window"] == 1
     assert body["failure_ratio_in_window"] == 0.5
     assert body["requests_by_node_in_window"][NODE_ID] == 2
+
+
+# --- clock hazards ---------------------------------------------------------
+
+
+async def test_a_request_faster_than_the_clock_still_credits_the_host() -> None:
+    """A duration of exactly 0.0 must not mean a contribution of exactly 0.
+
+    `time.monotonic()` has ~15.6ms granularity on Windows, so a request completing
+    inside one tick measures 0.0 elapsed. The accrual is VRAM-hours, so the host
+    earned nothing for work they actually did.
+
+    Found by CI, not locally: every POSIX leg passed and both Windows legs failed
+    with `assert 0.0 > 0.0`. "Faster than I can measure" is not "took no time".
+    """
+    from scheduler.core.credit_ledger import CreditLedger
+
+    ledger = CreditLedger()
+    account = await ledger.record_host_contribution(
+        node_id="fast-node", vram_gb=24.0, duration_seconds=0.0
+    )
+
+    assert account.earned_credits > 0.0
+
+
+async def test_a_negative_duration_cannot_reduce_a_balance() -> None:
+    """Credits are monotonic. A clock going backwards must not claw them back.
+
+    Guarded twice over -- the gateway measures with `time.monotonic()`, which cannot
+    step backwards, and this clamps anything that reaches it anyway. Belt and braces
+    because the failure is silent and the state is the one thing nothing else can
+    reconstruct (ROADMAP 2.1).
+    """
+    from scheduler.core.credit_ledger import CreditLedger
+
+    ledger = CreditLedger()
+    await ledger.record_host_contribution("n1", vram_gb=24.0, duration_seconds=10.0)
+    before = ledger.balances()["n1"]
+
+    await ledger.record_host_contribution("n1", vram_gb=24.0, duration_seconds=-3600.0)
+
+    # Exactly unchanged -- not merely "not lower". `>= before` would pass even if
+    # the negative duration fell through to the minimum billable floor and paid
+    # the host for time that was never served; the floor is for UNMEASURABLE
+    # requests (exactly 0.0), never for measured-negative ones.
+    assert ledger.balances()["n1"] == before
+
+
+def test_the_gateway_measures_elapsed_time_with_a_monotonic_clock() -> None:
+    """A wall clock can step backwards; an interval measured with one can be negative.
+
+    Asserted on the source because the failure needs an NTP correction to reproduce,
+    and a test that cannot run is not a guard.
+    """
+    import inspect
+
+    from scheduler.api import openai
+
+    source = inspect.getsource(openai.create_chat_completion)
+    assert "time.monotonic()" in source, "the gateway no longer uses a monotonic clock"
+    assert "started_at = time.time()" not in source, (
+        "elapsed time is being measured with a wall clock again"
+    )

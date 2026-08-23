@@ -64,6 +64,10 @@ class CreditLedger:
     # would make contributing no GPU the cheapest way to earn.
     CREDITS_PER_GB_RAM_HOUR: float = 10.0
 
+    # Windows' clock granularity, and therefore the smallest interval this code can
+    # distinguish from zero on any supported platform. See `record_host_contribution`.
+    MIN_BILLABLE_SECONDS: float = 0.016
+
     def __init__(self, store: SchedulerStore | None = None) -> None:
         """Initialize CreditLedger.
 
@@ -134,7 +138,29 @@ class CreditLedger:
         """
         vram_gb = max(0.0, float(vram_gb))
         ram_gb = max(0.0, float(ram_gb))
-        duration_seconds = max(0.0, float(duration_seconds))
+        duration_seconds = float(duration_seconds)
+
+        # A NEGATIVE measurement is a broken measurement, not an unmeasurably
+        # fast request: it must accrue nothing, and in particular must not fall
+        # through to the minimum billable floor below, which would pay a host
+        # for time that was never served. Exactly 0.0 is different -- it means
+        # the clock could not see the request at all -- and is floored on
+        # purpose:
+        #
+        # `time.monotonic()` has ~15.6ms granularity on Windows, so a request
+        # that completes faster than one tick measures EXACTLY 0.0 elapsed --
+        # and a host serving it earned nothing at all. That is not a rounding
+        # difference, it is a category error: "faster than I can measure" is not
+        # "took no time". Found by CI, where two accrual tests failed on Windows
+        # only with `assert 0.0 > 0.0` while every POSIX leg passed.
+        #
+        # Floored at the coarsest granularity any supported platform has, so the
+        # floor is invisible to anything the clock CAN see and the accrual is
+        # platform-independent rather than quietly 0 on one OS.
+        if duration_seconds < 0.0:
+            duration_seconds = 0.0
+        else:
+            duration_seconds = max(duration_seconds, self.MIN_BILLABLE_SECONDS)
         hours = duration_seconds / 3600.0
         if vram_gb > 0.0:
             earned = vram_gb * hours * self.CREDITS_PER_GB_VRAM_HOUR

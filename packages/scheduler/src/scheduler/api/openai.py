@@ -147,7 +147,13 @@ async def create_chat_completion(
     # Started before matchmaking, so the recorded duration is what the REQUESTER
     # waited, not just what the node spent generating. A host reading their
     # dashboard should see the cost of the whole round trip their machine was in.
-    started_at = time.time()
+    #
+    # `monotonic`, not `time()`. A wall clock can step BACKWARDS -- NTP correction,
+    # a VM resuming, a manual change -- which would produce a negative duration and,
+    # through `record_host_contribution`, a negative credit accrual. Monotonic
+    # cannot. This is the right clock for measuring an interval and the wrong one
+    # for timestamping an event, which is why `recorded_at` still uses wall time.
+    started_at = time.monotonic()
 
     task_data = {
         "task_id": task_id,
@@ -495,7 +501,7 @@ async def _meter(
     """
     meter: UsageMeter | None = getattr(request.app.state, "usage_meter", None)
     ledger: CreditLedger | None = getattr(request.app.state, "ledger", None)
-    duration = max(0.0, time.time() - started_at)
+    duration = max(0.0, time.monotonic() - started_at)
 
     try:
         if meter is not None:
