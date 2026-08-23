@@ -17,10 +17,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -37,6 +40,11 @@ SUITES: list[tuple[str, Path, Path]] = [
 ]
 
 TEST_TIMEOUT_SECONDS = 900
+
+# REST fallback for when gh cannot look. Stdlib urllib only -- no new
+# dependencies, matching the rest of this file.
+GITHUB_API_ROOT = "https://api.github.com"
+REST_TIMEOUT_SECONDS = 15
 
 
 def run(cmd: list[str], cwd: Path = ROOT, timeout: int = 60) -> tuple[int, str]:
@@ -182,55 +190,24 @@ def git_signals() -> dict[str, str]:
     return signals
 
 
-def ci_signal() -> tuple[str, str]:
-    """Determine real CI status, or why it cannot be determined.
+def _runs_verdict(runs: list[dict], head: str) -> tuple[str, str]:
+    """Decide PASS / FAIL / UNVERIFIED by matching run history against HEAD.
 
-    Returns (status, reason). Never returns a passing status it did not observe.
+    Shared by the gh channel and the REST fallback so both channels cannot drift
+    apart about what a green badge means.
+
+    THE COMMIT MATTERS, NOT THE RECENCY.
+
+    This used to report the latest run's conclusion as this repo's CI status,
+    regardless of which commit that run covered. On 2026-08-09 that printed
+    "CI: PASS" while HEAD was EIGHT COMMITS ahead of anything CI had ever seen --
+    a green badge for code that had never been built.
+
+    It is the same failure this file exists to prevent, inside the file itself:
+    a measurement presented as current that describes a moment that has passed.
+    CLAUDE.md records a session reporting "CI unverifiable" for a change whose CI
+    run had already failed; this is that error with the sign flipped.
     """
-    workflow = ROOT / ".github/workflows"
-    if not workflow.exists() or not any(workflow.iterdir()):
-        return "NONE", "no workflow files in .github/workflows"
-
-    code, remote = run(["git", "remote", "-v"])
-    if code != 0 or not remote.strip():
-        return (
-            "UNVERIFIABLE",
-            (
-                "no git remote configured on the root repo -- CI has nowhere to run, "
-                "so no run history can exist"
-            ),
-        )
-
-    if shutil.which("gh") is None:
-        return "UNVERIFIABLE", "gh CLI not installed -- cannot query run history"
-
-    code, out = run(["gh", "run", "list", "--limit", "20", "--json", "conclusion,headSha"])
-    if code != 0:
-        return "UNVERIFIABLE", f"gh run list failed: {out[:160]}"
-    if not out.strip() or out.strip() == "[]":
-        return "UNVERIFIABLE", "gh returned no runs for this repo"
-
-    try:
-        runs = json.loads(out)
-    except json.JSONDecodeError:
-        return "UNVERIFIABLE", f"could not parse gh output: {out[:160]}"
-
-    # THE COMMIT MATTERS, NOT THE RECENCY.
-    #
-    # This used to report the latest run's conclusion as this repo's CI status,
-    # regardless of which commit that run covered. On 2026-08-09 that printed
-    # "CI: PASS" while HEAD was EIGHT COMMITS ahead of anything CI had ever seen --
-    # a green badge for code that had never been built.
-    #
-    # It is the same failure this file exists to prevent, inside the file itself:
-    # a measurement presented as current that describes a moment that has passed.
-    # CLAUDE.md records a session reporting "CI unverifiable" for a change whose CI
-    # run had already failed; this is that error with the sign flipped.
-    hcode, head = run(["git", "rev-parse", "HEAD"])
-    head = head.strip()
-    if hcode != 0 or not head:
-        return "UNVERIFIABLE", "could not resolve HEAD to compare against run history"
-
     for entry in runs:
         if entry.get("headSha") == head:
             if entry.get("conclusion") == "success":
@@ -250,6 +227,190 @@ def ci_signal() -> tuple[str, str]:
             f"Its conclusion ({latest.get('conclusion')!r}) says nothing about this code."
         ),
     )
+
+
+def ci_signal() -> tuple[str, str]:
+    """Determine real CI status, or why it cannot be determined.
+
+    Returns (status, reason). Never returns a passing status it did not observe.
+
+    Two independent ways to look, tried in order: the gh CLI (primary -- richer
+    auth context), then GitHub's REST API over stdlib urllib when gh is missing
+    or errors. Both must fail before anything reads UNVERIFIABLE, and even then
+    the reason names every concrete cause. A bare UNVERIFIABLE has historically
+    been read as "nothing is wrong": one masked a red CI run for eight days
+    across the v1.0.0 release.
+    """
+    workflow = ROOT / ".github/workflows"
+    if not workflow.exists() or not any(workflow.iterdir()):
+        return "NONE", "no workflow files in .github/workflows"
+
+    code, remote = run(["git", "remote", "-v"])
+    if code != 0 or not remote.strip():
+        return (
+            "UNVERIFIABLE",
+            (
+                "no git remote configured on the root repo -- CI has nowhere to run, "
+                "so no run history can exist"
+            ),
+        )
+
+    # Resolved before either lookup: both channels match runs against HEAD, and
+    # without HEAD there is nothing to match (see _runs_verdict).
+    hcode, head = run(["git", "rev-parse", "HEAD"])
+    head = head.strip()
+    if hcode != 0 or not head:
+        return "UNVERIFIABLE", "could not resolve HEAD to compare against run history"
+
+    gh_failure = ""
+    if shutil.which("gh") is None:
+        gh_failure = "gh CLI not installed"
+    else:
+        code, out = run(["gh", "run", "list", "--limit", "20", "--json", "conclusion,headSha"])
+        if code != 0:
+            gh_failure = f"gh ran but failed: {out[:160]}"
+        elif not out.strip() or out.strip() == "[]":
+            # gh WORKED and saw no runs at all. That is an answer about the whole
+            # repo, not a failure to look; no fallback can improve on it.
+            return "UNVERIFIABLE", "gh returned no runs for this repo"
+        else:
+            try:
+                runs = json.loads(out)
+            except json.JSONDecodeError:
+                gh_failure = f"could not parse gh output: {out[:160]}"
+            else:
+                return _runs_verdict(runs, head)
+
+    status, reason = _ci_via_rest(head)
+    if status != "UNVERIFIABLE":
+        return status, reason
+
+    # Could not look through EITHER channel. Name every cause: an UNVERIFIABLE
+    # with an empty or generic reason is how a real failure hides.
+    detail = f"github api could not look either: {reason}"
+    if gh_failure:
+        detail = f"gh: {gh_failure}; {detail}"
+    return "UNVERIFIABLE", detail
+
+
+def _parse_github_slug(url: str) -> tuple[str, str]:
+    """Pull owner/repo out of an https or ssh origin URL.
+
+    Returns ("", reason) when the URL is unparseable or does not point at
+    GitHub -- each its own stated state, never folded into a generic failure.
+    """
+    # scp-like ssh form: git@github.com:owner/repo.git
+    scp_form = re.match(r"^git@([^:/]+):([^/]+)/(.+)$", url)
+    # https://github.com/owner/repo(.git) and ssh://git@github.com/owner/repo.git,
+    # including credentials embedded in the URL.
+    url_form = re.match(r"^(?:https?|ssh)://(?:[^/@]+@)?([^/]+)/([^/]+)/(.+)$", url)
+    matched = scp_form or url_form
+    if matched is None:
+        return "", f"could not parse the origin remote URL '{url[:80]}'"
+
+    host, owner, repo = matched.group(1), matched.group(2), matched.group(3)
+    if host.removeprefix("www.") != "github.com":
+        return "", f"origin points at {host}, not github.com -- there is no GitHub API to ask"
+    repo = repo.rstrip("/").removesuffix(".git")
+    if not owner or not repo:
+        return "", f"could not derive owner/repo from the origin remote URL '{url[:80]}'"
+    return f"{owner}/{repo}", ""
+
+
+def _origin_slug() -> tuple[str, str]:
+    """Derive 'owner/repo' from the origin remote URL."""
+    code, url = run(["git", "remote", "get-url", "origin"])
+    if code != 0 or not url.strip():
+        return "", "'origin' remote could not be resolved (git remote get-url failed)"
+    return _parse_github_slug(url.strip())
+
+
+def _http_get(url: str, headers: dict[str, str]) -> tuple[int, str]:
+    """GET a URL over stdlib urllib. Returns (http_status, body text).
+
+    Mirrors run()'s (code, output) contract so both lookup channels read alike.
+    Status 0 means the request never got an HTTP answer -- DNS failure, refused
+    connection, timeout -- and the body carries the transport error instead.
+    An HTTP answer, even a refusal, is signal: the caller maps codes to distinct
+    honest reasons (unauthorized vs rate limited vs wrong slug).
+    """
+    request = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=REST_TIMEOUT_SECONDS) as response:
+            return response.status, response.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as exc:
+        try:
+            body = exc.read().decode("utf-8", "replace")
+        except OSError:
+            body = ""
+        return exc.code, body[:200]
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        detail = getattr(exc, "reason", exc)
+        return 0, f"{type(exc).__name__}: {detail}"
+
+
+def _ci_via_rest(head: str) -> tuple[str, str]:
+    """Ask GitHub's REST API directly -- the fallback when gh cannot look.
+
+    Stdlib urllib only. Mirrors the gh path endpoint for endpoint (the workflow
+    runs list) and verdict for verdict, through the same _runs_verdict(). Returns
+    UNVERIFIABLE with the concrete cause when it could not look.
+    """
+    slug, why_not = _origin_slug()
+    if not slug:
+        return "UNVERIFIABLE", why_not
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "public-intelligence-generate-status",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    # Same credential gh would use, when present. Never logged, never rendered:
+    # it exists only in this request header.
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    status, body = _http_get(f"{GITHUB_API_ROOT}/repos/{slug}/actions/runs?per_page=20", headers)
+
+    if status == 0:
+        return "UNVERIFIABLE", f"github api unreachable ({body[:160]})"
+    if status == 401:
+        return "UNVERIFIABLE", "github api rejected the credentials (HTTP 401)"
+    if status == 403:
+        return (
+            "UNVERIFIABLE",
+            f"github api refused the request (HTTP 403 -- rate limited or forbidden): {body[:120]}",
+        )
+    if status == 404:
+        return (
+            "UNVERIFIABLE",
+            (
+                f"github api has no repository '{slug}' (HTTP 404 -- wrong remote slug, "
+                f"or a private repo queried without a token)"
+            ),
+        )
+    if status != 200:
+        return "UNVERIFIABLE", f"github api returned HTTP {status}: {body[:120]}"
+
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        return "UNVERIFIABLE", "could not parse the github api response as JSON"
+    if not isinstance(payload, dict):
+        return "UNVERIFIABLE", "github api response was not the expected JSON object"
+
+    # REST fields are snake_case where gh emits camelCase. Normalize here so both
+    # channels feed the identical verdict function and cannot disagree.
+    runs = [
+        {"headSha": entry.get("head_sha"), "conclusion": entry.get("conclusion")}
+        for entry in payload.get("workflow_runs") or []
+        if isinstance(entry, dict)
+    ]
+    if not runs:
+        return "UNVERIFIABLE", "github api returned no workflow runs for this repo"
+
+    return _runs_verdict(runs, head)
 
 
 def submodule_signals() -> list[tuple[str, str, str]]:
