@@ -1,0 +1,17 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "permission": {
+    "read": "allow",
+    "edit": {
+      ".env": "deny",
+      ".env.*": "deny",
+      "*.pem": "deny",
+      ".secrets/**": "deny",
+      "zones/verified/**": "deny",
+      ".claude/hooks/**": "deny",
+      "**": "allow"
+    },
+    "bash": "allow",
+    "external_directory": "ask"
+  }
+}
