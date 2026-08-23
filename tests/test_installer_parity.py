@@ -327,8 +327,10 @@ def test_the_daemon_success_claim_follows_evidence_of_liveness() -> None:
         "the launch does not capture the process, so nothing afterwards can check it"
     )
     assert "HasExited" in between, "nothing checks whether the daemon died during startup"
-    assert re.search(r'\$HealthUrl\s*=\s*"http://localhost:\$NodePort/health"', between), (
-        "the liveness probe is not pointed at the node's own /health endpoint"
+    assert re.search(r'\$HealthUrl\s*=\s*"http://127\.0\.0\.1:\$NodePort/health"', between), (
+        "the liveness probe is not pointed at the node's own /health endpoint via the "
+        "IPv4 loopback literal -- `localhost` resolves to ::1 first on Windows and the "
+        "daemon binds IPv4-only, so every probe dialed a door that does not exist"
     )
     assert "Invoke-WebRequest" in between, "no health probe is issued at all"
     assert re.search(r"^(\s*)exit 1$", between, flags=re.MULTILINE), (

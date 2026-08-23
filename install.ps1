@@ -330,7 +330,11 @@ $Daemon = Start-Process -FilePath $VenvPython `
 # looked identical to a working one. /health answers 200 ("degraded") even when Ollama
 # and the Scheduler are down, so reaching it proves exactly what an installer can
 # honestly prove: the process survived startup and is serving.
-$HealthUrl = "http://localhost:$NodePort/health"
+# 127.0.0.1, not localhost: the daemon binds 0.0.0.0 (IPv4-only), and on Windows
+# `localhost` resolves to ::1 first -- the second real CI execution watched a
+# fully healthy daemon ("Uvicorn running on http://0.0.0.0:8080" in its own log)
+# fail every localhost probe for 90 seconds because they dialed the IPv6 door.
+$HealthUrl = "http://127.0.0.1:$NodePort/health"
 $Serving = $false
 for ($Attempt = 1; $Attempt -le 30; $Attempt++) {
     if ($Daemon.HasExited) { break }
