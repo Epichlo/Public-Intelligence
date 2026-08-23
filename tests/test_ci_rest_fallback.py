@@ -20,6 +20,7 @@ transport seam, so these run offline and deterministically.
 
 from __future__ import annotations
 
+import email.message
 import importlib.util
 import io
 import json
@@ -384,7 +385,11 @@ def test_http_get_maps_http_errors_to_their_code_and_body(
 ) -> None:
     def raise_http_error(request: Any, timeout: Any = None) -> None:
         raise urllib.error.HTTPError(
-            request.full_url, 403, "Forbidden", {}, io.BytesIO(b'{"message":"rate limit"}')
+            request.full_url,
+            403,
+            "Forbidden",
+            email.message.Message(),
+            io.BytesIO(b'{"message":"rate limit"}'),
         )
 
     monkeypatch.setattr(urllib.request, "urlopen", raise_http_error)
