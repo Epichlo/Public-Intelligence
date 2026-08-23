@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from scheduler.api.auth import verify_auth_token
@@ -40,10 +40,11 @@ class ScheduleResponse(BaseModel):
 
 
 def get_scheduler(
+    http_request: Request,
     registry: Annotated[NodeRegistry, Depends(get_registry)],
 ) -> Scheduler:
     """Dependency provider for the Scheduler instance."""
-    return Scheduler(registry)
+    return Scheduler(registry, canary=getattr(http_request.app.state, "canary", None))
 
 
 SchedulerDep = Annotated[Scheduler, Depends(get_scheduler)]
@@ -83,6 +84,7 @@ async def schedule_request(
 )
 async def proxy_inference(
     request: InferenceRequest,
+    http_request: Request,
     registry: Annotated[NodeRegistry, Depends(get_registry)],
     settings: Annotated[Settings, Depends(get_settings)],
     mesh_client: Annotated[MeshInferenceClient | None, Depends(get_mesh_client)],
@@ -94,7 +96,7 @@ async def proxy_inference(
     credentials live in `scheduler/core/node_dispatch.py`, shared with the OpenAI gateway --
     keeping the two in step is why it is not inlined here.
     """
-    scheduler = Scheduler(registry)
+    scheduler = Scheduler(registry, canary=getattr(http_request.app.state, "canary", None))
     try:
         node = await scheduler.select_node(request.model)
     except ValueError as exc:

@@ -164,22 +164,34 @@ async def submit_task(
     task: TaskSubmission,
     payload: Annotated[dict[str, Any], Depends(verify_jwt)],
 ) -> dict[str, str]:
-    """Dedicated ingress endpoint to submit tasks to the consensus log.
+    """Refuse task submissions honestly: nothing executes them.
 
-    Secured by JWT authentication, rate-limited, scheduled using two-stage Strategy,
-    and committed to consensus log.
+    This endpoint used to answer `{"status": "scheduled", "node_id", "tx_hash"}`
+    after selecting a node -- and nothing ever executed the task. There is no
+    store, queue or consumer behind the selection; the "scheduled" answer was a
+    placeholder dressed as a result, which is the one failure this project treats
+    as cardinal (ROADMAP N1).
+
+    Authentication and rate limiting are real and stay in front of the refusal:
+    the endpoint is a live edge surface, not dead code, and abuse shaping applies
+    even to requests it must decline.
 
     Args:
         request: FastAPI Request context.
         task: Deserialized client task details.
         payload: Decoded JWT claims dict (via verify_jwt dependency).
 
-    Returns:
-        Status object signaling scheduled task tracking info.
+    Raises:
+        HTTPException: 401 on bad credentials, 429 over quota, and **501 Not
+            Implemented** for every authenticated request, because there is
+            genuinely nothing this endpoint can do with a submission. Inference
+            goes through `POST /infer` or `POST /v1/chat/completions`, which
+            select a node AND run the request.
     """
     tenant_id = payload["tenant_id"]
 
-    # 1. Rate-Limiter Guard
+    # Rate-Limiter Guard. Consumed before the refusal on purpose: this is an
+    # internet-facing edge route, so junk traffic pays for its own bucket.
     rate_limiter = getattr(request.app.state, "rate_limiter", None)
     if rate_limiter is not None:
         allowed = await rate_limiter.acquire(tenant_id)
@@ -190,34 +202,20 @@ async def submit_task(
                 detail="Rate limit exceeded. Multi-tenant quota exhausted.",
             )
 
-    # 2. Scheduling Engine Retrieval & Execution
-    scheduling_engine = getattr(request.app.state, "scheduling_engine", None)
-    if scheduling_engine is None:
-        logger.error("ingress_scheduling_engine_uninitialized")
-        raise HTTPException(status_code=500, detail="Scheduling engine is uninitialized.")
-
-    task_data = {
-        "task_id": task.task_id,
-        "requirements": {
-            "model_name": task.data.get("model_name") or task.data.get("model"),
-            "min_vram_gb": task.data.get("min_vram_gb") or task.data.get("vram"),
-            "backend_type": task.data.get("backend_type"),
-        },
-    }
-
-    try:
-        tx_hash, node_id = await scheduling_engine.schedule_task(task_data)
-    except ValueError as e:
-        logger.warning("ingress_scheduling_failed", error=str(e))
-        raise HTTPException(status_code=400, detail=str(e)) from e
-
-    # The consensus log-commitment block that sat here is gone (ROADMAP C2).
-    # It proposed through an engine whose only inbound path was an
-    # unauthenticated wildcard Zenoh subscriber; see zenoh_router.
-
-    return {
-        "status": "scheduled",
-        "task_id": task.task_id,
-        "node_id": node_id,
-        "tx_hash": tx_hash,
-    }
+    # No execution machinery exists behind the old scheduling call: no queue, no
+    # consumer, no way to run `task.action`. Building one is out of scope, so the
+    # honest response is the refusal itself.
+    logger.warning(
+        "ingress_submit_refused_unimplemented",
+        tenant_id=tenant_id,
+        task_id=task.task_id,
+    )
+    raise HTTPException(
+        status_code=501,
+        detail=(
+            "Task execution is not implemented. Nothing consumes submitted tasks, "
+            "so the Scheduler refuses rather than answering 'scheduled' for work "
+            "that would never run. Inference is served by POST /infer and "
+            "POST /v1/chat/completions."
+        ),
+    )

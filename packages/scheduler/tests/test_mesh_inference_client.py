@@ -10,8 +10,10 @@ The Zenoh session is faked here. The real router is exercised in the root suite
 """
 
 import asyncio
+import threading
 import time
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -19,6 +21,7 @@ from scheduler.core.mesh_inference_client import (
     MeshInferenceClient,
     MeshNodeError,
     MeshUnavailableError,
+    _drain_tasks,
 )
 from scheduler.core.mesh_protocol import (
     encode_chunk,
@@ -349,3 +352,200 @@ async def test_concurrent_requests_do_not_interfere() -> None:
     )
 
     assert [r["response"] for r in results] == ["A", "B"]
+
+
+# --- stranded workers: the drain must stop when the caller gives up ----------
+#
+# `_start_query` parks a `to_thread` worker on the blocking reply iterator. When
+# the caller gave up -- first-reply timeout, abandoned stream, post-first-reply
+# failure -- that worker used to keep consuming into an orphaned queue until the
+# FULL query timeout (120s): one stray thread plus queue per affected request.
+
+
+class _BlockingReceiver:
+    """Stand-in for zenoh's query receiver: an iterator with a thread-safe close().
+
+    A bare generator cannot stand in here: ``generator.close()`` raises
+    ``ValueError`` when the generator is mid-``next()`` on the drain thread --
+    exactly the state a blocked worker produces -- and production ``abandon()``
+    treats that as a refused close. Real zenoh receivers close safely from any
+    thread, so this object closes by signalling the same event the iterator
+    polls, and the generator exits on its next tick.
+    """
+
+    def __init__(self, iterator: Any, stop: threading.Event) -> None:
+        self._iterator = iterator
+        self._stop = stop
+
+    def close(self) -> None:
+        self._stop.set()
+
+    def __iter__(self) -> Any:
+        return self
+
+    def __next__(self) -> Any:
+        return next(self._iterator)
+
+
+class ClosableBlockingSession:
+    """Yields nothing useful, blocks until closed, and records being closed.
+
+    The generator yields `None` placeholders so the drain loop keeps cycling
+    (they carry no `.ok` sample and are skipped), which is exactly the shape of
+    a real zenoh receiver that will keep a blocked query alive until someone
+    cancels it.
+    """
+
+    def __init__(self) -> None:
+        self.closed = threading.Event()
+        self._close_requested = threading.Event()
+
+    def get(self, selector: str, *args: Any, **kwargs: Any) -> Any:
+        def generator() -> Any:
+            try:
+                while not self._close_requested.wait(0.01):
+                    yield None
+            finally:
+                self.closed.set()
+
+        return _BlockingReceiver(generator(), self._close_requested)
+
+    def close(self) -> None:
+        """The handle `abandon()` looks for on the receiver."""
+        self._close_requested.set()
+
+
+class ChunkThenBlockSession(ClosableBlockingSession):
+    """One real chunk first, then blocks -- the mid-stream abandonment case."""
+
+    def get(self, selector: str, *args: Any, **kwargs: Any) -> Any:
+        first = FakeReply(encode_chunk(0, "first"))
+
+        def generator() -> Any:
+            try:
+                yield first
+                while not self._close_requested.wait(0.01):
+                    yield None
+            finally:
+                self.closed.set()
+
+        return _BlockingReceiver(generator(), self._close_requested)
+
+
+async def _await_drain_tasks_settled(known_before: set[asyncio.Task[None]]) -> None:
+    """Poll until every drain task created by this test has finished."""
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        current = set(_drain_tasks) - known_before
+        if current and all(task.done() for task in current):
+            return
+        await asyncio.sleep(0.01)
+    pending = [task for task in set(_drain_tasks) - known_before if not task.done()]
+    assert not pending, "drain tasks are still running after abandonment"
+
+
+@pytest.mark.asyncio
+async def test_first_reply_timeout_abandons_the_query_promptly() -> None:
+    session = ClosableBlockingSession()
+    client = _client(session, first_reply_timeout=0.1)
+
+    known_before = set(_drain_tasks)
+    started = time.monotonic()
+
+    with pytest.raises(MeshUnavailableError):
+        await client.infer(node_id=NODE_ID, token=TOKEN, model="llama3", prompt="q")
+
+    # The underlying query was CLOSED, not left running to its 120s timeout.
+    assert session.closed.wait(timeout=1.0), "reply iterator was never closed"
+    await _await_drain_tasks_settled(known_before)
+
+    elapsed = time.monotonic() - started
+    assert elapsed < 5.0, f"stray lifetime was {elapsed}s; must be well below 120s"
+
+
+@pytest.mark.asyncio
+async def test_abandoning_a_mesh_stream_closes_the_underlying_query() -> None:
+    """A stream the caller walks away from must not strand its drain worker."""
+    session = ChunkThenBlockSession()
+    client = _client(session, first_reply_timeout=2.0)
+
+    known_before = set(_drain_tasks)
+    stream = await client.open_stream(node_id=NODE_ID, token=TOKEN, model="llama3", prompt="p")
+    first_chunk = await stream.__anext__()
+    assert first_chunk == "first"
+
+    await stream.aclose()
+
+    assert session.closed.wait(timeout=1.0), "abandoned stream did not close its iterator"
+    await _await_drain_tasks_settled(known_before)
+
+
+@pytest.mark.asyncio
+async def test_closing_the_dispatch_stream_releases_the_underlying_query() -> None:
+    """Explicit close of the dispatch stream releases the worker immediately.
+
+    A bare `break` out of an `async for` cannot promise this -- Python finalizes
+    abandoned async generators lazily through GC -- so the real consumer
+    (`sse_generator`) closes the stream in its own `finally`, and that is the
+    contract pinned here.
+    """
+    from scheduler.core.node_dispatch import open_inference_stream
+
+    session = ChunkThenBlockSession()
+    registry = MagicMock()
+    registry.is_mesh_reachable.return_value = True
+    registry.get_node_token.return_value = TOKEN
+    settings = MagicMock()
+    settings.mesh_inference_enabled = True
+
+    known_before = set(_drain_tasks)
+    stream = await open_inference_stream(
+        registry=registry,
+        settings=settings,
+        mesh_client=_client(session, first_reply_timeout=2.0),
+        node_id=NODE_ID,
+        ip_address="127.0.0.1",
+        model="llama3",
+        prompt="p",
+    )
+
+    seen: list[str] = []
+    async for chunk in stream:
+        seen.append(chunk)
+        break
+
+    assert seen == ["first"]
+
+    await stream.aclose()
+
+    assert session.closed.wait(timeout=1.0), "explicit close did not release the underlying query"
+    await _await_drain_tasks_settled(known_before)
+
+
+class ErrorFirstSession(ClosableBlockingSession):
+    """An immediate node failure -- the after-contact error case."""
+
+    def get(self, selector: str, *args: Any, **kwargs: Any) -> Any:
+        first = FakeReply(encode_error("ollama died", status=500))
+
+        def generator() -> Any:
+            try:
+                yield first
+            finally:
+                self.closed.set()
+
+        return _BlockingReceiver(generator(), self._close_requested)
+
+
+@pytest.mark.asyncio
+async def test_node_error_after_the_first_reply_releases_the_worker_too() -> None:
+    """A failure answered AFTER contact must abandon its own drain."""
+    session = ErrorFirstSession()
+    client = _client(session, first_reply_timeout=2.0)
+
+    known_before = set(_drain_tasks)
+    with pytest.raises(MeshNodeError):
+        await client.open_stream(node_id=NODE_ID, token=TOKEN, model="llama3", prompt="p")
+
+    assert session.closed.wait(timeout=1.0), "error path did not close the underlying query"
+    await _await_drain_tasks_settled(known_before)

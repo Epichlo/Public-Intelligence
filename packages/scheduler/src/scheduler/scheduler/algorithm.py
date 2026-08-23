@@ -1,5 +1,6 @@
 """Scheduling algorithm for compute node selection."""
 
+from scheduler.core.canary import CanaryVerifier
 from scheduler.models.node import Node, NodeStatus
 from scheduler.registry.node_registry import NodeRegistry
 
@@ -11,21 +12,27 @@ class Scheduler:
     based on resource utilization and queue length.
     """
 
-    def __init__(self, registry: NodeRegistry) -> None:
+    def __init__(self, registry: NodeRegistry, canary: CanaryVerifier | None = None) -> None:
         """Initialize the scheduler with a node registry.
 
         Args:
             registry: The node registry to query.
+            canary: Optional canary verifier (decision D1). When supplied, a
+                quarantined node is never selected -- the same exclusion the
+                CapabilityMatchmaker applies, and in the same order: before any
+                capability consideration, because a node returning `token_556`
+                satisfies every load metric perfectly.
         """
         self._registry = registry
+        self._canary = canary
 
     async def select_node(self, model_name: str) -> Node:
         """Select the best compute node for the requested model.
 
         Filters nodes by registration status, active heartbeat, status (must
-        not be OFFLINE), and model availability. Scores remaining nodes
-        and returns the one with the lowest score. Ties are broken by
-        insertion order.
+        not be OFFLINE), canary quarantine, and model availability. Scores
+        remaining nodes and returns the one with the lowest score. Ties are
+        broken by insertion order.
 
         Args:
             model_name: The name of the requested AI model.
@@ -40,6 +47,10 @@ class Scheduler:
         eligible_nodes_with_scores: list[tuple[Node, float]] = []
 
         for node in nodes:
+            # 0. Canary quarantine (decision D1), before any capability check.
+            if self._canary is not None and self._canary.is_quarantined(node.node_id):
+                continue
+
             # 1. Must advertise the requested model
             if model_name not in node.available_models:
                 continue

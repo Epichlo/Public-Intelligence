@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import builtins
 import logging
+import time
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -58,6 +60,42 @@ class NodeRegistry:
         # Held outside the Node model for the same reason as the tokens: it must not be
         # serialisable into an API response, and a node must not be able to assert it.
         self._mesh_nodes: set[str] = set()
+        # When each node last (re-)registered, on the monotonic clock. Read by the
+        # Zenoh router so a freshly re-registered node is not evicted before its
+        # first verified heartbeat can arrive.
+        self._registered_at: dict[str, float] = {}
+        # Synchronous callbacks fired when a node leaves by ANY path. The Zenoh
+        # router uses one to drop its per-node liveness clocks; a stale clock
+        # surviving a graceful DELETE otherwise evicts the alive re-registered
+        # node at the next sweep. Listeners must be fast and non-blocking: they
+        # run inside the registry lock.
+        self._departure_listeners: list[Callable[[str], None]] = []
+
+    def add_departure_listener(self, listener: Callable[[str], None]) -> None:
+        """Register a callback invoked with the node_id when a node leaves.
+
+        Fires for graceful unregistration (`unregister` / `local_unregister`),
+        eviction and deathrattle removal (`local_unregister_node`), and `clear`.
+        Adding the same listener twice is a no-op.
+        """
+        if listener not in self._departure_listeners:
+            self._departure_listeners.append(listener)
+
+    def _fire_departure(self, node_id: str) -> None:
+        """Run every departure listener. A failing listener cannot block departure."""
+        for listener in self._departure_listeners:
+            try:
+                listener(node_id)
+            except Exception:
+                logger.exception("departure_listener_failed: node_id=%s", node_id)
+
+    def registered_at(self, node_id: str) -> float | None:
+        """Monotonic timestamp of the node's most recent registration, or None.
+
+        Single dict get, no await -- lock-free for the same reason as
+        `get_node_token`: nothing here can interleave.
+        """
+        return self._registered_at.get(node_id)
 
     async def load(self) -> None:
         """Refill the in-memory state from the store. Call once, at startup.
@@ -80,6 +118,7 @@ class NodeRegistry:
             for node in nodes:
                 self._nodes[node.node_id] = node
                 self._dampeners[node.node_id] = 0.0
+                self._registered_at[node.node_id] = time.monotonic()
             self._node_tokens.update(tokens)
         logger.info("persistence_loaded: nodes=%d tokens=%d", len(nodes), len(tokens))
 
@@ -159,6 +198,7 @@ class NodeRegistry:
                 raise ValueError(msg)
             self._nodes[node.node_id] = node
             self._dampeners[node.node_id] = 0.0
+            self._registered_at[node.node_id] = time.monotonic()
             if self._store is not None:
                 await self._store.save_node(node)
 
@@ -178,9 +218,13 @@ class NodeRegistry:
             self._dampeners.pop(node_id, None)
             self._telemetry.pop(node_id, None)
             self._node_tokens.pop(node_id, None)
+            self._registered_at.pop(node_id, None)
             self._mesh_nodes.discard(node_id)
             if self._store is not None:
                 await self._store.delete_node(node_id)
+            # Fired inside the lock: a re-register racing this departure must not
+            # be mistaken for the departed record by a listener.
+            self._fire_departure(node_id)
         # The two ways a node can leave used to be asymmetric: eviction announced
         # itself whether or not it happened, and this path said nothing at all.
         # Both now log, so "where did node X go" is one grep rather than an
@@ -278,14 +322,18 @@ class NodeRegistry:
     async def clear(self) -> None:
         """Remove all nodes and heartbeats from the registry."""
         async with self._lock:
+            departed = list(self._nodes)
             self._nodes.clear()
             self._heartbeats.clear()
             self._dampeners.clear()
             self._telemetry.clear()
             self._node_tokens.clear()
+            self._registered_at.clear()
             self._mesh_nodes.clear()
             if self._store is not None:
                 await self._store.clear_nodes()
+            for node_id in departed:
+                self._fire_departure(node_id)
 
     async def count(self) -> int:
         """Return the number of registered nodes.
@@ -387,9 +435,13 @@ class NodeRegistry:
             self._dampeners.pop(node_id, None)
             self._telemetry.pop(node_id, None)
             self._node_tokens.pop(node_id, None)
+            self._registered_at.pop(node_id, None)
             self._mesh_nodes.discard(node_id)
             if self._store is not None:
                 await self._store.delete_node(node_id)
+            if was_present:
+                # Same lock discipline as `local_unregister` above.
+                self._fire_departure(node_id)
         if was_present:
             logger.info("node_departed: node_id=%s reason=evicted", node_id)
         return was_present

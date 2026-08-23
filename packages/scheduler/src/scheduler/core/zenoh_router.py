@@ -78,6 +78,14 @@ class ZenohRouter:
         self.node_stale_after_seconds = _settings.node_stale_after_seconds
         self.stale_sweep_interval_seconds = _settings.stale_sweep_interval_seconds
 
+        # A node leaving the registry by ANY path takes its clock entry with it.
+        # Without this, DELETE /nodes/{id} followed by a quick re-register left
+        # the OLD timestamp in place, and one sweep tick later the alive new
+        # registration was evicted on age it did not have. The registry fires
+        # this for graceful unregistration, eviction, deathrattle removal and
+        # clear alike.
+        registry.add_departure_listener(self._forget_verified_heartbeat)
+
         # The Raft consensus engine used to be constructed here and started below.
         # Removing it is ROADMAP C2's remaining half AND a security fix that 2.7
         # missed: `start()` opened a SECOND Zenoh session and declared a subscriber
@@ -331,13 +339,29 @@ class ZenohRouter:
 
         If the node has heartbeated recently and verifiably, this is noise -- or a
         forgery -- and nothing happens. If it has not, it was already due for
-        eviction and this only means the sweep reaches that conclusion now instead
-        of at its next tick.
+        eviction and this only means the conclusion is reached now rather than at
+        the next sweep tick.
+
+        Deliberately STRICTER than the sweep: this path passes
+        `honour_registration_grace=False`, so a just-re-registered node that has
+        not yet verified a heartbeat is still removed. A liveliness DELETE is
+        direct evidence that this id's session dropped; acting on it maximally is
+        cheap because eviction self-heals (a live node re-registers on its first
+        404 heartbeat). The autonomous sweep, by contrast, grants newly
+        (re-)registered ids one threshold-window of grace so a tick landing in
+        the gap between a departure and the next heartbeat cannot kill an alive
+        registration -- see `_evict_if_stale`.
         """
         logger.info("zenoh_liveliness_deathrattle_detected", node_id=node_id, key_expr=key_expr)
-        await self._evict_if_stale(node_id)
+        await self._evict_if_stale(node_id, honour_registration_grace=False)
 
-    async def _evict_if_stale(self, node_id: str) -> bool:
+    def _forget_verified_heartbeat(self, node_id: str) -> None:
+        """Drop the verified-heartbeat clock for a node that left the registry."""
+        self._last_verified_heartbeat.pop(node_id, None)
+
+    async def _evict_if_stale(
+        self, node_id: str, *, honour_registration_grace: bool = True
+    ) -> bool:
         """Remove `node_id` if no verified heartbeat has arrived recently.
 
         Returns True if the node was evicted.
@@ -350,6 +374,28 @@ class ZenohRouter:
 
         if not await self.registry.exists(node_id):
             return False
+
+        # A node that has never verified a heartbeat gets one threshold-window of
+        # grace counted from its most recent REGISTRATION -- sweep path only (the
+        # deathrattle passes `honour_registration_grace=False`; see its
+        # docstring). This is the other half of the departure-hook fix above:
+        # the hook guarantees no STALE timestamp survives an unregister, and the
+        # grace guarantees the resulting absent-clock state is not read as
+        # infinitely stale for a node that just came back and has not had the
+        # chance to heartbeat yet. A clock that EXISTS but is past the threshold
+        # is real evidence and is not covered by the grace: such a node has
+        # demonstrably been silent.
+        if age is None and honour_registration_grace:
+            registered_at = self.registry.registered_at(node_id)
+            if registered_at is not None:
+                registration_age = time.monotonic() - registered_at
+                if registration_age < self.node_stale_after_seconds:
+                    logger.debug(
+                        "zenoh_node_registration_recent",
+                        node_id=node_id,
+                        seconds_since_registration=registration_age,
+                    )
+                    return False
 
         # `unregister_node` reports whether the node is actually gone. It used to
         # return None, so this logged an eviction on the strength of having asked.
@@ -381,8 +427,20 @@ class ZenohRouter:
         This is the mechanism ROADMAP 2.5 described as already existing. It did
         not: nothing in the Scheduler aged nodes out, so a host only left the
         registry by unregistering gracefully or by an unauthenticated deathrattle.
+
+        Also bounds the clock dict itself: entries for ids no longer registered
+        (and not covered by the departure hook -- e.g. ids seen before this
+        process learned about them) are dropped each tick, so the dict cannot
+        grow without limit behind churning node identities.
         """
-        for node in await self.registry.list():
+        registered_nodes = await self.registry.list()
+        registered_ids = {node.node_id for node in registered_nodes}
+
+        for node_id in list(self._last_verified_heartbeat):
+            if node_id not in registered_ids:
+                del self._last_verified_heartbeat[node_id]
+
+        for node in registered_nodes:
             await self._evict_if_stale(node.node_id)
 
     async def _stale_sweep_loop(self) -> None:

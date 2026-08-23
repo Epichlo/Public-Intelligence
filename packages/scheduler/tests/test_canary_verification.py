@@ -26,6 +26,8 @@ from scheduler.core.canary import (
     looks_like_an_echo,
     score,
 )
+from scheduler.core.config import Settings
+from scheduler.main import create_app
 
 CAPITAL = CANARIES[0]
 
@@ -280,3 +282,142 @@ def test_a_matchmaker_without_a_verifier_keeps_the_old_behaviour() -> None:
     matchmaker = CapabilityMatchmaker(NodeRegistry())
 
     assert matchmaker.filter_nodes({"model_name": "llama3"}, [node]) == [node]
+
+
+# --- the plain scheduler honours quarantine too ------------------------------
+
+
+async def test_the_scheduler_skips_a_quarantined_node() -> None:
+    """POST /schedule and POST /infer select nodes through `Scheduler.select_node`.
+
+    The matchmaker already excluded quarantined nodes; without the same rule here
+    a quarantined host stayed one `POST /schedule` away from receiving work.
+    Quarantine is checked before capability for the same reason as in
+    `filter_nodes`.
+    """
+    from datetime import UTC, datetime
+
+    from scheduler.models.heartbeat import Heartbeat
+    from scheduler.models.node import GPUInfo, Node, NodeStatus
+    from scheduler.registry.node_registry import NodeRegistry
+    from scheduler.scheduler.algorithm import Scheduler
+
+    def _node(node_id: str) -> Node:
+        return Node(
+            node_id=node_id,
+            hostname="h",
+            ip_address="10.0.0.1",
+            region="us-east",
+            gpu=GPUInfo(name="RTX 4090", vram_total_gb=24.0, vram_available_gb=20.0),
+            cpu_cores=8,
+            ram_total_gb=32.0,
+            available_models=["llama3"],
+        )
+
+    registry = NodeRegistry()
+    for node_id in ("good", "liar"):
+        await registry.local_register(_node(node_id))
+        await registry.update_heartbeat(
+            Heartbeat(
+                node_id=node_id,
+                timestamp=datetime.now(tz=UTC),
+                status=NodeStatus.ONLINE,
+                queue_length=0,
+                cpu_utilization=0.0,
+                ram_available_gb=16.0,
+                gpu_utilization=0.0,
+                vram_available_gb=20.0,
+            )
+        )
+
+    verifier = CanaryVerifier(failures_before_quarantine=1)
+    scheduler = Scheduler(registry, canary=verifier)
+    assert (await scheduler.select_node("llama3")).node_id == "good"
+
+    verifier.record("good", CAPITAL, "token_556")
+
+    assert (await scheduler.select_node("llama3")).node_id == "liar"
+
+    verifier.record("liar", CAPITAL, "token_556")
+
+    with pytest.raises(ValueError, match="No eligible nodes found"):
+        await scheduler.select_node("llama3")
+
+
+async def test_the_scheduler_without_a_verifier_keeps_the_old_behaviour() -> None:
+    """`Scheduler(registry)` -- every pre-existing construction site -- is unchanged."""
+    from datetime import UTC, datetime
+
+    from scheduler.models.heartbeat import Heartbeat
+    from scheduler.models.node import GPUInfo, Node, NodeStatus
+    from scheduler.registry.node_registry import NodeRegistry
+    from scheduler.scheduler.algorithm import Scheduler
+
+    node = Node(
+        node_id="n1",
+        hostname="h",
+        ip_address="10.0.0.1",
+        region="us-east",
+        gpu=GPUInfo(name="RTX 4090", vram_total_gb=24.0, vram_available_gb=20.0),
+        cpu_cores=8,
+        ram_total_gb=32.0,
+        available_models=["llama3"],
+    )
+    registry = NodeRegistry()
+    await registry.local_register(node)
+    await registry.update_heartbeat(
+        Heartbeat(
+            node_id="n1",
+            timestamp=datetime.now(tz=UTC),
+            status=NodeStatus.ONLINE,
+            queue_length=0,
+            cpu_utilization=0.0,
+            ram_available_gb=16.0,
+            gpu_utilization=0.0,
+            vram_available_gb=20.0,
+        )
+    )
+
+    assert (await Scheduler(registry).select_node("llama3")).node_id == "n1"
+
+
+# --- the operator surface ----------------------------------------------------
+
+
+def test_get_nodes_canary_answers_with_the_real_payload() -> None:
+    """GET /nodes/canary must reach the canary route, not a 404.
+
+    The dynamic `GET /nodes/{node_id}` was registered before this literal route,
+    so Starlette resolved "canary" as a node id and the endpoint -- an operator's
+    only view of quarantine besides log lines -- was permanently unreachable.
+    """
+    from fastapi.testclient import TestClient
+
+    from scheduler.core.config import get_settings
+
+    token = "network-token-for-tests"
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: Settings(network_auth_token=token)
+    client = TestClient(app)
+
+    refused = client.get("/nodes/canary")
+    allowed = client.get("/nodes/canary", headers={"X-Network-Auth-Token": token})
+
+    assert refused.status_code == 401
+    assert allowed.status_code == 200
+    body = allowed.json()
+    assert body["enabled"] is True
+    assert body["quarantined"] == []
+    assert body["nodes"] == {}
+
+    # And the payload reflects real verifier state once it exists.
+    verifier: CanaryVerifier = app.state.canary
+    verifier.record("liar", CAPITAL, "token_556")
+    verifier.record("liar", CAPITAL, "token_556")
+    verifier.record("liar", CAPITAL, "token_556")
+
+    quarantined = client.get("/nodes/canary", headers={"X-Network-Auth-Token": token})
+    body = quarantined.json()
+    assert body["quarantined"] == ["liar"]
+    assert body["nodes"]["liar"]["quarantined"] is True
+    assert "proves" in body

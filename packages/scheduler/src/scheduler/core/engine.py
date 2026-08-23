@@ -1,7 +1,10 @@
 """Orchestration engine for multi-stage scheduling."""
 
 import hashlib
+import time
 import uuid
+from collections import deque
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from scheduler.core.strategy import SchedulingStrategy
@@ -21,21 +24,90 @@ if TYPE_CHECKING:
 class SchedulingEngine:
     """Orchestration engine implementing two-stage node task scheduling."""
 
-    def __init__(self, registry: NodeRegistry, strategy: SchedulingStrategy) -> None:
+    # How long an assignment stays counted as in flight without an explicit
+    # release. Long enough to cover a normal generation; short enough that a
+    # missed release (a crashed gateway, an unwired caller) cannot accumulate
+    # into permanent fake pressure.
+    IN_FLIGHT_TTL_SECONDS = 30.0
+
+    def __init__(
+        self,
+        registry: NodeRegistry,
+        strategy: SchedulingStrategy,
+        *,
+        in_flight_ttl_seconds: float = IN_FLIGHT_TTL_SECONDS,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         """Initialize the SchedulingEngine.
 
         Args:
             registry: The active NodeRegistry instance.
             strategy: The SchedulingStrategy algorithm provider.
+            in_flight_ttl_seconds: How long an unreleased assignment keeps
+                counting as pressure. See the class constant for the reasoning.
+            clock: Monotonic time source, injectable for deterministic tests.
         """
         self.registry = registry
         self.strategy = strategy
+        self._in_flight_ttl = in_flight_ttl_seconds
+        self._clock = clock
+        # Per-node assignment timestamps. Deliberately NOT `registry._telemetry`:
+        # that dict is filled by the Zenoh router with VERIFIED telemetry, and the
+        # synthetic queue counters that used to be written into it (and never
+        # decremented) contaminated the same values the matchmaker ranks on,
+        # dragging un-telemetered nodes down by ~15 score points per assignment,
+        # forever. Assignments are this engine's own ephemeral state; scoring
+        # combines them with verified telemetry at read time (see matchmaker).
+        self._in_flight: dict[str, deque[float]] = {}
+        # If the strategy can consume live pressure, hand it ours. Looked up by
+        # name rather than required on the ABC so other strategies stay legal.
+        set_in_flight_source = getattr(self.strategy, "set_in_flight_source", None)
+        if callable(set_in_flight_source):
+            set_in_flight_source(self.in_flight_pressure)
+
+    def in_flight_pressure(self, node_id: str) -> int:
+        """Count assignments still presumed in flight on a node.
+
+        Entries older than the TTL are dropped on read: the count decays even
+        when no completion signal ever arrives, so the structure is bounded by
+        the number of genuinely live assignments.
+        """
+        now = self._clock()
+        timestamps = self._in_flight.get(node_id)
+        if not timestamps:
+            return 0
+        while timestamps and now - timestamps[0] > self._in_flight_ttl:
+            timestamps.popleft()
+        if not timestamps:
+            del self._in_flight[node_id]
+            return 0
+        return len(timestamps)
+
+    def mark_assigned(self, node_id: str) -> None:
+        """Record one assignment against a node's in-flight pressure."""
+        self.in_flight_pressure(node_id)
+        self._in_flight.setdefault(node_id, deque()).append(self._clock())
+
+    def release_assignment(self, node_id: str) -> None:
+        """Drop one assignment on completion or failure.
+
+        Callers that know a request finished (the gateways, after dispatch
+        returns either way) call this so pressure tracks reality rather than
+        the TTL's worst case.
+        """
+        timestamps = self._in_flight.get(node_id)
+        if not timestamps:
+            return
+        timestamps.popleft()
+        if not timestamps:
+            del self._in_flight[node_id]
 
     async def schedule_task(self, task: dict[str, Any]) -> tuple[str, str]:
         """Schedule an incoming task to the highest-scoring eligible node.
 
         Stages the task requirements through capability filtering and telemetry-based
-        scoring, updates the node's tracked load, and generates a transaction hash.
+        scoring, records the assignment as in-flight pressure, and generates a
+        transaction hash.
 
         Args:
             task: Dict detailing the task parameters and requirements.
@@ -60,13 +132,10 @@ class SchedulingEngine:
         ranked_nodes = self.strategy.score_nodes(task, eligible_nodes)
         selected_node, score = ranked_nodes[0]
 
-        # 4. Update the inner state tracking registry (dynamic queue depth update)
+        # 4. Record the assignment. Ephemeral pressure on OUR structure, never a
+        # synthetic counter in the registry's verified-telemetry dict.
         node_id = selected_node.node_id
-        if node_id not in self.registry._telemetry:
-            self.registry._telemetry[node_id] = {}
-
-        current_q = self.registry._telemetry[node_id].get("queue_depth", 0)
-        self.registry._telemetry[node_id]["queue_depth"] = current_q + 1
+        self.mark_assigned(node_id)
 
         # 5. Route the transaction hash out (SHA-256 of node_id + task_id + score)
         task_id = task.get("task_id", str(uuid.uuid4()))
@@ -205,11 +274,9 @@ class SchedulingEngine:
             )
             stages.append(stage)
 
-            # Update telemetry queue depth & dampeners
-            if node.node_id not in self.registry._telemetry:
-                self.registry._telemetry[node.node_id] = {}
-            cur_q = self.registry._telemetry[node.node_id].get("queue_depth", 0)
-            self.registry._telemetry[node.node_id]["queue_depth"] = cur_q + 1
+            # Record the stage assignment as ephemeral pressure; dampeners stay
+            # registry-owned (they decay on heartbeats by design).
+            self.mark_assigned(node.node_id)
             await self.registry.increment_dampener(node.node_id)
 
         # 6. Generate transaction hash
@@ -359,10 +426,7 @@ class SchedulingEngine:
             )
             stages.append(r_stage)
 
-            if node.node_id not in self.registry._telemetry:
-                self.registry._telemetry[node.node_id] = {}
-            cur_q = self.registry._telemetry[node.node_id].get("queue_depth", 0)
-            self.registry._telemetry[node.node_id]["queue_depth"] = cur_q + 1
+            self.mark_assigned(node.node_id)
             await self.registry.increment_dampener(node.node_id)
 
         # 3. Stage K: Client Local LM Head
