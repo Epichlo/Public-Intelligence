@@ -1,6 +1,8 @@
 """Application configuration via environment variables."""
 
 import json
+import os
+import sys
 from enum import StrEnum
 from functools import lru_cache
 from typing import Any
@@ -30,7 +32,17 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="SCHEDULER_",
-        env_file=".env",
+        # `.env` is a DEPLOYMENT artifact, not a test input. Reading it under
+        # pytest made every default-settings test inherit whatever the operator
+        # had configured on the machine running the tests: fail-open auth
+        # assertions met a real network token and 401'd, and persistence
+        # defaults pointed at the live database. Found 2026-08-23 as 12 gate
+        # failures locally with zero on CI, because CI runners have no `.env`.
+        # `packages/node` has carried exactly this guard since its own incident
+        # (configuration.py env_file); the Scheduler package predates it.
+        env_file=(
+            None if ("pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ) else ".env"
+        ),
         env_file_encoding="utf-8",
         case_sensitive=False,
         populate_by_name=True,

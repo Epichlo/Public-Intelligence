@@ -43,6 +43,18 @@ else
     MODE="system interpreter"
 fi
 
+# --- environment isolation -------------------------------------------------
+# The gate measures THIS TREE, not whatever deployment config the machine running
+# it happens to hold. An operator `.env` (or an exported SCHEDULER_* variable)
+# used to flow straight into pytest: fail-open auth assertions met a real network
+# token and 401'd, and persistence defaults pointed at the live database. Found
+# 2026-08-23 as 12 gate failures locally with zero on CI. The packages now refuse
+# their dotenv under pytest themselves (scheduler core/config.py mirrors node
+# core/configuration.py); this clears the ambient-export path too. Listed
+# explicitly rather than `env -i` so PATH/HOME and toolchain discovery survive.
+unset SCHEDULER_NETWORK_AUTH_TOKEN NETWORK_AUTH_TOKEN \
+    SCHEDULER_DATABASE_PATH SCHEDULER_ZENOH_LISTEN_ENDPOINTS JWT_PUBLIC_KEY
+
 # --- result tracking -------------------------------------------------------
 # Every step runs even after one fails, mirroring CI's `fail-fast: false`. One
 # run should show you everything that is wrong, not just the first thing.
