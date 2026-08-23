@@ -235,6 +235,108 @@ def test_the_success_banner_cannot_print_before_the_exit_code_check() -> None:
     )
 
 
+def test_both_git_fetches_are_guarded_like_every_pip_call() -> None:
+    """install.ps1 ran `git pull` and `git clone --depth 1` without checking exits.
+
+    $ErrorActionPreference does not trap native exit codes, so an offline or partial
+    fetch silently installed whatever stale tree already sat under
+    %USERPROFILE%/PublicIntelligence and reported that as a fresh successful install
+    -- the same defect class the pip guards above them were added for. Both native
+    fetches get the identical guard.
+    """
+    lines = _windows().splitlines()
+    fetches = [(i, ln) for i, ln in enumerate(lines) if re.match(r"^\s*git\s", ln)]
+    assert len(fetches) >= 2, (
+        "expected both the update pull and the fresh clone to still be native git calls"
+    )
+    unguarded = []
+    for index, line in fetches:
+        window = "\n".join(lines[index : index + 4])
+        if "Assert-LastExitCode" not in window:
+            unguarded.append(f"line {index + 1}: {line.strip()}")
+    assert not unguarded, (
+        "native git calls whose failure would silently keep a stale tree, without "
+        f"an exit-code guard within four lines: {unguarded}"
+    )
+
+
+def test_the_env_file_writer_cannot_emit_a_bom() -> None:
+    """install.ps1 wrote .env with Set-Content -Encoding UTF8, which under Windows
+    PowerShell 5.1 emits a UTF-8 BOM. python-dotenv reads env files as utf-8 WITHOUT
+    stripping one, so the first key arrived as \\ufeffNODE_ID, pydantic-settings never
+    matched it, and every such host silently registered as the default id
+    "node-local", colliding with any second host queryable through the mesh.
+
+    The writer must be an API whose encoding cannot depend on which powershell hosts
+    the script.
+    """
+    text = _windows()
+    writers = [
+        ln.strip()
+        for ln in text.splitlines()
+        if re.match(r"^\s*\[System\.IO\.File\]::WriteAllText\(", ln)
+    ]
+    assert writers, ".env is written through no API whose encoding can be controlled"
+    for writer in writers:
+        assert "UTF8Encoding($false)" in writer, (
+            f".env writer does not force BOM-less UTF-8: {writer}"
+        )
+
+    # Matched on the exact broken call shape, so a comment explaining the fix
+    # cannot satisfy this and reverting cannot hide behind prose.
+    reverted = re.search(
+        r"^Set-Content\s+-Path\s+\$EnvFile\s+-Value\s+\$EnvContent\b",
+        text,
+        flags=re.MULTILINE,
+    )
+    assert reverted is None, (
+        ".env is written with Set-Content again; under Windows PowerShell 5.1 that "
+        "emits a UTF-8 BOM and the first key stops parsing (\\ufeffNODE_ID)"
+    )
+
+
+def test_the_daemon_success_claim_follows_evidence_of_liveness() -> None:
+    """install.ps1 printed "[OK] Host Node daemon launched successfully" right after
+    Start-Process, unconditionally. A detached pythonw discards its output and
+    $ErrorActionPreference traps nothing for it, so a late startup failure printed
+    success -- and a re-run over a live old daemon could not bind its port, died
+    quietly, and STILL printed success while traffic kept hitting the STALE
+    pre-update node. scripts/launch_host_node.sh polls /health before claiming
+    victory; the Windows installer has to meet the same bar.
+
+    Asserted structurally, use-vs-mention: the success line is matched only where it
+    is EMITTED, and between the launch and that emission there must live a captured
+    process, an exited-process check, a bounded probe of the node's own /health, and
+    a loud non-zero abort when none of it comes good.
+    """
+    lines = _windows().splitlines()
+
+    launches = [i for i, ln in enumerate(lines) if re.search(r"\$Daemon\s*=\s*Start-Process\b", ln)]
+    claims = [
+        i
+        for i, ln in enumerate(lines)
+        if re.match(r"\s*Write-Host", ln) and "daemon launched successfully" in ln.lower()
+    ]
+    assert len(launches) == 1, f"expected exactly one daemon launch, found {len(launches)}"
+    assert len(claims) == 1, f"expected exactly one daemon success claim, found {len(claims)}"
+    launch_index, claim_index = launches[0], claims[0]
+    assert launch_index < claim_index, "the success claim prints before the launch"
+
+    between = "\n".join(lines[launch_index:claim_index])
+    assert "-PassThru" in between, (
+        "the launch does not capture the process, so nothing afterwards can check it"
+    )
+    assert "HasExited" in between, "nothing checks whether the daemon died during startup"
+    assert re.search(r'\$HealthUrl\s*=\s*"http://localhost:\$NodePort/health"', between), (
+        "the liveness probe is not pointed at the node's own /health endpoint"
+    )
+    assert "Invoke-WebRequest" in between, "no health probe is issued at all"
+    assert re.search(r"^(\s*)exit 1$", between, flags=re.MULTILINE), (
+        "a failed liveness check must abort loudly instead of falling through to "
+        "the success message"
+    )
+
+
 def test_posix_installer_still_aborts_on_error() -> None:
     """The property install.sh already had, pinned so it is not lost."""
     assert re.search(r"^set -e", _posix(), flags=re.MULTILINE), (
