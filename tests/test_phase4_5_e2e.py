@@ -8,7 +8,7 @@ Requirements-Driven Dual-Track Testing:
 """
 
 import time
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, Generator, Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -27,10 +27,15 @@ from node.core.runtime import sandbox_log_buffer
 from node.main import app as node_app
 
 # Scheduler imports
+from scheduler.core.config import Settings, get_settings
 from scheduler.core.rate_limiter import TokenBucketLimiter
 from scheduler.main import app as scheduler_app
 from scheduler.models.node import GPUInfo
 from scheduler.models.node import Node as SchedulerNode
+
+# The fleet admission secret. An unconfigured fleet token refuses everyone, so the
+# shared Scheduler app gets one configured for the duration of each test here.
+FLEET_TOKEN = "e2e-fleet-token"
 
 # -----------------------------------------------------------------------------
 # Fixtures & Helpers
@@ -71,11 +76,17 @@ def generate_jwt(
 
 
 @pytest.fixture
-def scheduler_client(rsa_key_pair: tuple[rsa.RSAPrivateKey, str]) -> TestClient:
+def scheduler_client(rsa_key_pair: tuple[rsa.RSAPrivateKey, str]) -> Iterator[TestClient]:
     """Configure Scheduler FastAPI app state with test keys, mock consensus engine, and fresh registry."""
     _, public_key_pem = rsa_key_pair
     scheduler_app.state.jwt_public_key = public_key_pem
     scheduler_app.state.rate_limiter = TokenBucketLimiter(capacity=5, refill_rate=0.5)
+
+    # Removed in the teardown: the module-level app is shared across the root
+    # suite, and an override left behind would silently reconfigure other files.
+    scheduler_app.dependency_overrides[get_settings] = lambda: Settings(
+        network_auth_token=FLEET_TOKEN
+    )
 
     # Mock consensus engine
     mock_consensus = MagicMock()
@@ -101,7 +112,10 @@ def scheduler_client(rsa_key_pair: tuple[rsa.RSAPrivateKey, str]) -> TestClient:
     )
     scheduler_app.state.registry._nodes["node-e2e-1"] = test_node
 
-    return TestClient(scheduler_app)
+    try:
+        yield TestClient(scheduler_app, headers={"X-Network-Auth-Token": FLEET_TOKEN})
+    finally:
+        scheduler_app.dependency_overrides.pop(get_settings, None)
 
 
 NODE_AUTH_TOKEN = "e2e-node-auth-token"
@@ -610,8 +624,10 @@ def test_tier3_cross_feature_simultaneous_telemetry_rate_limit_refill_and_stream
         assert "text/event-stream" in r_stream.headers["content-type"]
         assert "Concurrent " in r_stream.text
 
-    # Step 4: Refill tokens for Tenant A by updating last_updated timestamp backward
-    limiter.last_updated["tenant-cross-A"] = time.time() - 10.0
+    # Step 4: Refill tokens for Tenant A by updating last_updated timestamp backward.
+    # The limiter runs on time.monotonic() -- a wall-clock value here would sit
+    # ~forever in its future and freeze the bucket instead of refilling it.
+    limiter.last_updated["tenant-cross-A"] = time.monotonic() - 10.0
 
     with patch.object(httpx.AsyncClient, "post", new_callable=AsyncMock) as mock_post:
         mock_post.return_value = mock_post_resp

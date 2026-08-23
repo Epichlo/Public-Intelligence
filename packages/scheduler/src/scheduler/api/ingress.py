@@ -140,6 +140,16 @@ def verify_jwt(request: Request, authorization: str | None = Header(None)) -> di
     if payload is None:
         raise HTTPException(status_code=401, detail="JWT signature verification failed.")
 
+    if "exp" not in payload:
+        # Required, not merely honoured. JWTs are stateless and there is no
+        # revocation: the ONLY bound on an issued credential is its exp claim
+        # (see `credential_max_ttl_hours` in config). PyJWT validates exp when it
+        # is present and says nothing when it is absent, so a token minted
+        # without one was valid until the signing key was rotated.
+        raise HTTPException(
+            status_code=401, detail="Invalid claims: Missing 'exp' in token payload."
+        )
+
     if "tenant_id" not in payload:
         raise HTTPException(
             status_code=401, detail="Invalid claims: Missing 'tenant_id' in token payload."

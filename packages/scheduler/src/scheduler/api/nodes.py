@@ -1,5 +1,6 @@
 """Node registration and discovery endpoints."""
 
+import hmac
 from typing import Annotated
 
 import structlog
@@ -75,10 +76,21 @@ async def register_node(
     It is stored outside the `Node` model and so is never echoed back in this
     response or listed by `GET /nodes`.
 
-    The credential is recorded before registration is attempted, so a node whose
-    token has rotated refreshes it even when the record already exists and the
-    call returns 409. Recording it only on success left the Scheduler holding a
-    stale token and silently 401ing every dispatch to that node.
+    **A credential is recorded only for a node that proved identity.** On a first
+    registration that proof is the successful admission itself: the id was free,
+    this caller claimed it, what they present is what gets stored. On
+    re-registration (the 409 path) the record already belongs to someone, so the
+    presented credential must match the one on file (`hmac.compare_digest` --
+    possession of the stored secret is the only identity proof this protocol has)
+    before anything is refreshed. Writing the credential BEFORE registration was
+    attempted -- the old behaviour, which existed so a rotated token would refresh
+    on the 409 path -- let any fleet-token holder replace or clear another host's
+    dispatch credential by re-registering its id and eating the conflict.
+
+    The cost, stated: a node whose credential rotated while its record survived
+    cannot install the new one by re-registering. It presents no proof the
+    Scheduler can distinguish from an attacker. Recovery is deliberate:
+    `DELETE /nodes/{id}` and register fresh, or prove the current credential.
 
     **Two headers, because admission and identity are different questions**
     (decision D9). `X-Network-Auth-Token` is the fleet's shared admission secret --
@@ -102,32 +114,63 @@ async def register_node(
     # shouts at startup when that fallback is active, because an admission check
     # that is off by default is only acceptable if being in that state is
     # impossible to miss.
+    #
+    # The check-and-consume is ONE atomic step (`reserve`), not verify-here and
+    # redeem-later: those were separated by the awaits below, and two concurrent
+    # registrations could both pass on one single-use code. A failed registration
+    # refunds the use, so a 409 retry loop still does not spend the invite.
     invites = getattr(request.app.state, "invites", None)
-    if invites is not None and invites.enforcing and invites.verify(x_invite_code) is None:
-        logger.warning("registration_refused_no_invite", node_id=node.node_id)
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                "A valid X-Invite-Code header is required to register a node. "
-                "Ask the operator to issue one with scripts/mint_invite.py."
-            ),
-        )
+    reserved = None
+    if invites is not None and invites.enforcing:
+        reserved = await invites.reserve(x_invite_code, node.node_id)
+        if reserved is None:
+            logger.warning("registration_refused_no_invite", node_id=node.node_id)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "A valid X-Invite-Code header is required to register a node. "
+                    "Ask the operator to issue one with scripts/mint_invite.py."
+                ),
+            )
 
-    await registry.set_node_token(node.node_id, x_node_credential or x_network_auth_token)
+    candidate = x_node_credential or x_network_auth_token
+    admitted = False
 
     try:
-        await registry.register(node)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Node already registered: {node.node_id}",
-        ) from None
+        try:
+            await registry.register(node)
+        except ValueError:
+            stored = registry.get_node_token(node.node_id)
+            proven = (
+                stored is not None
+                and candidate is not None
+                and hmac.compare_digest(candidate.encode("utf-8"), stored.encode("utf-8"))
+            )
+            if stored is not None and not proven:
+                logger.warning("registration_credential_rejected", node_id=node.node_id)
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        "This node is already registered. Re-registration requires "
+                        "presenting its current X-Node-Credential; the credential on "
+                        "file is not replaced or cleared without that proof."
+                    ),
+                ) from None
+            # Nothing on file (a legacy record with no credential): recording what
+            # was presented restores parity with a first registration.
+            await registry.set_node_token(node.node_id, candidate)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Node already registered: {node.node_id}",
+            ) from None
 
-    # Redeemed only AFTER the registration succeeds. A node re-registering after a
-    # 404 heartbeat is routine since ROADMAP 1.6, so burning a use on the resulting
-    # 409 would spend an operator's invite on a retry and lock the node out.
-    if invites is not None and invites.enforcing and x_invite_code:
-        await invites.redeem(x_invite_code, node.node_id)
+        # Recorded only AFTER admission succeeded, so a credential on file always
+        # belonged to a node that actually registered.
+        await registry.set_node_token(node.node_id, candidate)
+        admitted = True
+    finally:
+        if reserved is not None and invites is not None and not admitted:
+            await invites.refund(reserved, node.node_id)
 
     return node
 

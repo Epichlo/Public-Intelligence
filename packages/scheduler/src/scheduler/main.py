@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from scheduler import __version__
+from scheduler.api.auth import warn_if_auth_disabled
 from scheduler.api.batch import router as batch_router
 from scheduler.api.credentials import router as credentials_router
 from scheduler.api.health import router as health_router
@@ -92,6 +93,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Loudly, after loading, so an operator running with admission off cannot
     # be in that state without being told.
     app.state.invites.warn_if_open()
+    # Same rule for the fleet token: it now fails closed when unset, so an
+    # operator whose nodes are all answering 401 must be able to learn why
+    # from this boot's log rather than from guessing.
+    warn_if_auth_disabled(settings)
 
     logger.info(
         "scheduler_started",

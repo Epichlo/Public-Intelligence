@@ -119,6 +119,27 @@ shape of the second.
 than failure.** The gate did not lint `tests/`. It did not type-check `tests/`. It did
 not touch the website. It ran an installer dry-run that returned early from every
 step. Each gap was invisible precisely because the gate was trusted as total.
+
+**2026-08-17 added a new shape of falsification, and it is worse than the others.**
+The gate ran, CI ran, CI *failed* — and no one read it for eight days, across a
+published `v1.0.0` release. Every prior instance was a check that did not exist. This
+was a check that existed, executed, and reported red into a void, because
+`scripts/generate_status.py` shells out to `gh` and reports `UNVERIFIABLE` where `gh`
+is absent. "I could not look" is honest and scans as "nothing is wrong".
+
+The current known gaps, enumerated so that an unlisted absence is not mistaken for an
+all-clear (kept in sync with the README's "What we cannot see"):
+
+- `install.ps1` has **never been executed by anything**; it is only ever read. Every
+  Windows install defect so far was found by a person, not by the gate.
+- The repository **cannot read its own CI** without `gh` on the PATH. Fix known
+  (REST API fallback), not yet made.
+- **Branches get no CI** — the workflow triggers on `push` to `main` and on PRs only.
+- The local gate is **one OS and one interpreter**; platform-specific defects are
+  structurally invisible to it. Three so far: cp1252 encoding, CRLF line endings,
+  wall-clock resolution.
+- **`docker-compose.test.yml` has never run.**
+
 **Confidence:** high that it catches what it checks; **low that anyone knows what it
 does not check**. The correct posture toward this file's own subject.
 
@@ -135,12 +156,39 @@ interpretation of the project's own history rather than a claim about the world.
 is listed anyway because it drives more process than anything else on this page, and
 process justified by an unfalsifiable belief is worth naming as such.
 
+## P10 — Sending a prompt to a peer's machine is an acceptable trade for pooling
+
+**Supports:** the whole multi-machine framing; whatever survives of P1's federation
+half after the desk review.
+**Evidence:** none gathered. This premise was surfaced by the 2026-08-14 desk review
+as "the privacy paradox" and sat outside this register until 2026-08-17, which is
+itself the finding — the register's own instruction is that an unregistered
+assumption is one nobody can attack.
+
+The tension is direct. The motivation for running models locally is usually *"nothing
+leaves hardware I own."* Routing a request to somebody else's node breaks exactly that
+property. P6 constrains what this **code persists**; it says nothing about where a
+prompt **travels**, and the two are routinely conflated.
+
+**Falsifier:** the users who want local inference want it for privacy, in which case
+pooling across other people's machines is not a smaller version of the same product —
+it is the opposite product, and the addressable set is only people who trust every
+host in their pool. Note this does **not** fire for the self-hosted-fleet case
+([D6](decisions/D6-is-there-a-network.md)), where every machine belongs to the same
+person or organisation. It fires precisely for the cross-party pooling the desk review
+identified as the one surviving differentiator.
+**Confidence:** **low, and load-bearing.** If P10 fails, cross-party pooling fails
+with it, and P2 has already been moved to low confidence — which would leave the
+project's differentiator resting on two low-confidence premises at once.
+
 ---
 
 ## How to attack this list
 
-- Pick the premise with the lowest stated confidence (**P2**), and ask whether the
-  people it describes exist.
+- Pick either of the lowest-confidence premises (**P2**, **P10**) and ask whether the
+  people they describe exist. They are now the same question from two sides: P2 asks
+  whether anyone needs this to reach a machine, P10 asks whether anyone who does would
+  accept where their prompt goes. A single answer can falsify both.
 - Pick the one with the largest downstream commitment (**P3**), and check the inputs
   against a real electricity bill and a real card.
 - Pick the one whose falsifier says "none available" (**P9**), and ask whether the
@@ -162,8 +210,9 @@ routes a whole request to one node); the codebase refutes that specific claim. S
 review's addendum. **Neither run closes D7** — two models gathered external evidence;
 neither is an external human judge.
 
-A candidate new premise surfaced and is not yet in this register: **the privacy
-paradox** — routing a prompt to a *peer's* machine breaks the "nothing leaves hardware
-I own" property that motivates local AI (P6 covers only what this code persists, not
-where a prompt travels). If the product continues, that belongs here as its own
-falsifiable claim.
+The candidate premise that review surfaced — **the privacy paradox** — was registered
+as **P10** on 2026-08-17. It had sat outside this file for three days while the file's
+own argument is that an unregistered assumption is one nobody can attack.
+
+Last updated 2026-08-17: P8 gained the enumerated verification gaps, P10 was added.
+**Still reviewed only by the author, and still the problem.**

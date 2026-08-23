@@ -4,17 +4,17 @@
 <!-- Regenerate with: python3 scripts/generate_status.py -->
 <!-- Every value below came from a command run at the timestamp shown. -->
 
-**Generated:** 2026-08-16 16:21 UTC
+**Generated:** 2026-08-21 13:36 UTC
 **Test status:** PASSING
 
 ## Tests
 
 | Suite | Status | Passed | Failed | Skipped | Time |
 | --- | --- | --- | --- | --- | --- |
-| Scheduler | PASS | 395 | 0 | 0 | 11.55s |
-| Node | PASS | 260 | 0 | 1 | 3.04s |
-| Root E2E | PASS | 238 | 0 | 0 | 26.56s |
-| **Total** | **PASSING** | **893** | **0** | **1** | |
+| Scheduler | PASS | 397 | 0 | 0 | 11.51s |
+| Node | PASS | 260 | 0 | 1 | 3.10s |
+| Root E2E | PASS | 249 | 0 | 0 | 26.90s |
+| **Total** | **PASSING** | **906** | **0** | **1** | |
 
 Reproduce:
 
@@ -26,22 +26,23 @@ Reproduce:
 
 ## Git
 
-- **Last commit:** `b61758d` website: sovereign landing redesign
-- **Author / date:** Claude — 2026-08-15 09:52:56 +0000
-- **Branch:** claude/autonomous-architecture-decision-sqtiuy
-- **Total commits:** 107
+- **Last commit:** `e5d1e7c` docs: record the real state, including what we cannot see (#2)
+- **Author / date:** attu308 — 2026-08-17 11:35:15 +0530
+- **Branch:** claude/project-closure-readme-4iwry3
+- **Total commits:** 53
 - **Remote:** origin	https://github.com/Epichlo/Public-Intelligence (fetch)
-- **Working tree:** 8 uncommitted change(s)
+- **Working tree:** 9 uncommitted change(s)
 
 ```
-  M README.md
+  M .claude/rules/node.md
+   M CLAUDE.md
+   M README.md
    M ROADMAP.md
-   M install.sh
-   M scripts/verify.sh
-   M scripts/verify_install.sh
-  ?? scripts/bootstrap.sh
-  ?? specs/single-command-node-hosting.md
-  ?? tests/test_single_command_host.py
+   M experimental/README.md
+   M packages/node/README.md
+   M packages/scheduler/README.md
+   M packages/shared/README.md
+   M packages/website/README.md
 ```
 
 ## CI
@@ -58,7 +59,7 @@ _Measured, not asserted. Re-run to refresh._
 
 | Repo | Remote | Branch | Tracking |
 | --- | --- | --- | --- |
-| root | `https://github.com/Epichlo/Public-Intelligence` | claude/autonomous-architecture-decision-sqtiuy | origin/claude/autonomous-architecture-decision-sqtiuy |
+| root | `https://github.com/Epichlo/Public-Intelligence` | claude/project-closure-readme-4iwry3 | **none** |
 
 - **`.gitmodules`:** absent, which is correct — `packages/` are ordinary directories since the 2026-08-04 monorepo migration, and CI's fresh-clone job asserts this file does not come back.
 - **root venv interpreter:** Python 3.11.15

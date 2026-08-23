@@ -4,13 +4,14 @@
  * Only the exported helpers are tested here, not the rendered component: rendering
  * needs jsdom and React Testing Library, which is a toolchain this project does not
  * have and would be a poor trade for a four-field panel. What matters and IS
- * testable is the arithmetic and the language — a credit shown with a currency
- * symbol, or a failure ratio that divides by zero, are the two ways this misleads a
- * host.
+ * testable is the arithmetic, the language — a credit shown with a currency symbol,
+ * or a failure ratio that divides by zero, are the two ways this misleads a host —
+ * and the shape gate the untrusted proxy response must pass before it can reach a
+ * render path at all.
  */
 import { describe, expect, it } from "vitest";
 
-import { failureRatio, formatCredits } from "./contribution-summary";
+import { failureRatio, formatCredits, parseNodeUsage } from "./contribution-summary";
 
 describe("formatCredits", () => {
   it("never renders a currency symbol", () => {
@@ -58,5 +59,48 @@ describe("failureRatio", () => {
     expect(
       failureRatio({ requests: 3, failed_requests: 3, prompt_tokens: 0, completion_tokens: 0 })
     ).toBe(1);
+  });
+});
+
+describe("parseNodeUsage", () => {
+  // The component used to feed `res.json()` straight into setState with a cast, on
+  // the strength of `res.ok`. A proxy that answers 200 with an error body -- which
+  // every route here does for upstream failures it chooses to pass through -- then
+  // crashed the whole panel's subtree at the first render of `usage.totals.requests`,
+  // while `failureRatio` right next to it guarded carefully. Validation lives with
+  // the type so the cast is earned rather than asserted.
+  const VALID = {
+    node_id: "node-1",
+    credits_contributed: 1.5,
+    credits_are_redeemable: false,
+    totals_window: "recent tail",
+    totals_window_size: 100,
+    totals: {
+      requests: 4,
+      prompt_tokens: 12,
+      completion_tokens: 340,
+      failed_requests: 1,
+    },
+  };
+
+  it("accepts a well-formed usage payload", () => {
+    expect(parseNodeUsage(VALID)).toEqual(VALID);
+  });
+
+  it("rejects an error-shaped 200 instead of casting it", () => {
+    expect(parseNodeUsage({ detail: "Unauthorized" })).toBeNull();
+  });
+
+  it.each([
+    ["null", null],
+    ["an array", [VALID]],
+    ["missing totals", { node_id: "node-1", credits_contributed: 0 }],
+    ["totals not an object", { ...VALID, totals: [] }],
+    ["a string where a count belongs", { ...VALID, totals: { ...VALID.totals, requests: "4" } }],
+    ["NaN in a rendered field", { ...VALID, credits_contributed: Number.NaN }],
+    ["Infinity in a rendered field", { ...VALID, totals: { ...VALID.totals, completion_tokens: Number.POSITIVE_INFINITY } }],
+    ["a missing window size", { ...VALID, totals_window_size: undefined }],
+  ])("rejects %s", (_label, payload) => {
+    expect(parseNodeUsage(payload)).toBeNull();
   });
 });

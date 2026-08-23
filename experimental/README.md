@@ -71,7 +71,7 @@ while an unimportable quarantined test still fails the gate.
 | Module | Feature | Lines |
 |---|---|---|
 | `transport.py` | Shared-memory IPC, backpressured tensor streaming | 541 × 2 |
-| `local_boundary.py` | Embedding/unembedding across a split boundary — a 155-word vocabulary and seeded `random.gauss` matrices, **not a model** | 378 × 2 |
+| `local_boundary.py` | Embedding/unembedding across a split boundary — a 120-token vocabulary (116 words + 4 special) against a declared `vocab_size` of 32,000, and seeded `random.gauss` matrices, **not a model** | 378 × 2 |
 | `boundary_engine.py` | Re-export shim for the above | 5 × 2 |
 | `kv_cache.py` | KV-cache checkpointing and restitching | ~98 × 2 |
 | `quantization.py` | FP8/FP4 activation compression | 49 × 2 |
@@ -122,8 +122,9 @@ of that returns.
 
 ## If you are reading this because you want to build on it
 
-Don't, yet. `LocalBoundaryEngine` in particular is a simulation: a 155-word
-vocabulary and two seeded random matrices. It produces plausible-looking tensors and
+Don't, yet. `LocalBoundaryEngine` in particular is a simulation: a 120-token
+vocabulary — 116 words plus 4 special tokens, against a declared `vocab_size` of
+32,000 — and two seeded random matrices. It produces plausible-looking tensors and
 no inference happens. Returning its output to a caller as a completion is precisely
 the bug ROADMAP N1 removed, where `token_556` was served as the capital of France
 with HTTP 200.

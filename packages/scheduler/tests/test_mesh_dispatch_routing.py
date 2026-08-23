@@ -20,6 +20,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 
+from scheduler.core.config import Settings, get_settings
 from scheduler.core.mesh_inference_client import MeshNodeError, MeshUnavailableError
 from scheduler.core.rate_limiter import TokenBucketLimiter
 from scheduler.main import app
@@ -28,6 +29,10 @@ from scheduler.models.node import GPUInfo, Node, NodeStatus
 
 NODE_ID = "node-mesh-dispatch"
 NODE_TOKEN = "dispatch-node-token"
+# The fleet admission secret. An unconfigured fleet token refuses everyone, so a
+# suite that exercises dispatch routing (not admission) configures one and
+# presents it on every request by default.
+FLEET_TOKEN = "dispatch-fleet-token"
 
 
 @pytest.fixture(scope="module")
@@ -138,9 +143,15 @@ def client(key_pair: tuple[rsa.RSAPrivateKey, str]) -> TestClient:
     consensus.is_active.return_value = False
     app.state.registry.consensus_engine = consensus
 
-    yield TestClient(app)
-
-    app.state.mesh_client = None
+    # Overriding (and REMOVING, in the teardown) rather than mutating the cached
+    # settings: this module-level `app` is shared by every file in the suite, and
+    # an override left behind would silently reconfigure theirs.
+    app.dependency_overrides[get_settings] = lambda: Settings(network_auth_token=FLEET_TOKEN)
+    try:
+        yield TestClient(app, headers={"X-Network-Auth-Token": FLEET_TOKEN})
+    finally:
+        app.dependency_overrides.pop(get_settings, None)
+        app.state.mesh_client = None
 
 
 def bearer(private_key: rsa.RSAPrivateKey) -> dict[str, str]:

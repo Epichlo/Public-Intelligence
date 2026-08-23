@@ -11,9 +11,14 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 
+from scheduler.core.config import Settings, get_settings
 from scheduler.core.rate_limiter import TokenBucketLimiter
 from scheduler.main import app
 from scheduler.models.node import GPUInfo, Node
+
+# The fleet admission secret. An unconfigured fleet token refuses everyone; these
+# tests exercise gateway routing and telemetry reads, so they configure one.
+FLEET_TOKEN = "gateway-fleet-token"
 
 
 @pytest.fixture(scope="module")
@@ -36,6 +41,10 @@ def setup_test_app(key_pair: tuple[rsa.RSAPrivateKey, str]) -> MagicMock:
     """Configure FastAPI app state with test keys, mock consensus engine, and mock node."""
     _, public_key_pem = key_pair
     app.state.jwt_public_key = public_key_pem
+
+    # Removed in the teardown: this module-level `app` is shared by every file
+    # in the suite, and an override left behind would silently reconfigure theirs.
+    app.dependency_overrides[get_settings] = lambda: Settings(network_auth_token=FLEET_TOKEN)
 
     # Reset rate limiter
     app.state.rate_limiter = TokenBucketLimiter(capacity=5, refill_rate=0.5)
@@ -64,7 +73,10 @@ def setup_test_app(key_pair: tuple[rsa.RSAPrivateKey, str]) -> MagicMock:
     )
     app.state.registry._nodes["test-node"] = mock_node
 
-    return mock_consensus
+    try:
+        yield mock_consensus
+    finally:
+        app.dependency_overrides.pop(get_settings, None)
 
 
 def generate_token(
@@ -247,7 +259,7 @@ def test_openai_chat_completion_rate_limit(
 
 def test_openai_models_endpoints() -> None:
     """Verify GET /v1/models and GET /v1/models/{model_id}."""
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-Network-Auth-Token": FLEET_TOKEN})
 
     # List models
     resp = client.get("/v1/models")
@@ -269,7 +281,7 @@ def test_openai_models_endpoints() -> None:
 
 def test_telemetry_endpoints() -> None:
     """Verify GET /nodes/{node_id}/telemetry and GET /nodes/telemetry."""
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-Network-Auth-Token": FLEET_TOKEN})
 
     # Set mock telemetry data in registry
     app.state.registry._telemetry["test-node"] = {

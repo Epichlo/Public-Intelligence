@@ -1,0 +1,25 @@
+# Shell scripts are LF on every platform, including a Windows checkout.
+#
+# This file's absence made all three Windows CI legs red for eight days, across
+# the v1.0.0 release commit. The repository's shell scripts were LF-clean the
+# whole time; actions/checkout applied the Windows runner's core.autocrlf=true
+# and rewrote them to CRLF on checkout, and shellcheck correctly refused to
+# parse the result -- a here-document terminator with a trailing CR does not
+# match its opener, so SC1017 cascaded into SC1073/SC1041/SC1042/SC1072 in
+# install.sh and the gate's shellcheck step failed.
+#
+# **Deliberately surgical.** The obvious thing to write here is a repo-wide
+# `* text=auto eol=lf`, and it is deliberately NOT written: every other file
+# type is currently converted by core.autocrlf on Windows and the suite is green
+# over that, so a blanket rule would change the line endings of .py, .md, .json
+# and .ps1 on the one platform that is currently failing. That is a second
+# variable introduced into the middle of a release. Only the file type that is
+# actually broken is pinned; anything else stays exactly as it behaves today.
+#
+# Ratcheted by tests/test_line_endings.py, which reads the git INDEX rather than
+# the working tree -- on Linux a working-tree check passes vacuously and would
+# have stayed green throughout the eight days CI was red.
+#
+# See specs/ci-green-on-windows.md.
+
+*.sh text eol=lf

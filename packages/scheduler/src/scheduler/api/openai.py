@@ -148,12 +148,16 @@ async def create_chat_completion(
     # waited, not just what the node spent generating. A host reading their
     # dashboard should see the cost of the whole round trip their machine was in.
     #
-    # `monotonic`, not `time()`. A wall clock can step BACKWARDS -- NTP correction,
-    # a VM resuming, a manual change -- which would produce a negative duration and,
-    # through `record_host_contribution`, a negative credit accrual. Monotonic
-    # cannot. This is the right clock for measuring an interval and the wrong one
-    # for timestamping an event, which is why `recorded_at` still uses wall time.
-    started_at = time.monotonic()
+    # `perf_counter`, not `time`: this is an ELAPSED measurement, and the wall
+    # clock is the wrong instrument for one. It is coarse (~15ms on Windows, so a
+    # fast request measures exactly 0.0 and the host is credited nothing -- the
+    # accrual is a product, so one zero factor zeroes it) and it is not monotonic
+    # (an NTP correction mid-request can make the difference negative, which the
+    # `max(0.0, ...)` below then floors to zero, silently). Only differences of
+    # `perf_counter()` are meaningful, and only differences are taken. This is the
+    # right clock for measuring an interval and the wrong one for timestamping an
+    # event, which is why `recorded_at` still uses wall time.
+    started_at = time.perf_counter()
 
     task_data = {
         "task_id": task_id,
@@ -501,7 +505,8 @@ async def _meter(
     """
     meter: UsageMeter | None = getattr(request.app.state, "usage_meter", None)
     ledger: CreditLedger | None = getattr(request.app.state, "ledger", None)
-    duration = max(0.0, time.monotonic() - started_at)
+    # `perf_counter`, matching how `started_at` was taken. See the comment there.
+    duration = max(0.0, time.perf_counter() - started_at)
 
     try:
         if meter is not None:

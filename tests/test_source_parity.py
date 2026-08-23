@@ -232,6 +232,37 @@ def test_both_packages_pin_the_same_tool_versions() -> None:
     assert pins["Node"], "dev tools must be pinned exactly (==), not floored (>=)"
 
 
+def test_every_package_declares_the_same_version() -> None:
+    """One repository ships one version number.
+
+    Found by hand during the v1.0.0 wrap-up: the three Python packages had been
+    bumped to 1.0.0 and `packages/website/package.json` was still on the Next.js
+    scaffold default of 0.1.0, so the release commit shipped two different
+    answers to "what version is this". Nothing failed, because nothing looked --
+    a version skew has no runtime symptom, which is exactly why it needs a
+    ratchet rather than a reader.
+
+    The website is deployed separately from the Python services, so this is not
+    a packaging constraint; it is the claim that a tag names one tree.
+    """
+    versions: dict[str, str] = {}
+    for pkg in ("shared", "node", "scheduler"):
+        data = tomllib.loads(
+            (REPO_ROOT / "packages" / pkg / "pyproject.toml").read_text(encoding="utf-8")
+        )
+        versions[f"packages/{pkg}"] = data["project"]["version"]
+
+    website = json.loads(
+        (REPO_ROOT / "packages" / "website" / "package.json").read_text(encoding="utf-8")
+    )
+    versions["packages/website"] = website["version"]
+
+    distinct = set(versions.values())
+    assert len(distinct) == 1, "packages declare different versions:\n  " + "\n  ".join(
+        f"{name}: {version}" for name, version in sorted(versions.items())
+    )
+
+
 def test_ci_delegates_to_the_verify_script() -> None:
     """CI must not grow its own list of checks alongside scripts/verify.sh.
 

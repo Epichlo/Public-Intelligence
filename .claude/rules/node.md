@@ -13,7 +13,7 @@ inference.
 - **The distributed inference path is not implemented.** `runtime.py` never assigns
   `self.inference_backend` anything but `EchoBackend`. The working path is the
   non-split one that proxies to Ollama. Do not describe split inference as working,
-  and do not wire `LocalBoundaryEngine` into anything — it is a 155-word vocabulary
+  and do not wire `LocalBoundaryEngine` into anything — it is a 120-token vocabulary
   over seeded random matrices.
 - **Hardware figures are measured, never assumed.** Registration once hardcoded
   16 GB of VRAM for every node, so matchmaking filtered against fiction. Every probe

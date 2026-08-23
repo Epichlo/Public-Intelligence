@@ -39,6 +39,15 @@ elif [[ -e "${PI_DIR}" ]]; then
     die "${PI_DIR} exists but is not a git checkout. Move it, or set PI_DIR to another path."
 else
     log "Cloning ${PI_REPO} (${PI_BRANCH}) into ${PI_DIR}..."
+    # A bare local path would take git's hardlink fast path: `--depth 1` is
+    # silently ignored (full history on a one-liner that asked to be shallow)
+    # and, on git 2.54 / macOS, the checkout raced its own object maintenance
+    # and died with "unable to read tree". `file://` forces the real transport
+    # -- exactly what git's own warning prescribes -- and is what the gate
+    # exercises, so the remote path stays byte-identical in behaviour.
+    if [[ -d "${PI_REPO}" ]]; then
+        PI_REPO="file://${PI_REPO}"
+    fi
     git clone --depth 1 --branch "${PI_BRANCH}" "${PI_REPO}" "${PI_DIR}"
 fi
 

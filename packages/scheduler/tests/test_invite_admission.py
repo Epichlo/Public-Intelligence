@@ -12,8 +12,11 @@ is not "the check is missing", it is "the check is off and nobody knows".
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 
 from scheduler.core.config import Settings, get_settings
 from scheduler.core.invites import InviteRegistry, generate_code, hash_code
@@ -116,6 +119,49 @@ async def test_a_single_use_code_admits_exactly_one_node(client: TestClient) -> 
 
     assert _register(client, "node-1", code=code).status_code == 201
     assert _register(client, "node-2", code=code).status_code == 403
+
+
+async def test_two_concurrent_registrations_cannot_share_one_code(
+    client: TestClient,
+) -> None:
+    """Single-use must hold under concurrency, not just sequentially.
+
+    Admission checked the code before registration and redemption happened after
+    it, with two awaits in between and the redeem result discarded. Two
+    registrations racing the same code both saw a usable invite, both registered
+    their own node, and one single-use code admitted two hosts. Checking and
+    consuming have to be one atomic step, with a refund if admission then fails.
+    """
+    code, invite = await client.app.state.invites.issue(label="alice")
+    headers = {"X-Network-Auth-Token": TOKEN, "X-Invite-Code": code}
+
+    # Every await on the registration path completes without ever suspending --
+    # the registry is in memory -- so two gathered requests would otherwise run
+    # strictly one-after-another and the race could not reproduce. Yielding once
+    # inside registration puts one request mid-admission while the other is
+    # checked, which is exactly the interleaving the defect lives in.
+    registry = client.app.state.registry
+    original_register = registry.register
+
+    async def yielding_register(node: Node) -> None:
+        await asyncio.sleep(0)
+        await original_register(node)
+
+    registry.register = yielding_register  # type: ignore[method-assign]
+
+    async with AsyncClient(
+        transport=ASGITransport(app=client.app), base_url="http://test"
+    ) as racing:
+        first, second = await asyncio.gather(
+            racing.post("/nodes/register", json=_node("node-race-a"), headers=headers),
+            racing.post("/nodes/register", json=_node("node-race-b"), headers=headers),
+        )
+
+    statuses = sorted([first.status_code, second.status_code])
+    assert statuses == [201, 403], (
+        f"a single-use code admitted {statuses.count(201)} concurrent registrations"
+    )
+    assert invite.uses == 1, f"the winner's use must be the only one recorded (got {invite.uses})"
 
 
 async def test_a_batch_code_admits_exactly_max_uses(client: TestClient) -> None:
