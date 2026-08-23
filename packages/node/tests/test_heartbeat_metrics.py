@@ -143,16 +143,20 @@ async def test_metric_collection_degrades_instead_of_raising() -> None:
 
 
 @pytest.mark.anyio
-async def test_runtime_heartbeat_reports_measured_values_and_real_queue_depth() -> None:
-    """The runtime sends what it measured, including actual pending work."""
+async def test_runtime_heartbeat_reports_measured_values() -> None:
+    """The runtime sends what it measured.
+
+    `queue_length` stays in the wire contract -- the Scheduler scores on it --
+    but the node has no internal work queue to measure. Its only producer was
+    the deleted task-queue worker loop, which nothing ever fed, so reporting 0
+    says exactly what every live node has always reported.
+    """
     runtime = Runtime(
         settings=Settings(node_id="test-node", hostname="localhost", region="local"),
         scheduler_client=AsyncMock(),
         ollama_client=AsyncMock(),
         zenoh_client=MagicMock(),
     )
-    runtime.task_queue.put_nowait({"task": "one"})
-    runtime.task_queue.put_nowait({"task": "two"})
 
     fake = MagicMock(
         cpu_utilization=73.5,
@@ -168,7 +172,7 @@ async def test_runtime_heartbeat_reports_measured_values_and_real_queue_depth() 
     assert metrics["ram_available_gb"] == 11.25
     assert metrics["gpu_utilization"] == 41.0
     assert metrics["vram_available_gb"] == 6.75
-    assert metrics["queue_length"] == 2
+    assert metrics["queue_length"] == 0
 
 
 @pytest.mark.anyio

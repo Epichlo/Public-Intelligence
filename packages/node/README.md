@@ -16,21 +16,23 @@ Version 1 establishes the complete lifecycle of a compute node. The distributed
 
 ## Which path actually serves a request
 
-Worth stating precisely, because this file got it wrong until 2026-08-21. It used to say
-the Ollama proxy was "the only backend `runtime.py` assigns". It is not a `runtime.py`
-backend at all, and there are two separate Ollama integrations:
+Worth stating precisely, because this file got it wrong until 2026-08-21, and the
+wrong version hid a whole dead execution path. There were two separate Ollama
+integrations:
 
 - **The live path** is the FastAPI route `src/node/api/inference.py`, which calls
   `clients/ollama.py` (`OllamaClient`). This is what serves every real request.
-- **The `backends/` abstraction is dead code in production.** `runtime.py:282` assigns
-  `self.inference_backend` an `EchoBackend` and nothing else, ever; `OllamaBackend` is
-  never constructed outside a test file. `Runtime._worker_loop` consumes a `task_queue`
-  that **nothing in `src` ever enqueues onto** — only tests do, including the one named
-  `test_end_to_end_pipeline`, which is an end-to-end test of a path production never
-  takes.
+- **The `backends/` abstraction was dead code in production, and is now deleted.**
+  It had one implementation and zero production callers: `Runtime._worker_loop`
+  consumed a `task_queue` that **nothing in `src` ever enqueued onto** -- only tests
+  did, including the one named `test_end_to_end_pipeline`, which was an end-to-end
+  test of a path production never took.
 
-So `backends/base.py` is an interface with one implementation and zero production
-callers. It was written to make a second backend survivable and never got one.
+On 2026-08-23 the whole path was removed rather than left implying a second backend
+was coming: the worker loop, the queue plumbing, `backends/` (base, mock, ollama)
+and `storage/` (the artifact store nothing read back). `tests/test_worker_loop_is_gone.py`
+is the ratchet; the heartbeat's `queue_length` field survives as wire contract,
+reporting the 0 it always measured.
 
 ---
 
@@ -123,8 +125,10 @@ There is no future work — the project is archived. What did not get done:
   the differentiator the whole project rested on.
 - **Split / distributed inference.** Cut from v1; the node runs whole models, never
   shards. The gateway answers `501` rather than fabricating a completion.
-- **A second inference backend.** `backends/base.py` exists to make one survivable and
-  never got one, so the abstraction is untested against reality.
+- **A second inference backend.** `backends/base.py` existed to make one survivable
+  and never got one, so the abstraction was untested against reality; it was deleted
+  with the dead worker loop it served (2026-08-23). A future second backend starts
+  from the live path, not from a resurrected abstraction.
 
 Automatic hardware discovery *did* ship: the installer probes CPU, RAM and GPU, and
 registration advertises the measured figures rather than a hardcoded guess.

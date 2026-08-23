@@ -119,9 +119,9 @@ async def test_degraded_start_still_runs_everything_local(
 ) -> None:
     """Nothing after registration depends on the Scheduler existing.
 
-    The Zenoh session, the mesh inference server, and the worker loop are what let
-    the node be useful at all -- and joining the mesh is how the Scheduler observes
-    this node as reachable once registration does land.
+    The Zenoh session, the mesh inference server, and the background loops are
+    what let the node be useful at all -- and joining the mesh is how the
+    Scheduler observes this node as reachable once registration does land.
     """
     zenoh = MagicMock()
     runtime = Runtime(
@@ -137,7 +137,6 @@ async def test_degraded_start_still_runs_everything_local(
 
             zenoh.start.assert_called_once()
             assert runtime.mesh_inference_server is not None
-            assert runtime.worker_task is not None
             assert runtime.heartbeat_task is not None
             assert runtime.model_refresh_task is not None
         finally:

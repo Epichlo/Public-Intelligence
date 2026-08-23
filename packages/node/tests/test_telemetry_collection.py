@@ -1,12 +1,17 @@
-"""Unit tests for resource telemetry collection and Zenoh heartbeat loops."""
+"""Unit tests for resource telemetry collection.
 
-from unittest.mock import MagicMock, patch
+The `ZenohTelemetryHeartbeat` that used to share this file is gone: it
+published plaintext JSON on the telemetry topic, which the Scheduler's
+authenticated-mesh-ingress gate silently drops -- a publisher whose every
+frame vanished without an error, and whose only observable effect would
+have been nodes aging out of the registry. Production telemetry goes
+through `node.core.telemetry.TelemetryEmitter`, which seals envelopes.
+tests/test_unsigned_telemetry_heartbeat_is_gone.py pins the removal.
+"""
 
 import pytest
 
-from node.core.configuration import Settings
 from node.telemetry.collector import TelemetryCollector
-from node.telemetry.heartbeat import ZenohTelemetryHeartbeat
 
 
 @pytest.mark.anyio
@@ -34,54 +39,3 @@ async def test_telemetry_collector_types() -> None:
     assert metrics["cpu_cores"] >= 1
     assert metrics["ram_total_bytes"] > 0
     assert 0.0 <= metrics["ram_utilization_pct"] <= 100.0
-
-
-@pytest.mark.anyio
-async def test_zenoh_telemetry_heartbeat_uri() -> None:
-    """Verify that the telemetry channel URI matches specification."""
-    settings = Settings(
-        node_id="test-node-555",
-        hostname="localhost",
-        region="us-east",
-    )
-    heartbeat = ZenohTelemetryHeartbeat(settings=settings)
-    assert heartbeat._key_expr == "public-intelligence/net/nodes/test-node-555/telemetry"
-
-
-@pytest.mark.anyio
-async def test_zenoh_telemetry_heartbeat_lifecycle() -> None:
-    """Verify start, stop, and deadman offline packet publish behaviors."""
-    settings = Settings(
-        node_id="test-node-555",
-        hostname="localhost",
-        region="us-east",
-    )
-
-    mock_pub = MagicMock()
-    mock_pub.undeclare = MagicMock()
-    mock_pub.put = MagicMock()
-
-    mock_session = MagicMock()
-    mock_session.declare_publisher.return_value = mock_pub
-    mock_session.close = MagicMock()
-
-    with patch("zenoh.open", return_value=mock_session):
-        heartbeat = ZenohTelemetryHeartbeat(settings=settings)
-        await heartbeat.start()
-
-        assert heartbeat.is_running is True
-        assert heartbeat.session == mock_session
-        assert heartbeat.publisher == mock_pub
-
-        # Stop triggers graceful exit frame
-        await heartbeat.stop()
-
-        assert heartbeat.is_running is False
-        assert heartbeat.session is None
-
-        # Assert correct deadman switch payload
-        mock_pub.put.assert_called_with(
-            '{"node_id": "test-node-555", "status": "OFFLINE", '
-            '"cpu_utilization": 0.0, "ram_utilization_pct": 0.0, '
-            '"gpu_utilization": 0.0}'
-        )
