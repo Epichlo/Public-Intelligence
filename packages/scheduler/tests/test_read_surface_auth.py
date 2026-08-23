@@ -40,6 +40,7 @@ DELIBERATELY_PUBLIC = {
 GUARDED_READS = [
     "/nodes",
     "/nodes/node-1",
+    "/nodes/canary",
     "/nodes/telemetry",
     "/nodes/node-1/telemetry",
     "/status",

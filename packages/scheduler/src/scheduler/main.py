@@ -248,6 +248,12 @@ def create_app(
 
     app.include_router(health_router)
     app.include_router(telemetry_router)
+    # The usage router owns literal node-scoped routes (`GET /nodes/canary`,
+    # `GET /nodes/{node_id}/usage`). Starlette matches in registration order, so
+    # it must be included BEFORE nodes_router or the dynamic
+    # `GET /nodes/{node_id}` swallows "canary" as a node id and answers a
+    # permanent 404. Same reason telemetry_router sits above it.
+    app.include_router(usage_router)
     app.include_router(nodes_router)
     app.include_router(heartbeat_router)
     app.include_router(schedule_router)
@@ -255,7 +261,6 @@ def create_app(
     app.include_router(openai_router)
     app.include_router(batch_router)
     app.include_router(credentials_router)
-    app.include_router(usage_router)
 
     return app
 

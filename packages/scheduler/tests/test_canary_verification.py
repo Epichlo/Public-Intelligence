@@ -26,6 +26,8 @@ from scheduler.core.canary import (
     looks_like_an_echo,
     score,
 )
+from scheduler.core.config import Settings
+from scheduler.main import create_app
 
 CAPITAL = CANARIES[0]
 
@@ -377,3 +379,45 @@ async def test_the_scheduler_without_a_verifier_keeps_the_old_behaviour() -> Non
     )
 
     assert (await Scheduler(registry).select_node("llama3")).node_id == "n1"
+
+
+# --- the operator surface ----------------------------------------------------
+
+
+def test_get_nodes_canary_answers_with_the_real_payload() -> None:
+    """GET /nodes/canary must reach the canary route, not a 404.
+
+    The dynamic `GET /nodes/{node_id}` was registered before this literal route,
+    so Starlette resolved "canary" as a node id and the endpoint -- an operator's
+    only view of quarantine besides log lines -- was permanently unreachable.
+    """
+    from fastapi.testclient import TestClient
+
+    from scheduler.core.config import get_settings
+
+    token = "network-token-for-tests"
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: Settings(network_auth_token=token)
+    client = TestClient(app)
+
+    refused = client.get("/nodes/canary")
+    allowed = client.get("/nodes/canary", headers={"X-Network-Auth-Token": token})
+
+    assert refused.status_code == 401
+    assert allowed.status_code == 200
+    body = allowed.json()
+    assert body["enabled"] is True
+    assert body["quarantined"] == []
+    assert body["nodes"] == {}
+
+    # And the payload reflects real verifier state once it exists.
+    verifier: CanaryVerifier = app.state.canary
+    verifier.record("liar", CAPITAL, "token_556")
+    verifier.record("liar", CAPITAL, "token_556")
+    verifier.record("liar", CAPITAL, "token_556")
+
+    quarantined = client.get("/nodes/canary", headers={"X-Network-Auth-Token": token})
+    body = quarantined.json()
+    assert body["quarantined"] == ["liar"]
+    assert body["nodes"]["liar"]["quarantined"] is True
+    assert "proves" in body
