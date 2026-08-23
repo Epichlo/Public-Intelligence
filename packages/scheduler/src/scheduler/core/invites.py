@@ -36,6 +36,7 @@ impossible to be in unknowingly.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import secrets
@@ -92,11 +93,16 @@ class InviteCode(BaseModel):
 
 
 class InviteRegistry:
-    """Issue, verify, redeem and revoke invite codes."""
+    """Issue, verify, reserve and revoke invite codes."""
 
     def __init__(self, store: SchedulerStore | None = None) -> None:
         self._invites: dict[str, InviteCode] = {}
         self._store = store
+        # Serialises check-and-consume (`reserve`) and give-back (`refund`). Each
+        # has awaits inside (the store write), so without the lock two concurrent
+        # registrations could interleave between reading a code's state and
+        # updating it -- which is precisely the hole reserve exists to close.
+        self._lock = asyncio.Lock()
 
     async def load(self) -> None:
         """Refill from the store. Call once, at startup."""
@@ -163,26 +169,56 @@ class InviteRegistry:
             return None
         return invite
 
-    async def redeem(self, code: str, node_id: str) -> InviteCode | None:
-        """Consume one use of `code` for `node_id`. None when it is not usable.
+    async def reserve(self, code: str | None, node_id: str) -> InviteCode | None:
+        """Atomically check AND consume one use of `code` for `node_id`.
 
-        Persisted immediately: a crash between admitting a node and recording the
-        use would let a single-use code admit a second one.
+        This replaces the old verify-then-redeem split, and the split was the
+        bug: admission verified the code before registration, redemption happened
+        after it -- two awaits apart, with the redeem result discarded -- so two
+        concurrent registrations could both pass admission on one single-use code.
+        Reserve is one critical section under `self._lock`: a use is spent the
+        moment it is checked, so of two racing registrations exactly one sees a
+        usable invite. `refund` gives the use back if admission then fails, which
+        keeps the property ROADMAP 1.6 needs -- a node re-registering after a 409
+        does not burn its operator's invite.
+
+        Persisted inside the critical section, as redemption was: a crash after
+        admitting a node must not leave the use unrecorded for a second one.
+
+        Returns the invite whose use was reserved, or None when the code is not
+        usable (unknown, revoked, or spent). The return value is what `refund`
+        refunds against -- pass it through, do not re-verify.
         """
-        invite = self.verify(code)
-        if invite is None:
-            return None
-        invite.uses += 1
-        if self._store is not None:
-            await self._store.save_invite(invite)
+        async with self._lock:
+            invite = self.verify(code)
+            if invite is None:
+                return None
+            invite.uses += 1
+            if self._store is not None:
+                await self._store.save_invite(invite)
         logger.info(
-            "invite_redeemed: node_id=%s label=%s uses=%d/%d",
+            "invite_reserved: node_id=%s label=%s uses=%d/%d",
             node_id,
             invite.label or "(none)",
             invite.uses,
             invite.max_uses,
         )
         return invite
+
+    async def refund(self, invite: InviteCode, node_id: str) -> None:
+        """Give back the use `reserve` consumed, because admission then failed."""
+        async with self._lock:
+            if invite.uses > 0:
+                invite.uses -= 1
+            if self._store is not None:
+                await self._store.save_invite(invite)
+        logger.info(
+            "invite_refunded: node_id=%s label=%s uses=%d/%d",
+            node_id,
+            invite.label or "(none)",
+            invite.uses,
+            invite.max_uses,
+        )
 
     async def revoke(self, code: str) -> bool:
         """Stop future registrations under `code`. Already-admitted nodes stay.

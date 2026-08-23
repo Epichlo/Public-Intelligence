@@ -125,6 +125,36 @@ def test_ingress_submit_invalid_auth(
     assert "Missing 'tenant_id'" in response.json()["detail"]
 
 
+def test_ingress_submit_rejects_a_token_without_exp(
+    key_pair: tuple[rsa.RSAPrivateKey, str],
+) -> None:
+    """A JWT with no `exp` claim must be refused: it would never expire.
+
+    JWTs are stateless and there is no revocation -- the ONLY bound on an issued
+    credential is its `exp` claim (see `credential_max_ttl_hours` in config). A
+    token minted without one is valid until the signing key is rotated, so
+    verification has to REQUIRE the claim rather than merely honour it when it
+    happens to be present. `scripts/mint_token.py` always sets `exp`; this holds
+    the hand-minted case to the same rule.
+    """
+    private_key, _ = key_pair
+    no_exp_token = jwt.encode(
+        {"sub": "client-user", "tenant_id": "tenant-A", "iat": datetime.now(UTC)},
+        private_key,
+        algorithm="RS256",
+    )
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/tasks/submit",
+        json={"task_id": "task-1", "action": "noop", "data": {}},
+        headers={"Authorization": f"Bearer {no_exp_token}"},
+    )
+
+    assert response.status_code == 401
+    assert "exp" in response.json()["detail"]
+
+
 def test_ingress_submit_authorized_handoff(
     key_pair: tuple[rsa.RSAPrivateKey, str], setup_test_app: MagicMock
 ) -> None:

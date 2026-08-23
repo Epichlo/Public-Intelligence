@@ -90,7 +90,15 @@ class TokenBucketLimiter:
             True if a token was successfully acquired, False otherwise.
         """
         async with self.lock:
-            now = time.time()
+            # `monotonic`, not `time`: only the DIFFERENCE between two readings
+            # matters here, and the wall clock is the wrong instrument for one.
+            # An NTP correction or a resume-from-sleep steps `time.time()` in
+            # both directions; a step backwards made `elapsed` negative and the
+            # tenant's bucket SHRANK by the size of the jump -- capacity they
+            # had earned, taken back by a clock correction. Same reasoning as
+            # the request-metering clock in `api/openai.py`, and pinned by
+            # tests/test_rate_limiter_clock.py.
+            now = time.monotonic()
 
             self._acquisitions_since_sweep += 1
             if self._acquisitions_since_sweep >= _SWEEP_INTERVAL_ACQUISITIONS:

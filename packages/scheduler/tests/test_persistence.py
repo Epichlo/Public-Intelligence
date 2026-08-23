@@ -18,7 +18,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from scheduler.core.config import get_settings
+from scheduler.core.config import Settings, get_settings
 from scheduler.core.credit_ledger import CreditLedger
 from scheduler.main import build_store, create_app, lifespan
 from scheduler.models.heartbeat import Heartbeat
@@ -565,9 +565,14 @@ def test_a_node_registered_over_http_is_there_after_a_restart(db: Path) -> None:
     """End to end through the API, which is where the token ordering actually lives.
 
     `TestClient` as a context manager is what runs the lifespan, and so the load.
+    The fleet token is configured explicitly: an unconfigured token refuses
+    everyone, and this test exercises persistence, not admission.
     """
     with patch("scheduler.main.ZenohRouter"):
         first_app = create_app(store=SQLiteStore(db))
+        first_app.dependency_overrides[get_settings] = lambda: Settings(
+            network_auth_token="tok-from-the-wire"
+        )
         with TestClient(first_app) as client:
             response = client.post(
                 "/nodes/register",
@@ -577,8 +582,13 @@ def test_a_node_registered_over_http_is_there_after_a_restart(db: Path) -> None:
             assert response.status_code == 201
 
         second_app = create_app(store=SQLiteStore(db))
+        second_app.dependency_overrides[get_settings] = lambda: Settings(
+            network_auth_token="tok-from-the-wire"
+        )
         with TestClient(second_app) as client:
-            listed = client.get(f"/nodes/{'node-1'}")
+            listed = client.get(
+                f"/nodes/{'node-1'}", headers={"X-Network-Auth-Token": "tok-from-the-wire"}
+            )
             assert listed.status_code == 200
             assert listed.json()["gpu"]["vram_total_gb"] == 24.0
             # Restored, but not claimed to be on the mesh -- that session is gone.
