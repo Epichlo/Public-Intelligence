@@ -1,15 +1,22 @@
 # A local two-node network: one Scheduler, two Nodes, on one bridge.
 #
+#   .venv/bin/python scripts/mint_token.py --generate-keypair
+#   export SCHEDULER_JWT_PUBLIC_KEY="$(cat .secrets/jwt_public_key.pem)"
 #   docker compose -f docker-compose.test.yml up --build
 #   curl -H "X-Network-Auth-Token: local-dev-token" http://localhost:8000/nodes
 #
-# THIS FILE HAS STILL NEVER BEEN RUN. Docker was not available in the environment
-# that last edited it, so everything below is reviewed and not executed. ROADMAP 1.5
-# stays PARTIAL until someone runs it -- and the claim it would substantiate (a node
-# on a separate machine serving a request) is the load-bearing one for this whole
-# project. See docs/PREMISES.md P2.
+# The control-plane path above works with no further setup. The GATEWAY path needs a
+# real credential by design (ROADMAP C4): an unconfigured Scheduler refuses every
+# request rather than fall back to a key of unknown provenance, so the exported
+# SCHEDULER_JWT_PUBLIC_KEY is not optional decoration -- without it,
+# /v1/chat/completions can only ever answer 401. Mint caller tokens with
+# scripts/mint_token.py once the stack is up.
 #
-# Faults found in it so far, none of which running it was needed to find:
+# CI runs this stack end to end (.github/workflows/ci.yml::compose-e2e): both nodes
+# register, an uncredentialed request is refused, and one credentialed request
+# crosses gateway -> scheduler -> mesh -> node and comes back with generated text.
+# Before that job existed this file had never been executed anywhere. Faults found
+# before it could run, none of which needed a running stack to find:
 #
 #   1. `NODE_ID` -- the Node's Settings read `NODE_NODE_ID` (env_prefix `NODE_`
 #      plus field `node_id`), so both workers silently kept the default id and the
@@ -21,23 +28,53 @@
 #      a SCHEDULER field and the Node has no such setting, so it was silently
 #      ignored. A node dials out and holds the session (ROADMAP 1.1); it does not
 #      listen, so the lines were removed rather than renamed.
-#   4. No gateway signing key. Since ROADMAP C4 an unconfigured Scheduler refuses
-#      every request rather than falling back to a key of unknown provenance, so
-#      this file could only have demonstrated 401s.
+#   4. No gateway signing key (see above).
+#   5. Both images pip-installed from their own package directory as the build
+#      context while hard-depending on `public-intelligence-shared`, which exists
+#      only at `packages/shared` and has no presence on any index. Neither image
+#      could ever have built. The builds below use the REPO ROOT as their context
+#      and install shared first -- the order install.sh and CI both already knew.
+#   6. The Scheduler's healthcheck ran `curl`, which is not present in
+#      python:3.12-slim, so the service could never report healthy --
+#      `depends_on: condition: service_healthy` would have deadlocked the nodes
+#      forever. It now probes with the stdlib, which the image does contain.
 #
-# 1 and 2 were fixed by reading. 3 and 4 were found by
-# `tests/test_compose_env_matches_settings.py`, which checks every variable here
-# against the fields the services actually read -- the class of defect that made 1
-# invisible in the first place.
-#
-# The token below is a throwaway for local use. It is not a secret and must not be
-# reused anywhere reachable.
+# The tokens below are throwaways for local use. They are not secrets and must not
+# be reused anywhere reachable.
+
+x-service-build: &service-build
+  context: .
+  # Escaped $$: compose must pass ${SERVICE_DIR} through to the build, not expand it.
+  dockerfile_inline: |
+    FROM python:3.12-slim
+    ARG SERVICE_DIR
+    RUN apt-get update \
+        && apt-get install -y --no-install-recommends build-essential \
+        && rm -rf /var/lib/apt/lists/*
+    COPY packages/shared /tmp/build/packages/shared
+    COPY $${SERVICE_DIR} /tmp/build/service
+    # shared FIRST: public-intelligence-shared is a local-path dependency with no
+    # PyPI presence, so installing the service first makes pip look for it on the
+    # index, find nothing, and fail -- the exact failure C8 fixed for install.sh.
+    RUN python -m venv /opt/venv \
+        && /opt/venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel \
+        && /opt/venv/bin/pip install --no-cache-dir /tmp/build/packages/shared /tmp/build/service \
+        && rm -rf /tmp/build
+    # Both dollar signs below are doubled on purpose: compose interpolates this
+    # whole block -- comments included -- before Docker ever sees it. SERVICE_DIR
+    # resolves from ARG at build time, and PATH must be the image's own.
+    ENV PATH="/opt/venv/bin:$$PATH" \
+        PYTHONUNBUFFERED=1
+    RUN groupadd --system app && useradd --system --gid app --create-home app
+    USER app
+    WORKDIR /home/app
 
 services:
   scheduler:
     build:
-      context: ./packages/scheduler
-      dockerfile: Dockerfile
+      <<: *service-build
+      args:
+        SERVICE_DIR: packages/scheduler
     container_name: pi-scheduler-test
     ports:
       - "8000:8000"
@@ -53,27 +90,26 @@ services:
       # here used to say both services had to share TELEMETRY_SECRET_KEY; that
       # setting no longer exists.
       #
-      # Required since ROADMAP C4: with no public key the gateway refuses every
-      # request, deliberately. Generate a pair and export the public half before
-      # bringing this up, or /v1/chat/completions will only ever answer 401:
-      #
-      #   .venv/bin/python scripts/mint_token.py --generate-keypair
-      #   export SCHEDULER_JWT_PUBLIC_KEY="$(cat .secrets/jwt_public_key.pem)"
-      #
-      # Mint a caller token with `scripts/mint_token.py` once it is up.
+      # Required for anything beyond registration: export the PUBLIC half of a
+      # minted keypair before `up` (see header), or the gateway refuses every
+      # request -- deliberately, since ROADMAP C4.
       - SCHEDULER_JWT_PUBLIC_KEY=${SCHEDULER_JWT_PUBLIC_KEY:-}
     networks:
       - pi-test-net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      # python, not curl: the runtime image has no curl, so a curl probe never
+      # succeeds -- see fault 6 in the header.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 12
+      start_period: 10s
 
   node-worker-1:
     build:
-      context: ./packages/node
-      dockerfile: Dockerfile
+      <<: *service-build
+      args:
+        SERVICE_DIR: packages/node
     container_name: pi-node-worker-1
     ports:
       - "8080:8080"
@@ -83,6 +119,10 @@ services:
       - NODE_HOST=0.0.0.0
       - NODE_PORT=8080
       - NODE_SCHEDULER_URL=http://scheduler:8000
+      # Ollama is an external HTTP dependency of the node, wherever it runs. By
+      # default this points at a real Ollama on the docker HOST (host-gateway maps
+      # the name on Linux too). The `fake-ollama` profile swaps in the stand-in.
+      - NODE_OLLAMA_HOST=${NODE_OLLAMA_HOST:-http://host.docker.internal:11434}
       # Two secrets, and the two workers differ in the first one (decision D9).
       # NODE_FLEET_TOKEN is the shared admission secret and matches the Scheduler's
       # SCHEDULER_NETWORK_AUTH_TOKEN; NODE_NETWORK_AUTH_TOKEN is this container's
@@ -93,6 +133,8 @@ services:
       - NODE_NETWORK_AUTH_TOKEN=worker-1-own-credential
       - NODE_FLEET_TOKEN=local-dev-token
       - NODE_BOOTSTRAP_ROUTERS=["tcp/scheduler:7447"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       scheduler:
         condition: service_healthy
@@ -101,8 +143,9 @@ services:
 
   node-worker-2:
     build:
-      context: ./packages/node
-      dockerfile: Dockerfile
+      <<: *service-build
+      args:
+        SERVICE_DIR: packages/node
     container_name: pi-node-worker-2
     ports:
       - "8081:8080"
@@ -111,13 +154,35 @@ services:
       - NODE_HOST=0.0.0.0
       - NODE_PORT=8080
       - NODE_SCHEDULER_URL=http://scheduler:8000
+      - NODE_OLLAMA_HOST=${NODE_OLLAMA_HOST:-http://host.docker.internal:11434}
       # Deliberately NOT worker-1's credential. See the comment above.
       - NODE_NETWORK_AUTH_TOKEN=worker-2-own-credential
       - NODE_FLEET_TOKEN=local-dev-token
       - NODE_BOOTSTRAP_ROUTERS=["tcp/scheduler:7447"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       scheduler:
         condition: service_healthy
+    networks:
+      - pi-test-net
+
+  # Optional stand-in for a model server, for environments that have neither Ollama
+  # nor GPUs -- CI being exactly that. It speaks the three endpoints the node uses
+  # (/api/tags, /api/show, /api/generate) and serves one deterministic model. Start
+  # it with `--profile fake-ollama` and set NODE_OLLAMA_HOST=http://ollama-spoof:11434.
+  # Everything between the gateway and this stand-in is the real system; the
+  # stand-in exists because "the node's model daemon" is out of scope for a
+  # container topology, not because any part of the stack under test is fake.
+  ollama-spoof:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM python:3.12-slim
+        COPY scripts/spoof_ollama.py /app/spoof_ollama.py
+        CMD ["python", "/app/spoof_ollama.py", "--host", "0.0.0.0", "--port", "11434"]
+    profiles: ["fake-ollama"]
+    container_name: pi-fake-ollama
     networks:
       - pi-test-net
 
