@@ -1,7 +1,12 @@
-"""Integration tests for the edge ingress gateway and rate-limiting."""
+"""Integration tests for the edge ingress gateway and rate-limiting.
+
+The submit endpoint refuses honestly with 501 Not Implemented -- there is no
+execution machinery behind it, and it used to answer "scheduled" for work that
+would never run. Authentication and rate limiting are real, and those are what
+these tests pin.
+"""
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
 
 import jwt
 import pytest
@@ -29,40 +34,18 @@ def key_pair() -> tuple[rsa.RSAPrivateKey, str]:
 
 
 @pytest.fixture(autouse=True)
-def setup_test_app(key_pair: tuple[rsa.RSAPrivateKey, str]) -> MagicMock:
-    """Configure the FastAPI app state with test keys and mock consensus engine."""
+def setup_test_app(key_pair: tuple[rsa.RSAPrivateKey, str]) -> None:
+    """Configure the FastAPI app state with test keys and a fresh rate limiter."""
     _, public_key_pem = key_pair
     app.state.jwt_public_key = public_key_pem
 
     # Reset rate limiter
     app.state.rate_limiter = TokenBucketLimiter(capacity=5, refill_rate=0.5)
 
-    # Set up mock consensus engine
-    mock_consensus = MagicMock()
-    mock_consensus.is_active.return_value = True
-    mock_consensus.propose = AsyncMock()
-    app.state.registry.consensus_engine = mock_consensus
-
-    # Reset registry and add mock node
+    # Reset registry state the gateway could observe.
     app.state.registry._nodes.clear()
     app.state.registry._heartbeats.clear()
     app.state.registry._telemetry.clear()
-
-    from scheduler.models.node import GPUInfo, Node
-
-    mock_node = Node(
-        node_id="test-node",
-        hostname="localhost",
-        ip_address="127.0.0.1",
-        region="us-east",
-        gpu=GPUInfo(name="RTX 4090", vram_total_gb=24.0, vram_available_gb=20.0),
-        cpu_cores=8,
-        ram_total_gb=32.0,
-        available_models=["llama3"],
-    )
-    app.state.registry._nodes["test-node"] = mock_node
-
-    return mock_consensus
 
 
 def generate_token(
@@ -156,19 +139,18 @@ def test_ingress_submit_rejects_a_token_without_exp(
 
 
 def test_ingress_submit_authorized_handoff(
-    key_pair: tuple[rsa.RSAPrivateKey, str], setup_test_app: MagicMock
+    key_pair: tuple[rsa.RSAPrivateKey, str], setup_test_app: None
 ) -> None:
-    """An authorised request passes JWT verification and is scheduled.
+    """An authorised request is refused honestly with 501, not faked.
 
-    It used to also assert the task was proposed to a Raft consensus engine. That
-    path is gone (ROADMAP C2): the engine's only inbound channel was an
-    unauthenticated wildcard Zenoh subscriber that could evict and inject nodes, and
-    D5 had already decided the deployment is a single instance. What the endpoint
-    owes its caller -- authentication, scheduling, and an honest response body -- is
-    unchanged and is what is asserted now.
+    This endpoint used to answer `{"status": "scheduled", "node_id", "tx_hash"}`
+    after selecting a node -- and nothing ever executed the task: no store, no
+    queue, no consumer. A placeholder answered as success is the N1 failure, so
+    the endpoint now refuses with 501 Not Implemented and a body that makes no
+    claim about work that will not happen. The rewrite of the old success-shape
+    assertions is deliberate: the old shape was the defect.
     """
     private_key, _ = key_pair
-    mock_consensus = setup_test_app
     token = generate_token(private_key, tenant_id="tenant-A")
 
     client = TestClient(app)
@@ -184,21 +166,29 @@ def test_ingress_submit_authorized_handoff(
         headers={"Authorization": f"Bearer {token}"},
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 501
     res_json = response.json()
-    assert res_json["status"] == "scheduled"
-    assert res_json["task_id"] == "task-abc"
-    assert res_json["node_id"] == "test-node"
-    assert "tx_hash" in res_json
+    # The body makes no scheduling claims: nothing was scheduled, so nothing may
+    # say it was.
+    assert "scheduled" not in res_json
+    assert "tx_hash" not in res_json
+    assert "node_id" not in res_json
+    assert "not implemented" in res_json["detail"]
 
-    # And nothing was proposed anywhere, because there is nowhere to propose to.
-    assert mock_consensus.propose.call_count == 0
+    # And the registry was not touched: no node was "selected" for a task that
+    # will not run.
+    assert not app.state.registry._nodes
 
 
 def test_ingress_token_bucket_rate_limiter(
     key_pair: tuple[rsa.RSAPrivateKey, str],
 ) -> None:
-    """Verify rate-limiting triggers HTTP 429 when burst capacity is exceeded."""
+    """Verify rate-limiting triggers HTTP 429 when burst capacity is exceeded.
+
+    Allowed requests now answer 501 (the honest refusal) rather than 200; the
+    limiter still counts each one, so exhaustion and tenant isolation behave
+    exactly as before.
+    """
     private_key, _ = key_pair
     client = TestClient(app)
     token_a = generate_token(private_key, tenant_id="tenant-A")
@@ -206,14 +196,15 @@ def test_ingress_token_bucket_rate_limiter(
 
     task_payload = {"task_id": "task-1", "action": "test_action", "data": {}}
 
-    # Flood tenant-A (burst capacity = 5)
+    # Flood tenant-A (burst capacity = 5). Each allowed request is refused with
+    # 501 -- refused is not unaccounted.
     for i in range(5):
         response = client.post(
             "/api/v1/tasks/submit",
             json=task_payload,
             headers={"Authorization": f"Bearer {token_a}"},
         )
-        assert response.status_code == 200, f"Request {i + 1} failed"
+        assert response.status_code == 501, f"Request {i + 1} was not honestly refused"
 
     # 6th request from tenant-A should trigger rate limit (429)
     response_429 = client.post(
@@ -230,4 +221,4 @@ def test_ingress_token_bucket_rate_limiter(
         json=task_payload,
         headers={"Authorization": f"Bearer {token_b}"},
     )
-    assert response_b.status_code == 200
+    assert response_b.status_code == 501
