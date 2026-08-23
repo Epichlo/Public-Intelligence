@@ -75,23 +75,6 @@ class Runtime:
         self.mesh_inference_server: ZenohInferenceServer | None = None
         self.is_running = False
 
-        # Was `packages/node/src/shared/`, a top-level `shared` package installed
-        # into site-packages by this distribution -- so any other project shipping a
-        # module by that name collided with it. It reached here through a
-        # try/except ladder falling back to `src.shared...`, which only ever
-        # resolved when pytest was invoked from the package directory. Moved under
-        # `node.storage` so there is one import path that always works.
-        #
-        # ROADMAP C8 describes this module as "an orphan third copy ... imported by
-        # nothing". That was wrong: it is live on the task-queue path below, where
-        # every generated completion is written to disk.
-        from node.backends.base import InferenceBackend
-        from node.storage.local import LocalDiskArtifactStore
-
-        self.inference_backend: InferenceBackend | None = None
-        self.artifact_store = LocalDiskArtifactStore()
-        self.task_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
-        self.worker_task: asyncio.Task[None] | None = None
         self.registration_status = "not_started"
         self.last_heartbeat_at: datetime | None = None
         self.last_heartbeat_ok = False
@@ -184,9 +167,6 @@ class Runtime:
             # 4.5. Start periodic model-catalogue refresh, so `ollama pull` and
             # `ollama rm` reach the Scheduler without restarting the node.
             self.model_refresh_task = asyncio.create_task(self._model_refresh_loop())
-
-            # 5. Start task consumer worker loop
-            self.worker_task = asyncio.create_task(self._worker_loop())
         except Exception:
             self.is_running = False
             self.registration_status = "failed"
@@ -241,13 +221,6 @@ class Runtime:
                 await self.model_refresh_task
             self.model_refresh_task = None
 
-        # Cancel task consumer worker task
-        if self.worker_task is not None:
-            self.worker_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await self.worker_task
-            self.worker_task = None
-
         # Stop telemetry emitter
         if self.telemetry_emitter is not None:
             with suppress(Exception):
@@ -262,55 +235,6 @@ class Runtime:
         with suppress(Exception):
             await self.scheduler_client.unregister(self.settings.node_id)
         self.registration_status = "unregistered"
-
-    async def _worker_loop(self) -> None:
-        """Background task consumer that processes tasks using the inference backend."""
-        import json
-
-        while self.is_running:
-            try:
-                task = await self.task_queue.get()
-                task_id = task["task_id"]
-                model_name = task.get("model_name") or task.get("model", "echo")
-                prompt = task["prompt"]
-                options = task.get("options")
-
-                # Setup default EchoBackend if none configured
-                if self.inference_backend is None:
-                    from node.backends.mock import EchoBackend
-
-                    self.inference_backend = EchoBackend()
-
-                # 1. Execute run pass using InferenceBackend client
-                output = await self.inference_backend.generate(
-                    model=model_name, prompt=prompt, options=options
-                )
-
-                # 2. Save generated response to ArtifactStore
-                metadata = await self.artifact_store.save_artifact(
-                    task_id=task_id,
-                    data=output.encode("utf-8"),
-                    metadata={
-                        "model": model_name,
-                        "prompt_length": len(prompt),
-                    },
-                )
-
-                # 3. Report only the resulting ArtifactMetadata block via Zenoh
-                if self.zenoh_client.session is not None:
-                    path = f"public-intelligence/net/tasks/{task_id}/result"
-                    self.zenoh_client.session.put(path, json.dumps(metadata.model_dump()))
-
-                self.task_queue.task_done()
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(
-                    "Error executing task in worker processor loop: %s",
-                    e,
-                    exc_info=True,
-                )
-                await async_sleep(0.1)
 
     async def _heartbeat_loop(self) -> None:
         """Periodic background loop that sends heartbeats to the Scheduler."""
@@ -556,7 +480,12 @@ class Runtime:
         """
         metrics = await detect_host_metrics()
         return {
-            "queue_length": self.task_queue.qsize(),
+            # The node has no internal work queue: requests are served as they
+            # arrive, by the HTTP route and the mesh server. This field stays in
+            # the heartbeat wire contract -- the Scheduler scores on it -- but its
+            # only producer was the deleted `task_queue` worker loop, which
+            # nothing ever fed, so it reported 0 on every live node already.
+            "queue_length": 0,
             "cpu_utilization": metrics.cpu_utilization,
             "ram_available_gb": metrics.ram_available_gb,
             "gpu_utilization": metrics.gpu_utilization,
