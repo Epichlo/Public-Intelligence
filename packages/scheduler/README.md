@@ -1,7 +1,8 @@
 # Public Intelligence Scheduler
 
-**Archived on 2026-08-21 along with the rest of the project. See the root
-[`README.md`](../../README.md) for what worked, what failed, and why it stopped.**
+**Part of an actively developed project, resumed 2026-09-05 after a pause that began
+2026-08-21.** See the root [`README.md`](../../README.md) for what worked, what was
+found broken, and the open problems the resumed effort starts from.
 
 The Scheduler is the control plane. It maintains a registry of compute nodes, receives
 heartbeats over an authenticated Zenoh mesh, matchmakes requests to a node that has the
@@ -101,11 +102,12 @@ each other, never to the tag that names them.
 
 ---
 
-## What was never finished
+## What is not finished yet
 
-There is no roadmap — the project is archived. Request routing, mesh dispatch and
-OpenAI-compatible serving all shipped. What did not, and was never pretended to (see the
-root [`README.md`](../../README.md) and [`docs/PREMISES.md`](../../docs/PREMISES.md)):
+See [`ROADMAP.md`](../../ROADMAP.md) for the plan of record. Request routing, mesh
+dispatch and OpenAI-compatible serving all shipped. What did not ship, and was never
+pretended to (see the root [`README.md`](../../README.md) and
+[`docs/PREMISES.md`](../../docs/PREMISES.md)):
 
 - **A proven real-NAT path.** The mesh works on a LAN; crossing a real NAT boundary was
   never demonstrated (`ROADMAP.md`, 1.5) — and it was the differentiator the project

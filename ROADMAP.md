@@ -1,20 +1,22 @@
 # ROADMAP — v1
 
-> ## CLOSED — 2026-08-21
+> ## RESUMED — 2026-09-05
 >
-> **The project is archived and this roadmap is no longer a plan.** It is kept as the
-> record of what was built and in what order. Nothing below will be worked on.
+> **Development paused on 2026-08-21 and has resumed.** This file spent that window
+> under a "CLOSED, no longer a plan" banner; that banner is gone and this is a plan
+> again. It is still true that development paused because two load-bearing premises
+> were failing while the engineering was succeeding, and resuming does not answer
+> them — they are the first items the resumed roadmap has to address: the economics
+> did not close as last measured (~15× against commodity pricing,
+> [D2](docs/decisions/D2-economics.md)), and NAT traversal had not been shown to be a
+> differentiator for the single-machine case that is already solved — relocating the
+> whole claim onto cross-party pooling, for which no evidence had been gathered
+> (`docs/PREMISES.md` P1/P2). 1.5 and D7 below were open when development paused and
+> are still open now — 1.5 is the product, and is the natural next item. See the root
+> [`README.md`](README.md) for the full account.
 >
-> It ended because two load-bearing premises failed while the engineering was
-> succeeding: the economics do not close (~15× against commodity pricing,
-> [D2](docs/decisions/D2-economics.md)), and NAT traversal turned out not to be a
-> differentiator for the single-machine case that is actually solved — relocating the
-> whole claim onto cross-party pooling, for which there was never any evidence
-> (`docs/PREMISES.md` P1/P2). 1.5 and D7 below stayed open to the end, and 1.5 was the
-> product. See the root [`README.md`](README.md) for the full account.
->
-> **Two findings recorded at closure, both from reading the code rather than a failing
-> test:**
+> **Two findings recorded when development paused, both from reading the code rather
+> than a failing test, and both still true today:**
 >
 > - **The `v1.0.1` tag names a tree that declares itself `1.0.0`.** All four packages
 >   agree with each other at `25fe60c`, so `test_every_package_declares_the_same_version`

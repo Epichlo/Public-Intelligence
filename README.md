@@ -1,63 +1,76 @@
 # Public Intelligence
 
-**Archived on 2026-08-21. Development has ended. This repository is a record, not a
-product.**
+**Active development, resumed 2026-09-05.** Between 2026-08-21 and 2026-09-05 this file
+said the project was archived and development had ended. That call was reversed by the
+project owner; the sections below that used to explain "why it ended" now explain what
+was found broken and unresolved when development paused — the resumed effort's starting
+list of open problems, not a postmortem.
 
-It was an OpenAI-compatible control plane for hardware you already own: point it at
+It is an OpenAI-compatible control plane for hardware you already own: point it at
 machines you or people you trust control, and get one authenticated
 `/v1/chat/completions` endpoint that routes across all of them. Nodes dial *out* to a
 coordinator and answer over that connection, so a node behind NAT needs no inbound port
 forwarding.
 
-The code works, within the limits set out below. Nobody ever used it. Both of those are
-findings, and this file exists to state them plainly rather than leave a green test
-badge to imply the first and hide the second.
+The code works, within the limits set out below. As of the last measurement, nobody had
+used it. Both of those are findings, and this file exists to state them plainly rather
+than leave a green test badge to imply the first and hide the second.
 
-Nothing here is maintained. There is no support, no roadmap, and no security response —
-`SECURITY.md` describes a process that is no longer staffed. If you run this, you own
-it.
+This is a pre-alpha project maintained by one person — see [`SECURITY.md`](SECURITY.md)
+for what that means for response times, and [`ROADMAP.md`](ROADMAP.md) for the plan of
+record. Nothing in this paragraph claims tests were re-run or CI was re-checked for this
+resumed session; where this file cites test or CI results below, it says which session
+produced them.
 
 ---
 
-## Why it ended
+## Open problems carried over from the last review
 
-Not because it broke. Because the question underneath it was answered, and the answer
-was no.
+Development paused on 2026-08-21 because two load-bearing premises were failing while
+the engineering was succeeding. Resuming the project does not resolve either of them —
+they are the first problems the resumed roadmap has to address, not settled history.
 
-The project rested on a register of stated, falsifiable premises
-([`docs/PREMISES.md`](docs/PREMISES.md)). Two of the load-bearing ones failed while the
-engineering was succeeding:
+The project rests on a register of stated, falsifiable premises
+([`docs/PREMISES.md`](docs/PREMISES.md)). As of the last review, two of the load-bearing
+ones were failing:
 
-- **P3 — the economics do not close.** `scripts/economics.py`, tested by
-  `tests/test_economics.py`, puts a realistic host at **~$2.26 per 1M tokens against a
-  ~$0.15 commodity price** — roughly 15×. The conclusion survives doubling every power
-  and throughput input and tripling utilisation. That killed the marketplace, and with
-  it the reason a stranger would contribute hardware
+- **P3 — the economics do not close, as of the last measurement.**
+  `scripts/economics.py`, tested by `tests/test_economics.py`, puts a realistic host at
+  **~$2.26 per 1M tokens against a ~$0.15 commodity price** — roughly 15×. The conclusion
+  survived doubling every power and throughput input and tripling utilisation as of that
+  run. **This is the first problem the resumed roadmap needs to solve** — without an
+  answer, there is no reason a stranger contributes hardware under a marketplace framing
   ([D2](docs/decisions/D2-economics.md)).
-- **P2 — NAT traversal is not a differentiator.** An external desk review
-  ([`docs/review/desk-review-2026-08-14.md`](docs/review/desk-review-2026-08-14.md))
+- **P2 — NAT traversal has not been shown to be a differentiator.** An external desk
+  review ([`docs/review/desk-review-2026-08-14.md`](docs/review/desk-review-2026-08-14.md))
   found the falsifier true as written: single-user remote access to a home GPU is a
   solved, SEO-saturated problem, and Tailscale is the free answer. What survives is
   *cross-party pooling*, which Tailscale is single-tenant-shaped and does not do — but
   that relocates the whole load onto P1 (*someone wants to serve inference from hardware
-  they own, across parties*), for which there is **no evidence at all**, only assumption.
+  they own, across parties*), for which there was **no evidence gathered**, only
+  assumption. **This is the second problem the resumed roadmap needs to solve.**
 
-So the remaining pitch was: a thing that costs 15× the alternative, solving a problem
-that is already solved for the single-machine case, for a multi-party demand nobody had
-demonstrated. The correct response to that is to stop, and write down why, which is what
-this is.
+So the pitch that needs re-examining is: a thing that, as last measured, costs 15× the
+alternative, solving a problem that is already solved for the single-machine case, for a
+multi-party demand nobody had yet demonstrated. Those are open questions to answer going
+forward, not a verdict that already closed them.
 
-The one question that could have changed the answer —
-[D7](docs/decisions/D7-second-pair-of-eyes.md), *a second pair of eyes* — never got a
-human reviewer. Every judgement in this repository, including this one, was made by a
-single party. That is itself part of what went wrong.
+The one question that could change either answer —
+[D7](docs/decisions/D7-second-pair-of-eyes.md), *a second pair of eyes* — still has not
+gotten a human reviewer. Every judgement in this repository, including this one, has been
+made by a single party. That remains open, and resuming development does not fix it by
+itself.
 
 ---
 
-## What worked
+## What worked, as of the last measurement
 
-Evidence, not recollection. Test counts below were produced by running the suites in the
-session that wrote this file; the CI result was read from the GitHub API, not inferred.
+Evidence, not recollection — but evidence from the session that measured it, not this
+one. Test counts below were produced by running the suites in the session that wrote
+this section (2026-08-17); the CI result was read from the GitHub API at that time, not
+inferred. Neither has been re-run since development resumed on 2026-09-05. Treat this
+section as "true as of the last time someone checked," and re-run `./scripts/verify.sh`
+before relying on it for a current claim.
 
 **The core loop runs.** A node registers with the Scheduler, heartbeats over an
 authenticated Zenoh mesh, advertises the models Ollama actually has (measured hardware,
@@ -66,17 +79,19 @@ matchmakes, dispatches over the mesh, meters usage, and serves an OpenAI-shaped 
 behind RS256 JWT auth. On 2026-08-11 a node on a **second physical machine** registered,
 held a mesh session, and served a real completion dispatched over that mesh.
 
-**The tests pass, and they were run here.**
+**The tests passed as of 2026-08-17, and they were run in that session — not this one.**
 
-| Suite | Result |
+| Suite | Result (2026-08-17) |
 |---|---|
 | `packages/scheduler/tests` | 397 passed |
 | `packages/node/tests` | 260 passed, 1 skipped |
 | `tests` (cross-package) | 249 passed |
 | **Total** | **906 passed, 1 skipped** |
 
-**CI is green.** Run **#33** on `main` at `e5d1e7c` completed **success**. The matrix is
-3 operating systems × Python 3.11, 3.12 and 3.14, plus a fresh-clone job — 10 jobs.
+**CI was green as of that commit.** Run **#33** on `main` at `e5d1e7c` completed
+**success**. The matrix is 3 operating systems × Python 3.11, 3.12 and 3.14, plus a
+fresh-clone job — 10 jobs. That is the last CI result anyone has actually looked at; it
+says nothing about commits made since.
 
 *`STATUS.md` says CI is `UNVERIFIABLE`, and both are right.* That file asks the `gh`
 CLI, and reports `UNVERIFIABLE` wherever `gh` is absent — which is the honest word for
@@ -214,20 +229,23 @@ credential weakness until upgraded, deliberately, so that no running host is str
 Four module pairs in `experimental/` remain duplicated, with drift ratcheted rather than
 eliminated.
 
-**And there was never a fleet.** No hosts, no traffic, no users. `docs/PREMISES.md` puts
-it exactly right: *"Nobody has metered a real node in this fleet, because there is no
-fleet."* Every green test exercised this system talking to itself.
+**And there was never a fleet, as of the last measurement.** No hosts, no traffic, no
+users. `docs/PREMISES.md` puts it exactly right: *"Nobody has metered a real node in this
+fleet, because there is no fleet."* Every green test exercised this system talking to
+itself. Getting a real fleet is the practical measure of progress for the resumed effort.
 
 ---
 
-## What we would tell someone starting this
+## Lessons from the first four months, carried into the resumed effort
 
 1. **Test the load-bearing claim first, with the cheapest possible experiment.** The NAT
    crossing was the entire product and it needed a phone hotspot and an afternoon. It was
-   never done, across four months, while 906 tests were written around it.
+   never done, across four months, while 906 tests were written around it. It is still
+   undone, and it is the first thing the resumed roadmap should schedule.
 2. **Do the arithmetic before the architecture.** `scripts/economics.py` is about a
    hundred lines. Run at the start, it would have redirected the project. Run at month
-   three, it ended it.
+   three, it stopped the project cold. It has not been re-run since; re-running it before
+   building further on the marketplace framing is cheap insurance.
 3. **A test suite measures regression, never premise.** A ratchet asks "did this get
    worse"; a test asks "does it still do what I said". Neither can ask "should this exist
    at all". 906 passing tests said nothing about whether anyone wanted this.
@@ -257,9 +275,9 @@ fleet."* Every green test exercised this system talking to itself.
 | `docs/historical/` | Superseded design documents. **They describe intentions as if built.** |
 | `zones/` | `claimed/` is what an agent believed; `verified/` is what the gate measured |
 
-## Running it anyway
+## Running it
 
-The code still runs. One venv for everything:
+One venv for everything:
 
 ```bash
 python3 -m venv .venv
@@ -285,10 +303,12 @@ Scheduler that sets them — a fleet token and an invite code:
 ```
 
 `STATUS.md` is generated by `python3 scripts/generate_status.py` and should never be
-edited by hand.
+edited by hand. It was last regenerated 2026-08-21, before development resumed — treat
+its numbers as unverified for the current tree until it is run again.
 
 ## Licence
 
-[Apache-2.0](LICENSE). Patent grant included; warranty disclaimed. The project is
-archived and unmaintained: there is no security response process, and issues and pull
-requests are not being monitored.
+[Apache-2.0](LICENSE). Patent grant included; warranty disclaimed. See
+[`SECURITY.md`](SECURITY.md) for how vulnerabilities are handled: a one-person response
+process with stated best-effort timelines, not a security team and not an absence of a
+process.

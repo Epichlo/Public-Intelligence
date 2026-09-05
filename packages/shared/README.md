@@ -1,7 +1,8 @@
 # packages/shared
 
-**Archived on 2026-08-21 along with the rest of the project. See the root
-[`README.md`](../../README.md) for what worked, what failed, and why it stopped.**
+**Part of an actively developed project, resumed 2026-09-05 after a pause that began
+2026-08-21.** See the root [`README.md`](../../README.md) for what worked, what was
+found broken, and the open problems the resumed effort starts from.
 
 The stated follow-up to the 2026-08-04 monorepo migration (ROADMAP C8), and the
 answer to the question `CLAUDE.md` has been asking contributors to hold in their

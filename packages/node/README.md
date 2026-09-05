@@ -1,7 +1,8 @@
 # Public Intelligence Node
 
-**Archived on 2026-08-21 along with the rest of the project. See the root
-[`README.md`](../../README.md) for what worked, what failed, and why it stopped.**
+**Part of an actively developed project, resumed 2026-09-05 after a pause that began
+2026-08-21.** See the root [`README.md`](../../README.md) for what worked, what was
+found broken, and the open problems the resumed effort starts from.
 
 A Public Intelligence Node is a compute worker that registers with the Scheduler,
 advertises the models Ollama actually has, executes inference locally, and holds an
@@ -113,9 +114,9 @@ each other, never to the tag that names them.
 
 ---
 
-## What was never finished
+## What is not finished yet
 
-There is no future work — the project is archived. What did not get done:
+See [`ROADMAP.md`](../../ROADMAP.md) for the plan of record. What has not been done yet:
 
 - **A proven real-NAT path.** The mesh works on a LAN, and on 2026-08-11 a node on a
   second physical machine served a real request over it. Both machines were on adjacent
